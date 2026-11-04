@@ -1,0 +1,12 @@
+[package]
+name = "mado-ai"
+description = "AI connections, model catalog, roles and provider clients."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

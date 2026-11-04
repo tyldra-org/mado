@@ -1,0 +1,30 @@
+{
+  "name": "mado-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "ui",
+    "inject"
+  ],
+  "scripts": {
+    "build": "bun run build:inject && bun run build:ui",
+    "build:inject": "bun run --cwd inject build",
+    "build:ui": "bun run --cwd ui build",
+    "dev:ui": "bun run --cwd ui dev",
+    "lint": "biome lint . && bun run typecheck",
+    "typecheck": "bun run --parallel typecheck:scripts typecheck:inject typecheck:ui",
+    "typecheck:scripts": "tsc -p scripts --noEmit",
+    "typecheck:inject": "bun run --cwd inject typecheck",
+    "typecheck:ui": "bun run --cwd ui typecheck",
+    "format": "biome format --write . && prettier --write \"ui/**/*.svelte\"",
+    "format:check": "biome format . && prettier --check \"ui/**/*.svelte\"",
+    "deps:check": "bun scripts/check-deps.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@types/bun": "1.4.4",
+    "prettier": "3.9.10",
+    "prettier-plugin-svelte": "4.1.1",
+    "typescript": "6.0.3"
+  }
+}

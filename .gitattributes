@@ -1,0 +1,21 @@
+# Normalize line endings; scripts must stay LF to run on every platform.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.wasm binary
+
+# Mark only real code-generation output as linguist-generated. Never mark
+# lockfiles: reviewers must see every dependency change in full.
