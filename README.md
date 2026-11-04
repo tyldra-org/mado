@@ -6,10 +6,8 @@
 
 [Platforms](#platforms) · [Privacy](#privacy) · [Roadmap](#roadmap) · [Build from source](#build-from-source) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
-<!-- Add once the repository is public:
 [![CI](https://github.com/tyldra-org/mado/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tyldra-org/mado/actions/workflows/ci.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
--->
 
 </div>
 
