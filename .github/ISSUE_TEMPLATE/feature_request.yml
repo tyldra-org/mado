@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a new feature or improvement.
+title: "feat: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first. A clear problem statement is more useful
+        than a specific solution.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How you would like Mado to behave.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other approaches, and why they fall short.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to implement this?
+      options:
+        - "Yes"
+        - "Maybe, with guidance"
+        - "No"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I agree to follow the Code of Conduct.
+          required: true

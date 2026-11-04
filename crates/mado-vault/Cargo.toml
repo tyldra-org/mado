@@ -1,0 +1,12 @@
+[package]
+name = "mado-vault"
+description = "Mado Passwords storage and cryptography."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

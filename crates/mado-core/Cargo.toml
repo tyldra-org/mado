@@ -1,0 +1,12 @@
+[package]
+name = "mado-core"
+description = "The core actor: browser state, command dispatch, patches and service wiring."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

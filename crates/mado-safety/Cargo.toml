@@ -1,0 +1,12 @@
+[package]
+name = "mado-safety"
+description = "HTTPS-first, lookalike domains, certificate and download safety decisions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

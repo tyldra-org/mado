@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = [
+    "app",
+    "crates/mado-types",
+    "crates/mado-core",
+    "crates/mado-storage",
+    "crates/mado-engine",
+    "crates/mado-engine-webkit",
+    "crates/mado-engine-webview2",
+    "crates/mado-settings",
+    "crates/mado-safety",
+    "crates/mado-permissions",
+    "crates/mado-navigation",
+    "crates/mado-extensions",
+    "crates/mado-blocker",
+    "crates/mado-vault",
+    "crates/mado-autofill",
+    "crates/mado-import",
+    "crates/mado-ai",
+    "crates/mado-agent",
+    "crates/mado-control",
+    "crates/mado-cli",
+    "crates/mado-platform",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MPL-2.0"
+repository = "https://github.com/tyldra-org/mado"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+unwrap_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
