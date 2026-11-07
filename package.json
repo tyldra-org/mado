@@ -12,6 +12,7 @@
     "build:ui": "bun run --cwd ui build",
     "dev:ui": "bun run --cwd ui dev",
     "lint": "biome lint . && bun run typecheck",
+    "test:ui": "bun run --cwd ui test",
     "typecheck": "bun run --parallel typecheck:scripts typecheck:inject typecheck:ui",
     "typecheck:scripts": "tsc -p scripts --noEmit",
     "typecheck:inject": "bun run --cwd inject typecheck",

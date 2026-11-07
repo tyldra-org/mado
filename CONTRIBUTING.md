@@ -13,7 +13,7 @@ Mado is pre-alpha. Most work right now follows the milestone plan, so the best w
 
 ## Set up
 
-You need Rust through `rustup` (the pinned toolchain installs itself), Bun at the version in `.bun-version`, and the platform build tools listed in the [README](README.md#development).
+You need Rust through `rustup` (the pinned toolchain installs itself), Bun at the version in `.bun-version`, and the platform build tools listed in the [README](README.md#build-from-source).
 
 ```sh
 git clone https://github.com/tyldra-org/mado.git
@@ -35,22 +35,41 @@ bun install --frozen-lockfile
 
    Individual stages:
 
-   | Stage | Command |
-   | --- | --- |
-   | Format | `cargo fmt --all --check && bun run format:check` |
-   | Lint | `cargo clippy --workspace --all-targets --locked -- -D warnings && bun run lint && bun run deps:check` |
-   | Build | `cargo build --workspace --locked && bun run build` |
-   | Test | `cargo test --workspace --locked && bun test` |
-   | Supply chain | `cargo deny check` |
-   | Shell and workflows | `shellcheck`, `actionlint` |
+   | Stage | Rust half | TypeScript half |
+   | --- | --- | --- |
+   | Format | `cargo fmt --all --check` | `bun run format:check` |
+   | Lint | `cargo clippy --workspace --all-targets --locked -- -D warnings && bun run deps:check` | `bun run lint` |
+   | Build | `cargo build --workspace --locked` | `bun run build` |
+   | Test | `cargo nextest run --workspace` plus `cargo test --doc`, or `cargo test --workspace` without nextest | `bun test`, then Vitest in `ui/` (`bun run test:ui`) |
+   | Supply chain | `cargo deny check` | |
+   | Shell and workflows | `shellcheck`, `actionlint` | |
 
    `bun run format` and `cargo fmt --all` fix formatting.
 
-   `./scripts/check.sh --list` prints the stages, and `./scripts/check.sh <stage>` runs one, for example `./scripts/check.sh lint`. Locally, a stage whose tool is missing (`shellcheck`, `actionlint`, `cargo-deny`) is skipped and named in the summary. CI runs `./scripts/check.sh --all`, where a skipped stage fails, so install those tools to match CI.
+   `./scripts/check.sh --list` prints the stages, and `./scripts/check.sh <stage>` runs one, for example `./scripts/check.sh lint`. `--scope rust` or `--scope ts` runs only that half, for example `./scripts/check.sh --scope ts lint test`. Locally, a stage whose tool is missing (`shellcheck`, `actionlint`, `cargo-deny`) is skipped and named in the summary. CI runs `./scripts/check.sh --all`, where a skipped stage fails, so install those tools to match CI.
 
-   While iterating, run the narrowest check: `cargo test -p mado-<name>` for one crate, `bun test <file>` or `bun test --changed` for JavaScript and TypeScript.
+   While iterating, run the narrowest check: `cargo test -p mado-<name>` for one crate, `bun test <file>` or `bun test --changed` for JavaScript and TypeScript, `bun run --cwd ui test <file>` for a Svelte component. Component and runes tests are named `*.svelte.test.ts` and run under Vitest; other tests are `*.test.ts` and run under `bun test`.
 
 6. Mado ships on macOS and Windows. If your change touches platform code, say which platforms you ran it on. CI runs both.
+
+   CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS and Windows. A TypeScript change runs format, lint and typecheck once and the tests it reaches on Linux and Windows. Dependency, toolchain or CI changes check everything, and so does every push to `main`.
+
+## Optional local tools
+
+None of these are required; each makes a local loop faster or shows something the checks do not. Install the Cargo tools with `cargo install --locked <name>` (or `cargo binstall <name>`).
+
+| Tool | Use it for | Command |
+| --- | --- | --- |
+| `cargo-nextest` | Faster Rust tests; `check.sh` uses it when present | `cargo nextest run -p mado-<name>`, one test with `-E 'test(<name>)'`. It skips doc tests: `cargo test -p mado-<name> --doc` |
+| `bacon` | Clippy or tests rerun on every save, with Mado's jobs from `bacon.toml` | `bacon` (Clippy as CI runs it), `bacon nextest`, `bacon doc` |
+| `sccache` | Reuses compiled crates across branches and checkouts | Set `rustc-wrapper` in your own `~/.cargo/config.toml`, never in this repository |
+| `cargo-llvm-cov` | Coverage, to see which behaviour no test reaches | `rustup component add llvm-tools`, then `cargo llvm-cov nextest -p mado-<name> --no-tests=pass --html` |
+| `samply` | CPU profiles of the app or a benchmark | `samply record <binary>` opens the profile in the Firefox Profiler |
+| `cargo-llvm-lines` | Generic code that bloats compile time | `cargo llvm-lines -p mado-<name>` |
+| `cargo-machete` | Unused dependencies | `cargo machete` |
+| `hyperfine` | Before and after timings for a speed-up | `hyperfine --warmup 1 '<before>' '<after>'` |
+
+Debug Rust with `rust-lldb` or your editor's LLDB integration on the test or app binary, and `RUST_LOG=debug` for log output. Debug the UI with the Web Inspector of the platform's web view: Safari's Develop menu for WKWebView on macOS, Edge DevTools for WebView2 on Windows. On macOS the system linker is already fast; no linker setup is needed.
 
 ## Code rules
 

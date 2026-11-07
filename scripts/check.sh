@@ -2,32 +2,89 @@
 # Single quality entry point for Mado. Developers and CI run the
 # same stages, so a green local run predicts a green CI run.
 #
-# Usage: scripts/check.sh [--all] [--list] [stage...]
+# Usage: scripts/check.sh [--all] [--list] [--scope rust|ts]... [stage...]
 #
 #   stage            Run only the named stages. Default: every stage.
 #   --all            Strict mode for CI and releases: a missing tool or an
 #                    unconfigured command fails the stage instead of skipping.
+#   --scope S        Run only the rust or ts half of the format, lint, build
+#                    and test stages. Repeatable. Default: both.
 #   --list           Print the stages and their commands, then exit.
 #   -h, --help       Show this help.
 #
 # Stages: format lint build test supply shell workflows.
-# Override a stage command with CHECK_<STAGE>_CMD, for example
-# CHECK_TEST_CMD='cargo test --locked'. Set it to an empty string to disable a
-# stage that does not apply to this project.
+# Rust tests run with cargo-nextest plus doc tests when it is installed, and
+# with cargo test otherwise.
+#
+# Environment:
+#   CHECK_CARGO_PACKAGES      Cargo package selection (default --workspace),
+#                             for example "-p mado-core -p mado-app".
+#   CHECK_CARGO_DOC_PACKAGES  Selection for doc tests (default: the same);
+#                             empty skips them.
+#   CHECK_TS_CHANGED_SINCE    Run only the bun and Vitest tests affected by
+#                             changes since this commit (--changed).
+#   CHECK_<STAGE>_<RUST|TS>_CMD  Replace one half's command, for example
+#                             CHECK_TEST_RUST_CMD='cargo test --locked'. An
+#                             empty string disables that half.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 
-FORMAT_CMD=${CHECK_FORMAT_CMD-'cargo fmt --all --check && bun run format:check'}
-LINT_CMD=${CHECK_LINT_CMD-'cargo clippy --workspace --all-targets --locked -- -D warnings && bun run lint && bun run deps:check'}
-BUILD_CMD=${CHECK_BUILD_CMD-'cargo build --workspace --locked && bun run build'}
-TEST_CMD=${CHECK_TEST_CMD-'cargo test --workspace --locked && bun test'}
+CARGO_PACKAGES=${CHECK_CARGO_PACKAGES:---workspace}
+CARGO_DOC_PACKAGES=${CHECK_CARGO_DOC_PACKAGES-$CARGO_PACKAGES}
+
+rust_test_default() {
+  if cargo nextest --version >/dev/null 2>&1; then
+    # nextest does not run doc tests; cargo test --doc covers them.
+    printf 'cargo nextest run %s --locked --no-tests=pass' "$CARGO_PACKAGES"
+    if [ -n "$CARGO_DOC_PACKAGES" ]; then
+      printf ' && cargo test %s --doc --locked' "$CARGO_DOC_PACKAGES"
+    fi
+  else
+    printf 'cargo test %s --locked' "$CARGO_PACKAGES"
+  fi
+}
+
+ts_test_default() {
+  # bun test runs plain *.test.ts files; Vitest in ui/ runs the Svelte
+  # component and runes tests (*.svelte.test.ts).
+  if [ -n "${CHECK_TS_CHANGED_SINCE:-}" ]; then
+    printf 'bun test --changed=%s && bun run --cwd ui test --changed=%s --passWithNoTests' \
+      "$CHECK_TS_CHANGED_SINCE" "$CHECK_TS_CHANGED_SINCE"
+  else
+    printf 'bun test && bun run --cwd ui test'
+  fi
+}
+
+half_command() {
+  # half_command <stage> <scope>: the command for one half of a stage.
+  # Defaults are computed lazily, so a TypeScript-only run never starts cargo
+  # (which would install the pinned toolchain).
+  local var
+  var="CHECK_$(printf '%s_%s' "$1" "$2" | tr '[:lower:]' '[:upper:]')_CMD"
+  if [ -n "${!var+set}" ]; then
+    printf '%s' "${!var}"
+    return
+  fi
+  case "$1:$2" in
+    format:rust) printf '%s' 'cargo fmt --all --check' ;;
+    format:ts) printf '%s' 'bun run format:check' ;;
+    lint:rust) printf 'cargo clippy %s --all-targets --locked -- -D warnings && bun run deps:check' "$CARGO_PACKAGES" ;;
+    lint:ts) printf '%s' 'bun run lint' ;;
+    build:rust) printf 'cargo build %s --locked' "$CARGO_PACKAGES" ;;
+    build:ts) printf '%s' 'bun run build' ;;
+    test:rust) rust_test_default ;;
+    test:ts) ts_test_default ;;
+  esac
+}
 
 ALL_STAGES="format lint build test supply shell workflows"
+ALL_SCOPES="rust ts"
 
 strict=false
 stages=()
+scopes=()
 results=()
 failed=0
 
@@ -44,6 +101,14 @@ while [ $# -gt 0 ]; do
   case $1 in
     --all) strict=true ;;
     --list) list_only=true ;;
+    --scope)
+      [ $# -ge 2 ] || die "--scope needs a value (scopes: $ALL_SCOPES)"
+      case " $ALL_SCOPES " in
+        *" $2 "*) scopes+=("$2") ;;
+        *) die "unknown scope: $2 (scopes: $ALL_SCOPES)" ;;
+      esac
+      shift
+      ;;
     -h | --help) usage; exit 0 ;;
     -*) die "unknown option: $1 (see --help)" ;;
     *)
@@ -60,22 +125,23 @@ if [ ${#stages[@]} -eq 0 ]; then
   # shellcheck disable=SC2206 # Intentional word splitting of a fixed list.
   stages=($ALL_STAGES)
 fi
-
-stage_command() {
-  case $1 in
-    format) printf '%s' "$FORMAT_CMD" ;;
-    lint) printf '%s' "$LINT_CMD" ;;
-    build) printf '%s' "$BUILD_CMD" ;;
-    test) printf '%s' "$TEST_CMD" ;;
-    supply) printf '%s' 'cargo deny check' ;;
-    shell) printf '%s' 'shellcheck <tracked *.sh files>' ;;
-    workflows) printf '%s' 'actionlint' ;;
-  esac
-}
+if [ ${#scopes[@]} -eq 0 ]; then
+  # shellcheck disable=SC2206 # Intentional word splitting of a fixed list.
+  scopes=($ALL_SCOPES)
+fi
 
 if [ "${list_only:-false}" = true ]; then
   for s in $ALL_STAGES; do
-    printf '%-10s %s\n' "$s" "$(stage_command "$s")"
+    case $s in
+      format | lint | build | test)
+        for scope in $ALL_SCOPES; do
+          printf '%-11s %s\n' "$s/$scope" "$(half_command "$s" "$scope")"
+        done
+        ;;
+      supply) printf '%-11s %s\n' "$s" 'cargo deny check' ;;
+      shell) printf '%-11s %s\n' "$s" 'shellcheck <tracked *.sh files>' ;;
+      workflows) printf '%-11s %s\n' "$s" 'actionlint' ;;
+    esac
   done
   exit 0
 fi
@@ -94,7 +160,7 @@ group_end() {
 
 record() {
   # record <stage> <status> [detail]
-  results+=("$(printf '%-10s %-7s %s' "$1" "$2" "${3:-}")")
+  results+=("$(printf '%-11s %-7s %s' "$1" "$2" "${3:-}")")
   if [ "$2" = FAIL ]; then failed=$((failed + 1)); fi
 }
 
@@ -124,21 +190,22 @@ run_timed() {
 }
 
 run_command_stage() {
-  local stage=$1 cmd tool
-  cmd=$(stage_command "$stage")
-  if [ -z "$cmd" ]; then
-    record "$stage" off "disabled by empty CHECK_$(printf '%s' "$stage" | tr '[:lower:]' '[:upper:]')_CMD"
-    return
-  fi
-  case $cmd in
-    *'{{'*) skip_or_fail "$stage" "command not configured: $cmd"; return ;;
-  esac
-  read -r tool _ <<<"$cmd"
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    skip_or_fail "$stage" "missing tool: $tool"
-    return
-  fi
-  run_timed "$stage" "$cmd" bash -c "set -euo pipefail; $cmd"
+  # Runs the selected halves (rust, ts) of a stage, each recorded on its own.
+  local stage=$1 scope name cmd tool
+  for scope in "${scopes[@]}"; do
+    name="$stage/$scope"
+    cmd=$(half_command "$stage" "$scope")
+    if [ -z "$cmd" ]; then
+      record "$name" off "disabled by empty CHECK_$(printf '%s_%s' "$stage" "$scope" | tr '[:lower:]' '[:upper:]')_CMD"
+      continue
+    fi
+    read -r tool _ <<<"$cmd"
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      skip_or_fail "$name" "missing tool: $tool"
+      continue
+    fi
+    run_timed "$name" "$cmd" bash -c "set -euo pipefail; $cmd"
+  done
 }
 
 shell_files() {

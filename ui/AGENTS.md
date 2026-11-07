@@ -21,6 +21,6 @@ Before editing anything here, load `svelte-development` together with `typescrip
 
 - `bun run dev:ui` from the repository root starts Vite.
 - `bun run --cwd ui typecheck` runs `svelte-check`; add `--watch` while iterating.
-- `npx @sveltejs/mcp svelte-autofixer <file> --svelte-version <installed>` checks a component you wrote or changed (escape `$` as `\$` for inline code).
-- `bun test ui` runs UI unit tests.
+- `bunx @sveltejs/mcp svelte-autofixer <file> --svelte-version <installed>` checks a component you wrote or changed (escape `$` as `\$` for inline code).
+- `bun run test:ui` (or `bun run --cwd ui test`) runs Vitest: component and runes tests named `*.svelte.test.ts`, with `@testing-library/svelte` in jsdom. Query by role and accessible name. Plain `.ts` logic keeps `*.test.ts` and `bun test`, which cannot compile `.svelte` files.
 - `.svelte` files are formatted by Prettier (`bun run format`); everything else by Biome.
