@@ -1,0 +1,15 @@
+# cargo-nextest settings shared by developers and CI.
+# Reference: https://nexte.st/docs/configuration/
+
+[profile.default]
+# Flag a test as slow after 30 s and stop it after 2 minutes, so a hang in
+# an engine or storage test fails clearly instead of stalling the run.
+slow-timeout = { period = "30s", terminate-after = 4 }
+# Show a failing test's output when it fails and again in the summary.
+failure-output = "immediate-final"
+
+[profile.ci]
+# CI reports every failure in one run.
+fail-fast = false
+# No retries: a test that passes only on retry is a flake to fix, not hide.
+retries = 0

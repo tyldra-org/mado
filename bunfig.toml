@@ -1,0 +1,4 @@
+# bun test runs plain *.test.ts files. Svelte component and runes tests
+# (*.svelte.test.ts) need the Svelte compiler and run under Vitest in ui/.
+[test]
+pathIgnorePatterns = ["**/*.svelte.test.ts", "**/node_modules/**"]

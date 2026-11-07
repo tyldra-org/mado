@@ -1,0 +1,19 @@
+# bacon jobs for Mado. Run `bacon` for the default job, `bacon <job>` for
+# another; keys to switch jobs are shown at the bottom of bacon's screen.
+# Reference: https://dystroy.org/bacon/config/
+
+default_job = "clippy"
+
+# The same lint CI runs: every target, warnings are errors.
+[jobs.clippy]
+command = ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]
+need_stdout = false
+
+[jobs.nextest]
+command = ["cargo", "nextest", "run", "--workspace", "--locked", "--no-tests=pass", "--hide-progress-bar", "--failure-output", "final"]
+need_stdout = true
+analyzer = "nextest"
+
+[jobs.doc]
+command = ["cargo", "doc", "--workspace", "--no-deps", "--locked"]
+need_stdout = false
