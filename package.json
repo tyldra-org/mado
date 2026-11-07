@@ -22,7 +22,7 @@
     "deps:check": "bun scripts/check-deps.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.5",
     "@types/bun": "1.4.4",
     "prettier": "3.9.10",
     "prettier-plugin-svelte": "4.1.1",
