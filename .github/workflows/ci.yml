@@ -74,7 +74,9 @@ jobs:
           case "$EVENT" in
             pull_request) base=$(git rev-parse HEAD^1) ;;
             # A new branch or a force push has no usable "before": check everything.
-            push) git fetch --no-tags --depth=1 origin "$BEFORE" && base=$BEFORE || true ;;
+            push)
+              if git fetch --no-tags --depth=1 origin "$BEFORE"; then base=$BEFORE; fi
+              ;;
           esac
           echo "sha=$base" >> "$GITHUB_OUTPUT"
       - name: Decide what to check
