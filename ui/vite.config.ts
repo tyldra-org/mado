@@ -1,13 +1,23 @@
+/// <reference types="vitest/config" />
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { svelteTesting } from "@testing-library/svelte/vite";
 import { defineConfig } from "vite";
 
 // The build goes into the app's bundled resources (mado-docs/spec/15 section 2).
 export default defineConfig({
-  plugins: [svelte()],
+  // svelteTesting only acts under Vitest: it resolves Svelte's browser build
+  // and cleans the DOM after each test.
+  plugins: [svelte(), svelteTesting()],
   build: {
     outDir: "../app/resources/ui",
     emptyOutDir: true,
     target: "es2022",
   },
   clearScreen: false,
+  test: {
+    // Component and runes tests are *.svelte.test.ts and run here. Plain
+    // *.test.ts files belong to bun test (see bunfig.toml at the root).
+    include: ["src/**/*.svelte.test.ts"],
+    environment: "jsdom",
+  },
 });

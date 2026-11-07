@@ -51,9 +51,10 @@ Until the UI is designed (milestone M6), screens are plain functional components
 | Purpose | Command |
 | --- | --- |
 | Install | `bun install --frozen-lockfile` (the Rust toolchain pinned in `rust-toolchain.toml` installs itself) |
-| Everything CI runs | `./scripts/check.sh` (stages: `--list`; one stage: `./scripts/check.sh lint`). Missing tools such as `shellcheck`, `actionlint` or `cargo-deny` are skipped and named; CI runs `--all`, where a skip fails |
+| Everything CI runs | `./scripts/check.sh` (stages: `--list`; one stage: `./scripts/check.sh lint`; one language: `--scope rust` or `--scope ts`). Missing tools such as `shellcheck`, `actionlint` or `cargo-deny` are skipped and named; CI runs `--all`, where a skip fails |
 | One crate | `cargo test -p mado-<name>`, `cargo clippy -p mado-<name> --all-targets -- -D warnings` |
-| JS and TS tests | `bun test`, or `bun test <path>` for one file |
+| JS and TS tests | `bun test` (plain `*.test.ts`), or `bun test <path>` for one file |
+| Svelte component and runes tests | `bun run test:ui` (Vitest, `ui/src/**/*.svelte.test.ts`) |
 | Types | `bun run typecheck` |
 | Format | `cargo fmt --all && bun run format` |
 | Crate dependency rules | `bun run deps:check` |
@@ -62,9 +63,27 @@ Until the UI is designed (milestone M6), screens are plain functional components
 
 While iterating, run the narrowest check for what you touched, never the full suite:
 
-- Rust: `cargo check -p mado-<name>` after each edit, then the crate's `cargo test -p mado-<name>`. If `bacon` is installed, `bacon clippy` reruns Clippy on save.
+- Rust: `cargo check -p mado-<name>` after each edit, then `cargo nextest run -p mado-<name>` (one test: `-E 'test(<name>)'`; settings in `.config/nextest.toml`, whose `ci` profile CI uses) plus `cargo test -p mado-<name> --doc`. Without nextest, `cargo test -p mado-<name>`.
 - JS and TS: `bun test --changed` runs only tests affected by your changes (compare against a branch with `--changed=<branch>`); add `--bail` to stop at the first failure and `-t "<name>"` for one test.
-- UI types: `bun run --cwd ui typecheck --watch` keeps `svelte-check` running.
+- UI: `bun run --cwd ui test <file>` for one component test, `--changed` for affected ones; `bun run --cwd ui typecheck` for `svelte-check`.
+
+### Tools
+
+Use these when installed; they live on the developer's machine, never in this repository. `bacon` and the samply viewer are interactive, so recommend them to the user and run the plain commands yourself.
+
+| Need | Tool |
+| --- | --- |
+| Why a Rust test fails | `cargo test -p mado-<name> --no-run` prints the binary; `rust-lldb -- <binary> <test> --exact`; `RUST_LOG=debug` |
+| Where CPU time goes (engines, core, from M2) | `samply record --save-only -o /tmp/mado.json.gz -- <binary>`; the user opens it with `samply load` |
+| Which code no test reaches | `cargo llvm-cov nextest -p mado-<name> --no-tests=pass --summary-only` |
+| Generic code slowing builds | `cargo llvm-lines -p mado-<name> --lib` |
+| Unused dependencies | `cargo machete`, then confirm each by building |
+| Prove a speed-up | `hyperfine --warmup 1 '<before>' '<after>'` (cold Rust builds: `--prepare 'cargo clean -p mado-<name>'`) |
+| Why a Svelte effect reruns | `$inspect.trace()` as its first statement; remove before committing |
+| Check a changed component | `bunx @sveltejs/mcp svelte-autofixer <file> --svelte-version <installed>` |
+| Debug the UI inside the app (from M1) | Safari Web Inspector on macOS (WKWebView), Edge DevTools on Windows (WebView2) |
+
+Run project tools through `bun run` or `bunx`, never a global install: the global `tsc` may be a different TypeScript than the lockfile's. Installing or upgrading a tool is the user's call; Cargo tools come from `cargo binstall`.
 
 Run `./scripts/check.sh` once before you say the work is done.
 
@@ -97,7 +116,7 @@ Crate dependency direction (enforced by `bun run deps:check`): nothing depends o
 
 ## Skill routing
 
-Before the first action of any task, find the rows below that match the work and load those skills first, from the global `~/.agents/skills/` installation. Do not start reading code, editing or running commands until they are loaded, even when the task looks familiar. When several rows match, load each. When the work changes mid-task (for example from Rust to UI, or from coding to a commit), load the newly matching skills before continuing. The skills are not vendored here and are not required of human contributors.
+Before the first action of any task, find the rows below that match the work and load those skills first, from the global `~/.agents/skills/` installation. Do not start reading code, editing or running commands until they are loaded, even when the task looks familiar. When several rows match, load each. When the work changes mid-task (for example from Rust to UI, or from coding to a commit), load the newly matching skills before continuing. The skills are not vendored here and are not required of human contributors, except `mado-milestone` in `.agents/skills/`, which runs roadmap work when the user names a milestone or task (`m0`, `M2-T05`).
 
 | Work | Skill |
 | --- | --- |
@@ -162,7 +181,7 @@ The most common bug in a browser is a feature that works where you tested it and
 
 Do not say a change is done, ready or working until:
 
-1. The focused tests for what you changed pass, and new behaviour has a test that fails without the change.œœ
+1. The focused tests for what you changed pass, and new behaviour has a test that fails without the change.
 2. `./scripts/check.sh` passes.
 3. Once the app runs (M1 onward), you started it and exercised the change on its happy path, on the platform you are on.
 4. Your reply says which platform you ran it on and which you did not. Windows behaviour you could not run is "untested on Windows", never "done".
@@ -181,4 +200,4 @@ Engine behaviour that no document confirms is marked "(verify in M0)" in the spe
 ## Documentation
 
 - Code comments explain local reasons. The specs explain cross-component design. When your change makes a spec inaccurate, update the spec in the same change or record it under "Spec issues".
-- Do not commit plans, research notes or scratch files. Keep them outside the repository.œ
+- Do not commit plans, research notes or scratch files. Keep them outside the repository.

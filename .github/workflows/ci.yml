@@ -1,12 +1,23 @@
 # Continuous integration. Every job calls scripts/check.sh, the same entry
 # point developers run locally. Branch protection requires only the aggregate
 # job "ci", so jobs can be added or renamed without editing the ruleset.
+#
+# The "changes" job runs first and picks the jobs a change needs, so a
+# docs-only change finishes in seconds. Pull requests also narrow Rust to the
+# changed crates and their dependents, and bun tests to the files the change
+# reaches. On main, each job that runs checks the whole workspace and every
+# test; the weekly and manual runs check everything.
+# There are deliberately no paths filters on the triggers: a skipped workflow
+# never reports "ci", and the merge would wait forever.
 name: CI
 
 on:
   pull_request:
   push:
     branches: ["main"]
+  schedule:
+    # Weekly full run: new advisories for cargo deny, and runner image drift.
+    - cron: "17 4 * * 1"
   workflow_dispatch:
 
 # Read-only by default; no job needs more. No secrets are used, so fork pull
@@ -23,37 +34,62 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  static:
-    name: Format, lint and supply chain
-    runs-on: macos-latest
-    timeout-minutes: 20
+  changes:
+    # Decides which jobs this change needs (scripts/ci-scope.ts). Docs-only
+    # changes skip everything else; the "ci" job still reports.
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        # pipefail: a failing scope script must fail the job, never leave the
+        # outputs empty and skip every check.
+        shell: bash
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
+      full: ${{ steps.scope.outputs.full }}
+      rust: ${{ steps.scope.outputs.rust }}
+      ts: ${{ steps.scope.outputs.ts }}
+      ts-global: ${{ steps.scope.outputs.tsGlobal }}
+      supply: ${{ steps.scope.outputs.supply }}
+      shell: ${{ steps.scope.outputs.shell }}
+      workflows: ${{ steps.scope.outputs.workflows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A pull request checks out its merge commit; its first parent is
+          # the base branch, so the diff is exactly what the PR changes.
+          fetch-depth: 2
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - name: Install the pinned Rust toolchain
-        run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
-        with:
-          tool: cargo-deny
-      - name: Cache Bun downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.os == 'Windows' && '~\.bun' || '~/.bun/install/cache' }}
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Check
-        run: ./scripts/check.sh --all format lint supply
+      - name: Find the base commit
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          base=""
+          case "$EVENT" in
+            pull_request) base=$(git rev-parse HEAD^1) ;;
+            # A new branch or a force push has no usable "before": check everything.
+            push)
+              if git fetch --no-tags --depth=1 origin "$BEFORE"; then base=$BEFORE; fi
+              ;;
+          esac
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - name: Decide what to check
+        id: scope
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: bun scripts/ci-scope.ts areas "$BASE" | tee -a "$GITHUB_OUTPUT"
 
-  test:
-    name: Build and test (${{ matrix.os }})
-    # Mado ships on macOS and Windows; both engines must build and pass.
+  rust:
+    name: Rust (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    # Mado ships on macOS and Windows; both engines must lint, build and pass.
     strategy:
       fail-fast: false
       matrix:
@@ -63,16 +99,68 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # Line tables keep file:line in backtraces with far less debug info to
+      # compile, link and cache. rust-cache already turns incremental off.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      # .config/nextest.toml: report every failure, never retry.
+      NEXTEST_PROFILE: ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 2
           persist-credentials: false
+      # Bun runs the dependency rule check and the crate scope script; neither
+      # needs bun install.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
       - name: Install the pinned Rust toolchain
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Only main writes the cache; pull requests restore it. Keeps PR
+          # caches from evicting the one every PR starts from.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-nextest
+      - name: Choose crates
+        # Pull requests check the changed crates and everything depending on
+        # them; main, schedules and manual runs check the whole workspace.
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.full != 'true' && needs.changes.outputs.base || '' }}
+        run: bun scripts/ci-scope.ts cargo "$BASE" | tee -a "$GITHUB_ENV"
+      - name: Check
+        run: ./scripts/check.sh --all --scope rust format lint build test
+
+  ts:
+    name: TypeScript (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Format, lint and typecheck do not depend on the OS: run them once,
+          # on the fastest runner. Build and test also run on Windows.
+          - os: ubuntu-latest
+            stages: format lint build test
+          - os: windows-latest
+            stages: build test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
       - name: Cache Bun downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -82,28 +170,61 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Check
-        run: ./scripts/check.sh --all build test
+        env:
+          # Pull requests that change only source files run the tests those
+          # files reach; dependency or config changes run every test.
+          CHECK_TS_CHANGED_SINCE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.full != 'true' && needs.changes.outputs.ts-global != 'true' && needs.changes.outputs.base || '' }}
+        run: ./scripts/check.sh --all --scope ts ${{ matrix.stages }}
 
-  scripts:
-    name: Shell scripts and workflows
+  supply:
+    name: Supply chain
+    needs: changes
+    if: needs.changes.outputs.supply == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-deny
+      - name: Check
+        run: ./scripts/check.sh --all supply
+
+  scripts:
+    name: Shell scripts and workflows
+    needs: changes
+    if: needs.changes.outputs.shell == 'true' || needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: v1.7.12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore actionlint
+        id: actionlint
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin/actionlint
+          key: ${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}
       - name: Install actionlint
+        if: steps.actionlint.outputs.cache-hit != 'true'
         # go install verifies the module against the Go checksum database.
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        run: go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
       - name: Check
         run: PATH="$(go env GOPATH)/bin:$PATH" ./scripts/check.sh --all shell workflows
 
   required:
     # The single required status check. It succeeds only if every needed job
-    # succeeded or was intentionally skipped.
+    # succeeded or was skipped because the change did not need it.
     name: ci
     if: always()
-    needs: [static, test, scripts]
+    needs: [changes, rust, ts, supply, scripts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
