@@ -34,6 +34,19 @@ cd "$ROOT"
 CARGO_PACKAGES=${CHECK_CARGO_PACKAGES:---workspace}
 CARGO_DOC_PACKAGES=${CHECK_CARGO_DOC_PACKAGES-$CARGO_PACKAGES}
 
+# These are pasted into the commands below, so only package selectors and a
+# commit or branch name get through.
+for value in "$CARGO_PACKAGES" "$CARGO_DOC_PACKAGES"; do
+  if [[ ! $value =~ ^[A-Za-z0-9_\ -]*$ ]]; then
+    printf 'check.sh: not a cargo package selection: %s\n' "$value" >&2
+    exit 2
+  fi
+done
+if [[ -n ${CHECK_TS_CHANGED_SINCE:-} && ! $CHECK_TS_CHANGED_SINCE =~ ^[A-Za-z0-9_./-]+$ ]]; then
+  printf 'check.sh: CHECK_TS_CHANGED_SINCE is not a commit or branch: %s\n' "$CHECK_TS_CHANGED_SINCE" >&2
+  exit 2
+fi
+
 rust_test_default() {
   if cargo nextest --version >/dev/null 2>&1; then
     # nextest does not run doc tests; cargo test --doc covers them.
