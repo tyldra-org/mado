@@ -213,7 +213,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      # Dependabot cannot bump these two; update them by hand.
       ACTIONLINT_VERSION: v1.7.12
+      ZIZMOR_VERSION: "1.32.0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -235,8 +237,11 @@ jobs:
         with:
           path: ~/go/bin/actionlint
           key: ${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}
+      # zizmor from PyPI through pipx, which GitHub's Linux images include.
+      - name: Install zizmor
+        run: pipx install "zizmor==$ZIZMOR_VERSION"
       - name: Check
-        run: PATH="$(go env GOPATH)/bin:$PATH" ./scripts/check.sh --all shell workflows
+        run: PATH="$(go env GOPATH)/bin:$HOME/.local/bin:$PATH" ./scripts/check.sh --all shell workflows
 
   required:
     # The single required status check. It succeeds only if every needed job
