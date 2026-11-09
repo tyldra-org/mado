@@ -42,7 +42,7 @@ bun install --frozen-lockfile
    | Build | `cargo build --workspace --locked` | `bun run build` |
    | Test | `cargo nextest run --workspace` plus `cargo test --doc`, or `cargo test --workspace` without nextest | `bun test`, then Vitest in `ui/` (`bun run test:ui`) |
    | Supply chain | `cargo deny check` | |
-   | Shell and workflows | `shellcheck`, `actionlint` | |
+   | Shell and workflows | `shellcheck`, `actionlint`, `zizmor` | |
 
    `bun run format` and `cargo fmt --all` fix formatting.
 

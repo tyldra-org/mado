@@ -153,7 +153,7 @@ if [ "${list_only:-false}" = true ]; then
         ;;
       supply) printf '%-11s %s\n' "$s" 'cargo deny check' ;;
       shell) printf '%-11s %s\n' "$s" 'shellcheck <tracked *.sh files>' ;;
-      workflows) printf '%-11s %s\n' "$s" 'actionlint' ;;
+      workflows) printf '%-11s %s\n' "$s" 'actionlint, zizmor --offline' ;;
     esac
   done
   exit 0
@@ -259,11 +259,15 @@ run_workflows_stage() {
     record workflows ok "no workflows"
     return
   fi
-  if ! command -v actionlint >/dev/null 2>&1; then
-    skip_or_fail workflows "missing tool: actionlint"
-    return
-  fi
-  run_timed workflows actionlint actionlint
+  local tool
+  for tool in actionlint zizmor; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      skip_or_fail workflows "missing tool: $tool"
+      return
+    fi
+  done
+  # actionlint for syntax and expressions, zizmor for injection, permissions and pins.
+  run_timed workflows "actionlint, zizmor" bash -c 'actionlint && zizmor --offline --min-severity low .github/workflows'
 }
 
 for stage in "${stages[@]}"; do
