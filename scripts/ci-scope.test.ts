@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { affectedCrates, type Crate, cargoArgs, classify, EVERYTHING } from "./ci-scope";
+import { affectedCrates, type Crate, cargoArgs, classify, EVERYTHING, unlisted } from "./ci-scope";
 
 const crates: Crate[] = [
   { name: "mado-app", dir: "app", deps: ["mado-core", "mado-engine-webkit"], hasLib: false },
@@ -25,6 +25,10 @@ describe("classify", () => {
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/dependabot.yml",
         "bacon.toml",
+        "LICENSE",
+        ".gitignore",
+        "lists/README.md",
+        "proto/README.md",
       ]),
     ).toEqual({
       full: false,
@@ -89,6 +93,12 @@ describe("classify", () => {
     expect(classify([".github/workflows/release.yml"])).toMatchObject({ workflows: true });
   });
 
+  test("a path no list names runs everything, never nothing", () => {
+    expect(unlisted(["README.md", "lists/easylist.txt"])).toEqual(["lists/easylist.txt"]);
+    expect(classify(["lists/easylist.txt"])).toEqual(EVERYTHING);
+    expect(classify(["README.md", "assets/logo.svg"])).toEqual(EVERYTHING);
+  });
+
   test("the CI wiring itself runs everything", () => {
     expect(classify([".github/workflows/ci.yml"])).toEqual(EVERYTHING);
     expect(classify(["scripts/check.sh"])).toEqual(EVERYTHING);
@@ -123,6 +133,10 @@ describe("affectedCrates", () => {
     expect(affectedCrates([".config/nextest.toml"], crates)).toBe("all");
   });
 
+  test("a path no list names affects every crate", () => {
+    expect(affectedCrates(["crates/mado-cli/src/main.rs", "assets/logo.svg"], crates)).toBe("all");
+  });
+
   test("no nameable crate falls back to all", () => {
     expect(affectedCrates(["scripts/check-deps.ts"], crates)).toBe("all");
   });
@@ -153,5 +167,12 @@ describe("cargoArgs", () => {
 
   test("binary-only scopes skip doc tests", () => {
     expect(cargoArgs(["mado-cli"], crates).docPackages).toBe("");
+  });
+
+  test("a name cargo would never produce selects the workspace", () => {
+    expect(cargoArgs(["mado-core", "x;id"], crates)).toEqual({
+      packages: "--workspace",
+      docPackages: "--workspace",
+    });
   });
 });

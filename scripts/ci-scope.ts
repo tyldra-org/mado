@@ -2,7 +2,8 @@
 // Usage:
 //   bun scripts/ci-scope.ts areas <base> [head]   which checks to run (GITHUB_OUTPUT lines)
 //   bun scripts/ci-scope.ts cargo <base> [head]   which crates to check (GITHUB_ENV lines)
-// An empty, all-zero or unknown <base> means "check everything".
+// An empty, all-zero or unknown <base> means "check everything". So does a
+// changed path that no list below names: add it to the list that reads it.
 
 export interface Areas {
   /** Run every check: the CI wiring itself changed, or the diff is unknown. */
@@ -80,6 +81,33 @@ const SHELL = [/\.(sh|bash)$/];
 
 const WORKFLOWS = [/^\.github\/(workflows|actions)\//];
 
+/**
+ * Files no check reads: docs, community files and personal tool config. A
+ * Markdown file that code reads (crate docs pulled in with include_str!) goes
+ * in the list for that code instead.
+ */
+const DOCS = [
+  /\.md$/,
+  /^docs\//,
+  /^LICENSE/,
+  /^\.gitignore$/,
+  /^\.github\/(ISSUE_TEMPLATE\/|CODEOWNERS$|dependabot\.yml$)/,
+  /^bacon\.toml$/,
+];
+
+/** Every list above. A path in none of them runs everything. */
+const LISTED = [
+  ...FULL,
+  RUST_DIRS,
+  ...RUST_GLOBAL,
+  ...TS,
+  ...TS_GLOBAL,
+  ...SUPPLY,
+  ...SHELL,
+  ...WORKFLOWS,
+  ...DOCS,
+];
+
 const any = (file: string, patterns: RegExp[]) => patterns.some((p) => p.test(file));
 
 export const EVERYTHING: Areas = {
@@ -92,8 +120,14 @@ export const EVERYTHING: Areas = {
   workflows: true,
 };
 
+/** Changed paths no list names. */
+export function unlisted(files: readonly string[]): string[] {
+  return files.filter((f) => !any(f, LISTED));
+}
+
 export function classify(files: readonly string[]): Areas {
-  if (files.some((f) => any(f, FULL))) return EVERYTHING;
+  // An unlisted path costs a full run, never a skipped check.
+  if (files.some((f) => any(f, FULL)) || unlisted(files).length > 0) return EVERYTHING;
   return {
     full: false,
     rust: files.some(
@@ -116,7 +150,9 @@ export function affectedCrates(
   files: readonly string[],
   crates: readonly Crate[],
 ): string[] | "all" {
-  if (files.some((f) => any(f, FULL) || any(f, RUST_GLOBAL))) return "all";
+  if (files.some((f) => any(f, FULL) || any(f, RUST_GLOBAL)) || unlisted(files).length > 0) {
+    return "all";
+  }
   // Longest directory first, so a nested crate wins over its parent.
   const byDir = [...crates].sort((a, b) => b.dir.length - a.dir.length);
   const touched = new Set<string>();
@@ -142,9 +178,14 @@ export function affectedCrates(
   return [...affected].sort();
 }
 
+/** Cargo package names. check.sh pastes the selectors into its commands. */
+const CRATE_NAME = /^[A-Za-z0-9_-]+$/;
+
 /** Cargo package selectors for check.sh: all crates, or `-p` per crate. */
 export function cargoArgs(affected: string[] | "all", crates: readonly Crate[]) {
-  if (affected === "all") return { packages: "--workspace", docPackages: "--workspace" };
+  if (affected === "all" || !affected.every((n) => CRATE_NAME.test(n))) {
+    return { packages: "--workspace", docPackages: "--workspace" };
+  }
   const libs = new Set(crates.filter((c) => c.hasLib).map((c) => c.name));
   const select = (names: string[]) => names.map((n) => `-p ${n}`).join(" ");
   return { packages: select(affected), docPackages: select(affected.filter((n) => libs.has(n))) };
@@ -192,6 +233,9 @@ if (import.meta.main) {
   const files = await changedFiles(base, head);
   if (mode === "areas") {
     const areas = files ? classify(files) : EVERYTHING;
+    for (const file of unlisted(files ?? [])) {
+      console.error(`no list in scripts/ci-scope.ts names ${file}: checking everything`);
+    }
     for (const [key, value] of Object.entries(areas)) console.log(`${key}=${value}`);
     console.error(files ? `${files.length} changed file(s)` : "diff unknown: checking everything");
   } else if (mode === "cargo") {
