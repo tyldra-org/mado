@@ -52,7 +52,7 @@ bun install --frozen-lockfile
 
 6. Mado ships on macOS and Windows. If your change touches platform code, say which platforms you ran it on. CI runs both.
 
-   CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS and Windows. A TypeScript change runs format, lint and typecheck once and the tests it reaches on Linux and Windows. Dependency, toolchain or CI changes check everything, and so does every push to `main`.
+   CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS and Windows. A TypeScript change runs format, lint and typecheck once and the tests it reaches on Linux and Windows. Dependency, toolchain or CI changes check everything, and so does every push to `main`. So does a file in none of the lists in `scripts/ci-scope.ts`: when you add a new kind of file, add it to the list for what reads it, with a case in `scripts/ci-scope.test.ts`.
 
 ## Optional local tools
 

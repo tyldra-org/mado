@@ -3,7 +3,8 @@
 # job "ci", so jobs can be added or renamed without editing the ruleset.
 #
 # The "changes" job runs first and picks the jobs a change needs, so a
-# docs-only change finishes in seconds. Pull requests also narrow Rust to the
+# docs-only change finishes in seconds. A changed path that no list in
+# scripts/ci-scope.ts names runs everything. Pull requests also narrow Rust to the
 # changed crates and their dependents, and bun tests to the files the change
 # reaches. On main, each job that runs checks the whole workspace and every
 # test; the weekly and manual runs check everything.
@@ -78,6 +79,8 @@ jobs:
               if git fetch --no-tags --depth=1 origin "$BEFORE"; then base=$BEFORE; fi
               ;;
           esac
+          # The test jobs paste the base into commands: a full commit ID or nothing.
+          if [[ ! $base =~ ^[0-9a-f]{40}$ ]]; then base=""; fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
       - name: Decide what to check
         id: scope
@@ -161,14 +164,23 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - name: Cache Bun downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Only main saves the cache; pull requests restore main's, so their
+      # entries never evict it.
+      - name: Restore Bun downloads
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.os == 'Windows' && '~\.bun' || '~/.bun/install/cache' }}
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Save Bun downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.os == 'Windows' && '~\.bun' || '~/.bun/install/cache' }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - name: Check
         env:
           # Pull requests that change only source files run the tests those
@@ -206,9 +218,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Only main saves actionlint; pull requests restore it.
       - name: Restore actionlint
         id: actionlint
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/bin/actionlint
           key: ${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}
@@ -216,6 +229,12 @@ jobs:
         if: steps.actionlint.outputs.cache-hit != 'true'
         # go install verifies the module against the Go checksum database.
         run: go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
+      - name: Save actionlint
+        if: github.ref == 'refs/heads/main' && steps.actionlint.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin/actionlint
+          key: ${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}
       - name: Check
         run: PATH="$(go env GOPATH)/bin:$PATH" ./scripts/check.sh --all shell workflows
 
