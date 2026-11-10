@@ -51,7 +51,7 @@ Until the UI is designed (milestone M6), screens are plain functional components
 | Purpose | Command |
 | --- | --- |
 | Install | `bun install --frozen-lockfile` (the Rust toolchain pinned in `rust-toolchain.toml` installs itself) |
-| Everything CI runs | `./scripts/check.sh` (stages: `--list`; one stage: `./scripts/check.sh lint`; one language: `--scope rust` or `--scope ts`). Missing tools such as `shellcheck`, `actionlint` or `cargo-deny` are skipped and named; CI runs `--all`, where a skip fails |
+| Everything CI runs | `./scripts/check.sh` (stages: `--list`; one stage: `./scripts/check.sh lint`; one language: `--scope rust` or `--scope ts`). Missing tools such as `shellcheck`, `actionlint`, `zizmor` or `cargo-deny` are skipped and named; CI runs `--all`, where a skip fails |
 | One crate | `cargo test -p mado-<name>`, `cargo clippy -p mado-<name> --all-targets -- -D warnings` |
 | JS and TS tests | `bun test` (plain `*.test.ts`), or `bun test <path>` for one file |
 | Svelte component and runes tests | `bun run test:ui` (Vitest, `ui/src/**/*.svelte.test.ts`) |
@@ -60,6 +60,7 @@ Until the UI is designed (milestone M6), screens are plain functional components
 | Crate dependency rules | `bun run deps:check` |
 | UI dev server | `bun run dev:ui` |
 | Page scripts | `bun run build:inject` |
+| What CI runs for your committed changes | `bun scripts/ci-scope.ts areas origin/main` (jobs), `bun scripts/ci-scope.ts cargo origin/main` (crates) |
 
 While iterating, run the narrowest check for what you touched, never the full suite:
 
@@ -84,6 +85,8 @@ Use these when installed; they live on the developer's machine, never in this re
 | Debug the UI inside the app (from M1) | Safari Web Inspector on macOS (WKWebView), Edge DevTools on Windows (WebView2) |
 
 Run project tools through `bun run` or `bunx`, never a global install: the global `tsc` may be a different TypeScript than the lockfile's. Installing or upgrading a tool is the user's call; Cargo tools come from `cargo binstall`.
+
+A new kind of file, such as a new top-level folder or config file, goes in a list in `scripts/ci-scope.ts` with a case in `scripts/ci-scope.test.ts`. A path that no list names makes CI run every check.
 
 Run `./scripts/check.sh` once before you say the work is done.
 
@@ -127,6 +130,7 @@ Before the first action of any task, find the rows below that match the work and
 | Svelte components, runes, `.svelte.ts` modules and UI tests in `ui/` | `svelte-development` |
 | Svelte UI screens, layout, motion, color (from M6; placeholders before that) | `design` |
 | Reviewing a diff, branch or pull request | `code-review` plus the stack skill |
+| CI workflows, `scripts/check.sh`, `scripts/ci-scope.ts`, README, CONTRIBUTING, SECURITY, releases | `open-source-repo` |
 | Only when the user asks to simplify code or for a strict quality review | `code-quality` |
 | Any Git command: status, diff, log, staging, commits, branches, worktrees, history | `git` |
 | GitHub work: issues, pull requests, reviews, Actions and CI logs, releases, settings | `github` |
