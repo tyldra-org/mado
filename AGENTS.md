@@ -149,10 +149,12 @@ Before the first action of any task, find the rows below that match the work and
 
 ## Never run
 
-Only when the user asks for it in this conversation:
+Only when the user asks for it, in this conversation or in their standing instructions (for example an automatic mode in their own agent files): commit, push a work branch, open or merge a pull request through the required `ci` check, and open, comment on or close issues for the work.
 
-- Commit, push (any form, including `--force`), rewrite history, create a tag or open a pull request.
-- Change GitHub state (`gh repo edit`, `gh label`, `gh release create`, `gh secret`, `gh api -X POST|PUT|PATCH|DELETE`).
+Only when the user asks for it in this conversation, whatever their standing instructions:
+
+- Force-push, rewrite pushed history, or create a tag or release.
+- Change GitHub settings or other state (`gh repo edit`, `gh label`, `gh release create`, `gh secret`, `gh api -X POST|PUT|PATCH|DELETE`).
 - Publish packages or sign releases.
 
 Never, even when asked casually: print or upload secrets, signing keys, certificates or the user's browser data.
