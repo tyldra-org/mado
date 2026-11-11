@@ -1,19 +1,21 @@
 <!--
-Title must be a conventional commit: type(scope): description
-It becomes the squash-merge commit subject.
+The title becomes the commit subject: type(scope): summary, one change,
+imperative, under 64 characters. This description stays here for reviewers.
 -->
 
 ## What and why
 
-<!-- What does this change and what problem does it solve? -->
+<!-- One to three sentences: the problem and what this change does about it.
+Put a longer write-up, such as an agent's notes, at the end inside
+<details><summary>Notes from (model and tool)</summary> ... </details>. -->
 
 <!-- Required: the issue this resolves. The linked-issue check fails without it. -->
 Closes #
 
 ## How it was verified
 
-<!-- Exact commands run and their results; screenshots for UI changes.
-Say which platforms you ran it on: macOS, Windows or both. -->
+<!-- The commands that matter and their results, and the platforms you ran
+them on: macOS, Windows or both. Screenshots for UI changes. -->
 
 ```sh
 ./scripts/check.sh
