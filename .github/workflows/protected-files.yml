@@ -1,0 +1,84 @@
+# Outside contributors cannot change the files maintainers own: repository
+# automation (.github), the license and policy documents, AGENTS.md, and the
+# scripts CI and releases trust. A pull request that touches one fails unless
+# its author has write access. Dependabot is exempt; it only updates
+# dependencies and action pins.
+#
+# pull_request_target runs this file from the default branch, so a pull
+# request cannot rewrite the check that judges it. It never checks out or runs
+# the pull request's code: it reads the author's access and the names of the
+# changed files from the API, with a read-only token.
+name: protected-files
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout; reads API metadata only
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: protected-files-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  protected-files:
+    name: protected-files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check the files this pull request changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          case $AUTHOR in
+            'dependabot[bot]')
+              echo "Opened by $AUTHOR: dependency updates only."
+              exit 0
+              ;;
+          esac
+          # Fail closed: an API error counts as no write access.
+          access=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2>/dev/null || echo none)
+          case $access in
+            admin | write)
+              echo "$AUTHOR has $access access and may change any file."
+              exit 0
+              ;;
+          esac
+          protected() {
+            case $1 in
+              .github/*) return 0 ;;
+              LICENSE | LICENSE.* | LICENSE-* | COPYING | COPYING.* | NOTICE | NOTICE.*) return 0 ;;
+              SECURITY.md | CODE_OF_CONDUCT.md | CONTRIBUTING.md | GOVERNANCE.md | SUPPORT.md) return 0 ;;
+              MAINTAINERS | MAINTAINERS.md | CODEOWNERS | docs/CODEOWNERS) return 0 ;;
+              AGENTS.md | */AGENTS.md) return 0 ;;
+              scripts/check.sh | scripts/ci-scope.*) return 0 ;;
+              # Dependency policy, and the signed lists Mado ships.
+              scripts/check-deps.* | deny.toml | lists/*) return 0 ;;
+            esac
+            return 1
+          }
+          # A failed listing stops the step (bash -e) instead of passing it.
+          files=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          blocked=()
+          while IFS= read -r file; do
+            if [ -n "$file" ] && protected "$file"; then blocked+=("$file"); fi
+          done <<< "$files"
+          if [ ${#blocked[@]} -eq 0 ]; then
+            echo "No maintainer-owned files changed."
+            exit 0
+          fi
+          # File names come from the pull request; keep them from being read as
+          # workflow commands.
+          stop=$(openssl rand -hex 16)
+          echo "::stop-commands::$stop"
+          echo "Only maintainers change these files:"
+          printf '  %s\n' "${blocked[@]}"
+          echo "::$stop::"
+          echo "::error::This pull request changes files only maintainers change. Open an issue describing the change instead (CONTRIBUTING.md)."
+          exit 1
