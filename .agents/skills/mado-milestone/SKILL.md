@@ -48,7 +48,7 @@ ten years, in a team where every change is reviewed by someone stricter.
 
 Naming a milestone or task is the user's request, in this conversation, to
 open its issues, push branches, open pull requests and squash-merge them after
-`ci` passes. It does not cover pushing to `main`, force-pushing, tags,
+the required checks (`ci`, `linked-issue`) pass. It does not cover pushing to `main`, force-pushing, tags,
 releases, labels or GitHub settings.
 
 ## Preflight, once per run

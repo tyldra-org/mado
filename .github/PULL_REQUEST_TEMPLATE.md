@@ -7,6 +7,7 @@ It becomes the squash-merge commit subject.
 
 <!-- What does this change and what problem does it solve? -->
 
+<!-- Required: the issue this resolves. The linked-issue check fails without it. -->
 Closes #
 
 ## How it was verified
