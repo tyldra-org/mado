@@ -1,28 +1,31 @@
 <!--
-Title must be a conventional commit: type(scope): description
-It becomes the squash-merge commit subject.
+Title: the commit subject. type(scope): summary, one change, imperative,
+under 64 characters.
 -->
 
-## What and why
-
-<!-- What does this change and what problem does it solve? -->
-
-<!-- Required: the issue this resolves. The linked-issue check fails without it. -->
 Closes #
 
-## How it was verified
+<!-- One to three sentences: the problem, and what this change does about it.
+Add a screenshot or a short video for anything visible. -->
 
-<!-- Exact commands run and their results; screenshots for UI changes.
-Say which platforms you ran it on: macOS, Windows or both. -->
+### Review focus
 
-```sh
-./scripts/check.sh
-```
+<!-- Where you want a careful look, and anything you are unsure about.
+Delete this section if there is nothing. -->
 
-## Checklist
+### Testing
 
-- [ ] The title follows Conventional Commits.
-- [ ] Tests cover the change, or the reason they do not is stated above.
-- [ ] Documentation and `CHANGELOG.md` are updated for user-visible changes.
-- [ ] Roadmap subtasks touched by this change are ticked, or none apply.
-- [ ] Breaking changes are marked with `!` and the migration is described.
+<!-- What CI does not prove: what you ran by hand, on which machines and
+systems, and what you could not test. -->
+
+- [ ] `CHANGELOG.md` has an entry under Unreleased, or nothing user-visible changed.
+- [ ] Docs are updated, or the change needs none.
+- [ ] A breaking change has `!` in the title and the migration above.
+
+<!-- A long write-up, such as an agent's notes, goes last:
+<details><summary>Notes from (model and tool)</summary>
+
+...
+
+</details>
+-->
