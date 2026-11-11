@@ -1,5 +1,6 @@
 # Dependabot pull requests land on main by themselves once the
-# ruleset's required check "ci" passes. Patch and minor
+# ruleset's required checks pass: "ci", and "linked-issue", which passes
+# for Dependabot without an issue. Patch and minor
 # updates and all GitHub Actions updates get auto-merge; a major package
 # update stays open for a maintainer. A failing check leaves any of them open.
 # Needs "Allow auto-merge" on in the repository settings.
