@@ -159,6 +159,8 @@ Only when the user asks for it in this conversation, whatever their standing ins
 
 Never, even when asked casually: print or upload secrets, signing keys, certificates or the user's browser data.
 
+Without write access to the repository, do not edit the files CONTRIBUTING lists under "Files only maintainers change": the `protected-files` check fails the pull request.
+
 ## Hit every surface
 
 The most common bug in a browser is a feature that works where you tested it and is missing everywhere else. Before you call a change done, go through this list and say which entries applied:

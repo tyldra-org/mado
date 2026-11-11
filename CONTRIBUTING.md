@@ -90,6 +90,16 @@ type(optional-scope): short imperative description
 
 Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Scopes are crate or package names without the `mado-` prefix, for example `fix(navigation): keep the opener selected after closing a tab`. Mark breaking changes with `!` after the type or scope and explain the migration in the body.
 
+## Files only maintainers change
+
+Pull requests from contributors without write access cannot change these; the `protected-files` check fails if they do. Open an issue describing the change instead.
+
+- `.github/`: workflows, issue forms, the pull request template and Dependabot.
+- `LICENSE`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` and other policy files.
+- `AGENTS.md` files, at the root and in folders.
+- `scripts/check.sh`, `scripts/ci-scope.ts` and `scripts/check-deps.ts`, which decide what CI checks, and `deny.toml`, the dependency and license policy.
+- `lists/`, the signed lists Mado ships.
+
 ## Pull requests
 
 - Name the issue it resolves in the description: `Closes #<number>`. The `linked-issue` check fails without one. Dependabot's pull requests are the only exception.
