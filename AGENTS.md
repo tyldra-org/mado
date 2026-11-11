@@ -199,9 +199,11 @@ Engine behaviour that no document confirms is marked "(verify in M0)" in the spe
 ## Git and pull requests
 
 - What needs the user's explicit request is listed in [Never run](#never-run).
-- Commits and PR titles use Conventional Commits; the scope is the crate or package name without `mado-`: `fix(navigation): select the opener after closing a tab`.
+- Commits and PR titles use Conventional Commits; the scope is the crate or package name without `mado-`: `fix(navigation): select the opener after closing a tab`. One change per commit.
+- Commit body, unless the subject says it all: what the code does now and what goes wrong, then the change as an order to the code, in three sentences or fewer. No file lists, testing notes or Markdown. The full rules are in the `git` skill.
 - Every PR closes an issue: find or open it first and put `Closes #<n>` in the body. The required `linked-issue` check fails without one; only Dependabot is exempt.
-- PR body: the problem in a sentence or two, how you fixed it, the exact commands you ran and on which platforms. End with the model and tool that did the work.
+- PR body: open with one to three sentences on the problem and what the change does, then the commands you ran and on which platforms. Put a longer write-up in a collapsed `<details>` block whose summary names the model and tool that did the work.
+- The squash commit gets its own message, passed with `gh pr merge --body-file`; the PR body never becomes it.
 - UI changes need before and after screenshots; motion needs a short video.
 - Pin GitHub Actions to full commit SHAs with the tag in a trailing comment.
 - Add a `CHANGELOG.md` entry under `Unreleased` for user-visible changes.

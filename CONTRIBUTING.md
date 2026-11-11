@@ -82,13 +82,18 @@ Debug Rust with `rust-lldb` or your editor's LLDB integration on the test or app
 
 ## Commit messages and pull request titles
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash merged and the pull request title becomes the commit subject, so the title should follow the format (a maintainer may edit it before merging):
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash merged: the pull request title becomes the commit subject, and the maintainer who merges writes the commit body. Your description stays on the pull request. Write the title as:
 
 ```text
-type(optional-scope): short imperative description
+type(optional-scope): short imperative summary
 ```
 
-Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Scopes are crate or package names without the `mado-` prefix, for example `fix(navigation): keep the opener selected after closing a tab`. Mark breaking changes with `!` after the type or scope and explain the migration in the body.
+- One change, named by what it does: `fix(navigation): keep the opener selected after closing a tab`, not `fix: update tab code`. A title with two actions ("fix X and add Y") describes two changes; split them.
+- Lowercase after the colon, no period, under 64 characters.
+
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Scopes are crate or package names without the `mado-` prefix. Mark breaking changes with `!` after the type or scope and explain the migration in the body.
+
+Commits on your branch follow the same subject rules. When a commit needs a body, write a few plain sentences: what the code does now and what goes wrong, then what the commit changes. No list of files, no testing notes, no Markdown.
 
 ## Files only maintainers change
 

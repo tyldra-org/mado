@@ -1,6 +1,6 @@
 <!--
-Title must be a conventional commit: type(scope): description
-It becomes the squash-merge commit subject.
+The title becomes the commit subject: type(scope): summary, one change,
+imperative, under 64 characters. This description stays here for reviewers.
 -->
 
 ## What and why

@@ -27,14 +27,15 @@ none remain.
 - Title: Conventional Commit with the task ID, for example
   `feat(settings): registry and settings commands (M1-T05)`.
 - Body, in the repository template's sections:
-  - the problem and the approach in two or three sentences;
+  - an opener of two or three sentences: the problem and what the PR
+    changes. It is the part every reviewer reads; write it as a person
+    would;
   - a link to the design note, and any deviation from it with the reason;
-  - the acceptance matrix with evidence;
-  - the wiring trace and the surface list;
-  - risks and how to roll back;
-  - platforms run and not run;
+  - risks and how to roll back; platforms run and not run;
   - Spec issues and follow-up issues raised;
-  - last line: the model and tool that did the work.
+  - the acceptance matrix with evidence, the wiring trace and the surface
+    list, inside `<details><summary>` whose summary names the model and
+    tool that did the work.
 - `Closes #<issue>`: the required `linked-issue` check fails a PR that
   closes no issue. When the PR holds the whole task on both platforms, it
   closes the task's issue. Otherwise, before opening the PR, add sub-issues to
@@ -51,10 +52,13 @@ push after pushing. Three root-cause attempts at most, then stop the task.
 
 ## Merge
 
-1. Arm auto-merge as soon as the PR is open:
-   `gh pr merge <n> --auto --squash --delete-branch --match-head-commit <sha>`.
-   GitHub merges once the required checks pass. Never `--admin`, never a
-   bypass.
+1. Write the squash commit's body by the `git` skill's commit-message
+   rules: what the code did without the task and what goes wrong, what the
+   PR changes, three sentences or fewer, then `Closes: #<issue>`. Never the
+   PR description. Arm auto-merge as soon as the PR is open:
+   `gh pr merge <n> --auto --squash --delete-branch --match-head-commit <sha>
+   --body-file <msg>`. GitHub merges once the required checks pass. Never
+   `--admin`, never a bypass.
 2. `git switch main && git pull --ff-only`, then rerun the task's focused
    tests on `main`.
 3. If `main` broke, revert first (a revert PR), then fix forward in a new
