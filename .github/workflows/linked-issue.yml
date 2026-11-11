@@ -1,0 +1,50 @@
+# Every pull request resolves an issue: its description names one with a
+# closing keyword ("Closes #12"), or one is linked under Development. Pull
+# requests opened by automation need none. This runs again when the
+# description changes, so it is a required check of its own, next to
+# "ci", never a job inside ci.yml: an edit must not rerun the
+# build, and a description-only rerun must not report the build as passed.
+name: linked-issue
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: linked-issue-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  linked-issue:
+    name: linked-issue
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Find the issue this pull request resolves
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # Automation that opens pull requests. Add the login of any other bot
+          # this repository uses; a login ending in [bot] belongs to a GitHub
+          # App and no person can take it.
+          case $AUTHOR in
+            'dependabot[bot]')
+              echo "Opened by $AUTHOR: no issue needed."
+              exit 0
+              ;;
+          esac
+          linked=$(gh pr view "$NUMBER" --repo "$REPO" --json closingIssuesReferences \
+            --jq '.closingIssuesReferences | length')
+          if [ "$linked" -eq 0 ]; then
+            echo '::error::Link the issue this pull request resolves: add "Closes #<number>" to its description. Open an issue first if there is none.'
+            exit 1
+          fi
+          echo "Resolves $linked issue(s)."

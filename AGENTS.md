@@ -149,7 +149,7 @@ Before the first action of any task, find the rows below that match the work and
 
 ## Never run
 
-Only when the user asks for it, in this conversation or in their standing instructions (for example an automatic mode in their own agent files): commit, push a work branch, open or merge a pull request through the required `ci` check, and open, comment on or close issues for the work.
+Only when the user asks for it, in this conversation or in their standing instructions (for example an automatic mode in their own agent files): commit, push a work branch, open or merge a pull request through the required checks, and open, comment on or close issues for the work.
 
 Only when the user asks for it in this conversation, whatever their standing instructions:
 
@@ -198,6 +198,7 @@ Engine behaviour that no document confirms is marked "(verify in M0)" in the spe
 
 - What needs the user's explicit request is listed in [Never run](#never-run).
 - Commits and PR titles use Conventional Commits; the scope is the crate or package name without `mado-`: `fix(navigation): select the opener after closing a tab`.
+- Every PR closes an issue: find or open it first and put `Closes #<n>` in the body. The required `linked-issue` check fails without one; only Dependabot is exempt.
 - PR body: the problem in a sentence or two, how you fixed it, the exact commands you ran and on which platforms. End with the model and tool that did the work.
 - UI changes need before and after screenshots; motion needs a short video.
 - Pin GitHub Actions to full commit SHAs with the tag in a trailing comment.
