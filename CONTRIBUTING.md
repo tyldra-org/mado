@@ -8,7 +8,7 @@ Mado is pre-alpha. Most work right now follows the milestone plan, so the best w
 
 - Read the [Code of Conduct](CODE_OF_CONDUCT.md). It applies everywhere the project operates.
 - Search [existing issues](https://github.com/tyldra-org/mado/issues) first.
-- For anything larger than a small fix, open an issue to agree on the approach before writing code. Product decisions (what Mado does) are made in issues first, then implemented.
+- Every pull request starts from an issue. Find one or open one; for anything larger than a small fix, agree on the approach there before writing code. Product decisions (what Mado does) are made in issues first, then implemented.
 - Report security problems privately through [SECURITY.md](SECURITY.md), never in a public issue.
 
 ## Set up
@@ -92,6 +92,7 @@ Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `buil
 
 ## Pull requests
 
+- Name the issue it resolves in the description: `Closes #<number>`. The `linked-issue` check fails without one. Dependabot's pull requests are the only exception.
 - Fill in the pull request template, including how you verified the change.
 - Keep pull requests small; they are reviewed faster and more thoroughly.
 - All required checks must pass before merge.

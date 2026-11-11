@@ -35,8 +35,12 @@ none remain.
   - platforms run and not run;
   - Spec issues and follow-up issues raised;
   - last line: the model and tool that did the work.
-- `Closes #<issue>` when every "Done when" holds on both platforms;
-  `Refs #<issue>` when Windows is pending or the task spans several PRs.
+- `Closes #<issue>`: the required `linked-issue` check fails a PR that
+  closes no issue. When the PR holds the whole task on both platforms, it
+  closes the task's issue. Otherwise, before opening the PR, add sub-issues to
+  the task's issue: one for this PR's part, and one for a pending Windows
+  run. The PR closes its own sub-issue, and the PR that finishes the task
+  also closes the task's issue.
 
 ## CI
 
@@ -47,14 +51,16 @@ push after pushing. Three root-cause attempts at most, then stop the task.
 
 ## Merge
 
-1. `gh pr merge <n> --squash --delete-branch` once the required checks pass.
-   Never `--admin`, never a bypass.
+1. Arm auto-merge as soon as the PR is open:
+   `gh pr merge <n> --auto --squash --delete-branch --match-head-commit <sha>`.
+   GitHub merges once the required checks pass. Never `--admin`, never a
+   bypass.
 2. `git switch main && git pull --ff-only`, then rerun the task's focused
    tests on `main`.
 3. If `main` broke, revert first (a revert PR), then fix forward in a new
    PR.
-4. Tick the finished subtasks in the milestone file. When the PR used
-   `Refs`, comment on the issue with what remains.
+4. Tick the finished subtasks in the milestone file. When the task's issue
+   stays open, comment on it with what remains.
 
 ## Milestone exit
 
