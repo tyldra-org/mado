@@ -1,0 +1,21 @@
+# Labels pull requests by the paths they change (.github/labeler.yml). It runs
+# from the default branch, so a pull request cannot change its own labels'
+# rules, and it never checks out or runs the pull request's code.
+name: labeler
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout; labels from the default branch's config
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  labeler:
+    name: labeler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0

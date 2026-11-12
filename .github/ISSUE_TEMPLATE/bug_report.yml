@@ -11,6 +11,20 @@ body:
         Thanks for the report. Security vulnerabilities must be reported
         privately; see SECURITY.md. A site that looks broken? Check whether it
         also breaks in Safari (macOS) or Edge (Windows), and say so below.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Part of Mado
+      options:
+        - Tabs, windows and browsing
+        - Ad and tracker blocking
+        - Extensions
+        - Passwords and autofill
+        - AI, agents and the CLI
+        - Settings and the interface
+        - Something else
+    validations:
+      required: true
   - type: textarea
     id: description
     attributes:

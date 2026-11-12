@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a new feature or improvement.
+description: Something Mado should do, or do differently.
 title: "feat: "
 labels:
   - enhancement
@@ -8,8 +8,23 @@ body:
   - type: markdown
     attributes:
       value: |
-        Describe the problem first. A clear problem statement is more useful
-        than a specific solution.
+        Mado is pre-alpha and built milestone by milestone. Check the roadmap in
+        the README first: the feature may already be planned. Describe the
+        problem before the solution.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Part of Mado
+      options:
+        - Tabs, windows and browsing
+        - Ad and tracker blocking
+        - Extensions
+        - Passwords and autofill
+        - AI, agents and the CLI
+        - Settings and the interface
+        - Something new
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:

@@ -1,0 +1,94 @@
+# Area and platform labels for pull requests, by the paths they change. The
+# labeler workflow reads this file from main. Every label here exists on
+# GitHub. Areas follow the spec's topics; a crate belongs to one area.
+"area: engine":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-engine/**
+          - crates/mado-engine-webkit/**
+          - crates/mado-engine-webview2/**
+          - inject/**
+
+"area: core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-core/**
+          - crates/mado-types/**
+          - crates/mado-storage/**
+          - crates/mado-settings/**
+
+"area: browsing":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-navigation/**
+          - crates/mado-permissions/**
+          - crates/mado-safety/**
+          - crates/mado-import/**
+
+"area: extensions":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-extensions/**
+
+"area: blocker":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-blocker/**
+          - lists/**
+
+"area: passwords":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-vault/**
+          - crates/mado-autofill/**
+
+"area: ai":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-ai/**
+          - crates/mado-agent/**
+          - crates/mado-control/**
+          - crates/mado-cli/**
+
+"area: interface":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ui/**
+
+"area: app":
+  - changed-files:
+      - any-glob-to-any-file:
+          - app/**
+          - crates/mado-platform/**
+
+"area: prototype":
+  - changed-files:
+      - any-glob-to-any-file:
+          - proto/**
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - scripts/**
+          - Cargo.toml
+          - deny.toml
+          - rust-toolchain.toml
+          - package.json
+          - biome.json
+          - bunfig.toml
+
+"platform: macos":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-engine-webkit/**
+
+"platform: windows":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/mado-engine-webview2/**
+
+"documentation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
