@@ -1,0 +1,73 @@
+# Who opened this? Reads .github/VOUCHED.td (github.com/mitchellh/vouch):
+# closes issues and pull requests from denounced authors, and labels pull
+# requests "contributor: vouched" or "contributor: new". Collaborators and
+# bots get no label. Runs from the default branch and never checks out or
+# runs the pull request's code.
+#
+# collaboration limited: set require-vouch to "true" on check-pr and add a
+# template-file that says how to get vouched, so unvouched pull requests
+# close (references/trust-and-labels.md).
+name: contributors
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout; reads the author and the vouch list
+    types: [opened, reopened]
+  issues:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  contributors:
+    name: contributors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Close a denounced author's pull request
+        if: github.event_name == 'pull_request_target'
+        uses: mitchellh/vouch/action/check-pr@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          require-vouch: "false"
+          auto-close: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Close a denounced author's issue
+        if: github.event_name == 'issues'
+        uses: mitchellh/vouch/action/check-issue@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          require-vouch: "false"
+          auto-close: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Check the author
+        id: author
+        if: github.event_name == 'pull_request_target'
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          user: ${{ github.event.pull_request.user.login }}
+          allow-fail: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Label the pull request
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          STATUS: ${{ steps.author.outputs.status }}
+        run: |
+          case $STATUS in
+            vouched) label='contributor: vouched' ;;
+            unknown) label='contributor: new' ;;
+            *) echo "Author status: $STATUS; no label."; exit 0 ;;
+          esac
+          gh pr edit "$NUMBER" --repo "$REPO" --add-label "$label"

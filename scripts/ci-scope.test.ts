@@ -24,6 +24,8 @@ describe("classify", () => {
         "docs/x.md",
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/dependabot.yml",
+        ".github/VOUCHED.td",
+        ".github/labeler.yml",
         "bacon.toml",
         "LICENSE",
         ".gitignore",

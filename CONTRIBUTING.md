@@ -90,6 +90,10 @@ type(optional-scope): short imperative description
 
 Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Scopes are crate or package names without the `mado-` prefix, for example `fix(navigation): keep the opener selected after closing a tab`. Mark breaking changes with `!` after the type or scope and explain the migration in the body.
 
+## Labels and trust
+
+Issues and pull requests carry an `area:` label for the part of Mado they touch, such as `area: engine` or `area: passwords`, and a `platform:` label when they concern only macOS or Windows; pull requests get theirs from the files they change. Anyone may open a pull request. People the maintainer trusts, after a merged pull request or a roadmap task agreed on its issue, are listed in [`.github/VOUCHED.td`](.github/VOUCHED.td), and their pull requests are marked `contributor: vouched`. Issues and pull requests from people denounced there close automatically.
+
 ## Files only maintainers change
 
 Only the maintainer changes these. A pull request from anyone else that touches one fails the `protected-files` check and cannot merge, whatever its review says. Open an issue describing the change instead.
