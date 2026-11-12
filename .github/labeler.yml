@@ -88,7 +88,7 @@
       - any-glob-to-any-file:
           - crates/mado-engine-webview2/**
 
+# A CHANGELOG entry alone doesn't make a pull request documentation.
 "documentation":
   - changed-files:
-      - any-glob-to-any-file:
-          - "**/*.md"
+      - all-globs-to-any-file: ["**/*.md", "!CHANGELOG.md"]
