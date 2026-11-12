@@ -1,13 +1,15 @@
-# Outside contributors cannot change the files maintainers own: repository
-# automation (.github), the license and policy documents, AGENTS.md, and the
-# scripts CI and releases trust. A pull request that touches one fails unless
-# its author has write access. Dependabot is exempt; it only updates
-# dependencies and action pins.
+# Only the maintainers named in this file change what decides how the project
+# is run, checked, released or licensed: repository automation (.github), the
+# license and policy documents, AGENTS.md, and the scripts CI and releases
+# trust. A pull request from anyone else that touches one fails, whatever
+# access its author has and whoever approves it; with no bypass on the
+# ruleset, it cannot merge. Dependabot may change workflow files only, to
+# update action pins.
 #
 # pull_request_target runs this file from the default branch, so a pull
-# request cannot rewrite the check that judges it. It never checks out or runs
-# the pull request's code: it reads the author's access and the names of the
-# changed files from the API, with a read-only token.
+# request cannot rewrite the check that judges it, or the list of maintainers.
+# It never checks out or runs the pull request's code: it reads the author and
+# the names of the changed files from the API, with a read-only token.
 name: protected-files
 
 on:
@@ -36,20 +38,17 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          case $AUTHOR in
-            'dependabot[bot]')
-              echo "Opened by $AUTHOR: dependency updates only."
+          # The only accounts that change protected files, whatever access anyone
+          # else is given. Separate logins with spaces.
+          maintainers='yogeshprasad098'
+          for login in $maintainers; do
+            if [ "$AUTHOR" = "$login" ]; then
+              echo "Opened by $AUTHOR, a maintainer: any file may change."
               exit 0
-              ;;
-          esac
-          # Fail closed: an API error counts as no write access.
-          access=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2>/dev/null || echo none)
-          case $access in
-            admin | write)
-              echo "$AUTHOR has $access access and may change any file."
-              exit 0
-              ;;
-          esac
+            fi
+          done
+          dependabot=0
+          if [ "$AUTHOR" = 'dependabot[bot]' ]; then dependabot=1; fi
           protected() {
             case $1 in
               .github/*) return 0 ;;
@@ -67,7 +66,12 @@ jobs:
           files=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
           blocked=()
           while IFS= read -r file; do
-            if [ -n "$file" ] && protected "$file"; then blocked+=("$file"); fi
+            [ -n "$file" ] || continue
+            # Dependabot updates action pins in workflow files, nothing else here.
+            if [ "$dependabot" = 1 ]; then
+              case $file in .github/workflows/*) continue ;; esac
+            fi
+            if protected "$file"; then blocked+=("$file"); fi
           done <<< "$files"
           if [ ${#blocked[@]} -eq 0 ]; then
             echo "No maintainer-owned files changed."

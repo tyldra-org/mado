@@ -92,7 +92,7 @@ Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `buil
 
 ## Files only maintainers change
 
-Pull requests from contributors without write access cannot change these; the `protected-files` check fails if they do. Open an issue describing the change instead.
+Only the maintainer changes these. A pull request from anyone else that touches one fails the `protected-files` check and cannot merge, whatever its review says. Open an issue describing the change instead.
 
 - `.github/`: workflows, issue forms, the pull request template and Dependabot.
 - `LICENSE`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` and other policy files.
