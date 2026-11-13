@@ -34,7 +34,7 @@ pub const WINDOW: &str = "main";
 pub const UI_LABEL: &str = "ui-main";
 pub const OVERLAY_LABEL: &str = "overlay-main";
 const WINDOW_SIZE: (f64, f64) = (1200.0, 800.0);
-/// Where experiment windows go, as agent tabs do (13 §5).
+/// Where experiment windows open, before they turn transparent.
 const OFF_SCREEN: (f64, f64) = (-20000.0, -20000.0);
 /// Where the page starts until the UI reports its real content rectangle.
 const INITIAL_PAGE_TOP: f64 = 44.0;
@@ -219,16 +219,22 @@ fn build_window(
         .inner_size(WINDOW_SIZE.0, WINDOW_SIZE.1);
     if background {
         // Experiments run while someone uses the Mac: no Dock icon, no
-        // activation, no focus, and the window off-screen, ordered in but
-        // never key (the agent-tab placement in 13 §5). An occluded window
-        // would not do: WebKit pauses rendering there, and with it
-        // requestAnimationFrame and ResizeObserver.
+        // activation, no focus. The window starts as far off-screen as
+        // AppKit allows and turns transparent before the experiment starts
+        // (`run_experiment`): a covered or off-screen window stops rendering,
+        // and with it requestAnimationFrame and ResizeObserver.
         builder = builder.position(OFF_SCREEN.0, OFF_SCREEN.1).focused(false);
     }
     let window = builder.build()?;
     if !background {
         window.set_focus()?;
     }
+    // Transparent at once, so not even a corner shows on a second display.
+    #[cfg(target_os = "macos")]
+    if background {
+        platform::hide_window(&window)?;
+    }
+
     // 1. The UI webview fills the window's content area.
     let size = window
         .inner_size()?
@@ -309,9 +315,14 @@ pub fn run(args: Args) -> ExitCode {
 
 fn run_experiment(ctx: &Ctx, name: &str, out: Option<PathBuf>, screenshot: Option<PathBuf>) {
     let started = Instant::now();
-    let result = ctx
-        .shell()
-        .wait_report(0, STEP_TIMEOUT)
+    #[cfg(target_os = "macos")]
+    let placed = ctx
+        .window()
+        .and_then(|window| on_main(&ctx.app, move || platform::hide_window(&window))?);
+    #[cfg(not(target_os = "macos"))]
+    let placed: Result<(), String> = Ok(());
+    let result = placed
+        .and_then(|()| ctx.shell().wait_report(0, STEP_TIMEOUT))
         .and_then(|_| crate::exp::run(name, ctx));
     let shot = screenshot.map(|path| {
         platform::screenshot(&ctx.app, WINDOW, &path).unwrap_or_else(|e| format!("failed: {e}"))

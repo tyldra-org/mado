@@ -17,7 +17,9 @@ proto/target/MadoProto.app/Contents/MacOS/mado-proto --exp overlay \
   --out proto/out/exp01.json --screenshot proto/out/exp01.png
 ```
 
-`--exp <name>` runs one experiment, prints its checks, observations and the OS and WebKit versions as JSON, and exits non-zero when a check fails. An experiment never interrupts whoever is using the Mac: its window opens off-screen, the app takes no focus and shows no Dock icon, and synthesised clicks go to the window's views, never through the real pointer. `--screenshot` needs the Screen Recording permission of the terminal that runs it.
+`--exp <name>` runs one experiment, prints its checks, observations and the OS and WebKit versions as JSON, and exits non-zero when a check fails. An experiment never interrupts whoever is using the Mac: the app takes no focus and shows no Dock icon, its window is transparent, ignores the mouse and floats so nothing covers it (a covered or off-screen window stops rendering), and synthesised clicks and keys go to the window's views, never through the real pointer or keyboard. Because the window is transparent, `--screenshot` captures nothing in experiment runs; it also needs the Screen Recording permission of the terminal. Run one prototype at a time: `memory` counts the WebKit processes started from the same terminal.
+
+`memory` and `blocking` take several minutes and use the network: `memory` loads 50 public sites, `blocking` downloads the default filter lists of spec 10 §2 into a temp cache once a day.
 
 The M0 identity signs prototype builds only. The release identity in spec 15 §3 and its CI secret belong to the maintainer.
 
