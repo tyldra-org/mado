@@ -25,4 +25,4 @@ The M0 identity signs prototype builds only. The release identity in spec 15 §3
 
 ## Windows
 
-Deferred: M0 covers macOS only for now; Windows and Linux come later. `proto/check-windows.sh` type-checks the Windows build from a Mac (Clippy, `-D warnings`, target `x86_64-pc-windows-msvc`), so the Windows code compiles; whether it works is for the Windows run sheet in `mado-docs/research/m0-report.md`. Scripted experiments (`--exp`) are macOS-only; on Windows the run sheet lists the manual steps.
+Deferred: M0 covers macOS only; the Windows half runs in roadmap M8-T01, after the UI design pass. `proto/check-windows.sh` type-checks the Windows build from a Mac (Clippy, `-D warnings`, target `x86_64-pc-windows-msvc`), so the Windows code compiles; whether it works is for the Windows run sheet in `mado-docs/research/m0-report.md`. Scripted experiments (`--exp`) are macOS-only; on Windows the run sheet lists the manual steps.

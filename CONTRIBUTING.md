@@ -50,7 +50,7 @@ bun install --frozen-lockfile
 
    While iterating, run the narrowest check: `cargo test -p mado-<name>` for one crate, `bun test <file>` or `bun test --changed` for JavaScript and TypeScript, `bun run --cwd ui test <file>` for a Svelte component. Component and runes tests are named `*.svelte.test.ts` and run under Vitest; other tests are `*.test.ts` and run under `bun test`.
 
-6. Mado targets macOS first; Windows and Linux come later. If your change touches platform code, say which platforms you ran it on. CI also builds the Windows code so it keeps compiling.
+6. Mado targets macOS first; Windows (M8) and Linux (M9) come after the UI design pass. If your change touches platform code, say which platforms you ran it on. CI also builds the Windows code so it keeps compiling.
 
    CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS and Windows. A TypeScript change runs format, lint and typecheck once and the tests it reaches on Linux and Windows. Dependency, toolchain or CI changes check everything, and so does every push to `main`. So does a file in none of the lists in `scripts/ci-scope.ts`: when you add a new kind of file, add it to the list for what reads it, with a case in `scripts/ci-scope.test.ts`.
 
