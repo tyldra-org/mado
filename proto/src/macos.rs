@@ -1027,6 +1027,14 @@ pub fn screenshot(app: &tauri::AppHandle, label: &str, path: &Path) -> Result<St
 }
 
 /// OS and WebKit versions, recorded with every result.
+/// Throwaway runs restore nothing: no saved window state, so a run the OS
+/// ended never brings back AppKit's "reopen its windows?" alert.
+pub fn ignore_saved_state() {
+    let defaults = objc2_foundation::NSUserDefaults::standardUserDefaults();
+    defaults.setBool_forKey(true, ns_string!("ApplePersistenceIgnoreState"));
+    defaults.setBool_forKey(false, ns_string!("NSQuitAlwaysKeepsWindows"));
+}
+
 pub fn environment() -> Value {
     let os = NSProcessInfo::processInfo()
         .operatingSystemVersionString()
@@ -1044,6 +1052,7 @@ pub fn environment() -> Value {
         "webkit": version(ns_string!("CFBundleVersion")),
         "webkitShort": version(ns_string!("CFBundleShortVersionString")),
         "arch": std::env::consts::ARCH,
+        "build": option_env!("MADO_PROTO_BUILD"),
     })
 }
 

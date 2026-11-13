@@ -18,6 +18,8 @@ mod drm;
 #[cfg(target_os = "macos")]
 mod extensions;
 #[cfg(target_os = "macos")]
+mod keychain;
+#[cfg(target_os = "macos")]
 mod media;
 #[cfg(target_os = "macos")]
 mod memory;
@@ -26,6 +28,10 @@ mod network;
 #[cfg(target_os = "macos")]
 mod overlay;
 #[cfg(target_os = "macos")]
+mod passwords;
+#[cfg(target_os = "macos")]
+mod permissions;
+#[cfg(target_os = "macos")]
 mod platform;
 #[cfg(target_os = "macos")]
 mod session;
@@ -33,6 +39,8 @@ mod session;
 mod shell_check;
 #[cfg(target_os = "macos")]
 mod sites;
+#[cfg(target_os = "macos")]
+mod update;
 
 pub const NAMES: &[&str] = &[
     "shell",
@@ -47,6 +55,10 @@ pub const NAMES: &[&str] = &[
     "drm",
     "media",
     "downloads",
+    "permissions",
+    "keychain",
+    "update",
+    "passwords",
 ];
 
 #[cfg(target_os = "macos")]
@@ -64,6 +76,10 @@ pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
         "drm" => drm::run(ctx),
         "media" => media::run(ctx),
         "downloads" => downloads::run(ctx),
+        "permissions" => permissions::run(ctx),
+        "keychain" => keychain::run(ctx),
+        "update" => update::run(ctx),
+        "passwords" => passwords::run(ctx),
         _ => Err(format!("no experiment {name}")),
     }
 }
