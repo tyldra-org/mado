@@ -11,12 +11,13 @@ The prototype is its own Cargo workspace with its own lockfile. The main workspa
 ```sh
 proto/signing.sh create     # once: the "Mado Self-Signed (M0)" identity in .mado-dev/signing/
 proto/build-app.sh          # builds and signs proto/target/MadoProto.app
-proto/target/MadoProto.app/Contents/MacOS/mado-proto            # the shell
-proto/target/MadoProto.app/Contents/MacOS/mado-proto --smoke example.org \
-  --out proto/out/t01-smoke.json --screenshot proto/out/t01-shell.png
+proto/target/MadoProto.app/Contents/MacOS/mado-proto            # the shell, by hand
+proto/target/MadoProto.app/Contents/MacOS/mado-proto --exp list # the experiments
+proto/target/MadoProto.app/Contents/MacOS/mado-proto --exp overlay \
+  --out proto/out/exp01.json --screenshot proto/out/exp01.png
 ```
 
-`--smoke` types the URL into the UI's address field, waits for the tab view to load it, prints the result, the view stack and the OS and WebKit versions as JSON, and quits. `--screenshot` needs the Screen Recording permission of the terminal that runs it.
+`--exp <name>` runs one experiment, prints its checks, observations and the OS and WebKit versions as JSON, and exits non-zero when a check fails. An experiment never interrupts whoever is using the Mac: its window opens off-screen, the app takes no focus and shows no Dock icon, and synthesised clicks go to the window's views, never through the real pointer. `--screenshot` needs the Screen Recording permission of the terminal that runs it.
 
 The M0 identity signs prototype builds only. The release identity in spec 15 §3 and its CI secret belong to the maintainer.
 
