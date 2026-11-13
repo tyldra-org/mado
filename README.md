@@ -14,7 +14,7 @@
 > [!IMPORTANT]
 > **Mado is pre-alpha.** The design and the repository scaffold are in place; building starts with the engine prototype. There is nothing to install yet. Watch this repository's releases to hear when the first build is out.
 
-Mado is an open-source web browser for macOS, written in Rust. Windows and Linux come later. It works like Chrome where your habits live: the same shortcuts, menus, tab behaviour and settings layout. It differs where it should: vertical tabs down the side, a built-in ad blocker, its own password manager, and optional AI that works with the subscriptions or keys you already have. Pages render in the engine your operating system already ships, WebKit on macOS, so there is no second browser engine to download and the engine gets security fixes with your OS updates.
+Mado is an open-source web browser for macOS, written in Rust. Windows and Linux come after the design pass (milestones M8 and M9). It works like Chrome where your habits live: the same shortcuts, menus, tab behaviour and settings layout. It differs where it should: vertical tabs down the side, a built-in ad blocker, its own password manager, and optional AI that works with the subscriptions or keys you already have. Pages render in the engine your operating system already ships, WebKit on macOS, so there is no second browser engine to download and the engine gets security fixes with your OS updates.
 
 ## What Mado will do
 
@@ -41,7 +41,7 @@ Mado is an open-source web browser for macOS, written in Rust. Windows and Linux
 | Windows (x64) | Microsoft Edge WebView2 | Later |
 | Linux | Later | Later |
 
-Mado is built for macOS first. Windows and Linux follow once the macOS browser is usable; the engine sits behind one Rust trait so they can.
+Mado is built for macOS first. Windows (M8) and Linux (M9) follow after the UI design pass (M6); the engine sits behind one Rust trait so they can.
 
 ## How it works
 
@@ -58,7 +58,9 @@ A Rust core owns every piece of browser state: tabs, history, settings, password
 | M4 Passwords | v0.3 | Mado Passwords, autofill, passkeys, 1Password and Bitwarden |
 | M5 AI and control | v0.4 | Chat, agents, CLI, MCP |
 | M6 Design pass | v0.5 | The final look across every screen |
-| M7 1.0 | v1.0 | Performance, accessibility and distribution |
+| M7 1.0 | v1.0 | Performance, accessibility and distribution on macOS |
+| M8 Windows | later | Every macOS feature on Windows, with WebView2 |
+| M9 Linux | later | Mado on Linux; engine to be chosen |
 
 No milestone is complete yet. Until the design pass in M6, screens are plain functional placeholders.
 
@@ -96,7 +98,7 @@ No. AI is off until you turn it on. Then it works with your own API keys, a loca
 
 ### Will Mado run on Windows or Linux?
 
-Later. macOS comes first; Windows (on WebView2) and Linux follow.
+Later. macOS comes first. Windows (on WebView2) follows the UI design pass as milestone M8, then Linux as M9.
 
 ## Build from source
 
