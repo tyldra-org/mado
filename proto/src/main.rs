@@ -3,8 +3,11 @@
 //! the folder is deleted when M0 ends. See `proto/README.md`.
 
 mod exp;
+mod fixtures;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod procs;
 mod shell;
 #[cfg(windows)]
 mod windows_tab;

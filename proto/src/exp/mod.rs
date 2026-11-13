@@ -6,17 +6,31 @@ use serde_json::{Value, json};
 use crate::shell::Ctx;
 
 #[cfg(target_os = "macos")]
+mod agent;
+#[cfg(target_os = "macos")]
+mod blocking;
+#[cfg(target_os = "macos")]
+mod memory;
+#[cfg(target_os = "macos")]
 mod overlay;
 #[cfg(target_os = "macos")]
+mod session;
+#[cfg(target_os = "macos")]
 mod shell_check;
+#[cfg(target_os = "macos")]
+mod sites;
 
-pub const NAMES: &[&str] = &["shell", "overlay"];
+pub const NAMES: &[&str] = &["shell", "overlay", "session", "memory", "agent", "blocking"];
 
 #[cfg(target_os = "macos")]
 pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
     match name {
         "shell" => shell_check::run(ctx),
         "overlay" => overlay::run(ctx),
+        "session" => session::run(ctx),
+        "memory" => memory::run(ctx),
+        "agent" => agent::run(ctx),
+        "blocking" => blocking::run(ctx),
         _ => Err(format!("no experiment {name}")),
     }
 }
