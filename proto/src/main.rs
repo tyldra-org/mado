@@ -2,6 +2,8 @@
 //! the specs mark "(verify in M0)". Nothing outside `proto/` imports it, and
 //! the folder is deleted when M0 ends. See `proto/README.md`.
 
+#[cfg(target_os = "macos")]
+mod download;
 mod exp;
 #[cfg(target_os = "macos")]
 mod fixtures;

@@ -152,13 +152,24 @@ pub fn run(ctx: &Ctx) -> Result<Value, String> {
         .as_array()
         .is_some_and(|m| m.iter().all(|e| e[1] == true))
     {
-        // Docked first, so showing it stays inside the (transparent) tab
-        // window instead of opening a window of its own.
-        send("attach").and_then(|_| send("show")).and_then(|_| {
+        // Shown first: `attach` needs a frontend to dock. The census shows
+        // whether the frontend's own web view appeared, in which window.
+        let census = || on_main(&ctx.app, macos::web_view_census)?;
+        let before = census()?;
+        send("show").and_then(|_| {
             let opened = visible_within(true)?;
+            let shown = census()?;
+            send("attach")?;
+            std::thread::sleep(Duration::from_millis(500));
+            let attached = census()?;
+            let still = send("isVisible")?;
             send("close")?;
             let closed = visible_within(false)?;
-            Ok(json!({ "secondsToVisible": opened, "secondsToClosed": closed }))
+            Ok(json!({
+                "secondsToVisible": opened, "secondsToClosed": closed,
+                "visibleAfterAttach": still,
+                "census": { "before": before, "shown": shown, "attached": attached, "closed": census()? }
+            }))
         })
     } else {
         Err("`_inspector` lacks attach, show, close or isVisible".into())
