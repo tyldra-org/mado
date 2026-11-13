@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>mado-proto</string>
+	<key>CFBundleIdentifier</key>
+	<string>app.mado.proto</string>
+	<key>CFBundleName</key>
+	<string>Mado Proto</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>BUILD_VERSION</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.4</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Websites you allow can use the camera.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Websites you allow can use the microphone.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Websites you allow can use your location.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Websites you allow can use speech recognition.</string>
+</dict>
+</plist>
