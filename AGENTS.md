@@ -200,7 +200,7 @@ Engine behaviour that no document confirms is marked "(verify in M0)" in the spe
 
 - What needs the user's explicit request is listed in [Never run](#never-run).
 - Commits and PR titles use Conventional Commits; the scope is the crate or package name without `mado-`: `fix(navigation): select the opener after closing a tab`.
-- Every PR closes an issue: find or open it first and put `Closes #<n>` in the body. The required `linked-issue` check fails without one; only Dependabot is exempt.
+- A PR closes an issue: find or open it first and put `Closes #<n>` in the body. The required `linked-issue` check fails without one, except for Markdown-only changes and PRs from the maintainers in `.github/MAINTAINERS` or Dependabot. Maintainers open an issue when the work is worth tracking on its own: a bug report, a feature, or work spread over several PRs.
 - PR body: the problem in a sentence or two, how you fixed it, the exact commands you ran and on which platforms. End with the model and tool that did the work.
 - UI changes need before and after screenshots; motion needs a short video.
 - Pin GitHub Actions to full commit SHAs with the tag in a trailing comment.

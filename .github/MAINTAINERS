@@ -1,0 +1,6 @@
+# The maintainers of Mado, one GitHub login per line. Only they change
+# the protected files (protected-files), and their pull requests need no
+# issue (linked-issue). Both checks read this file from the default branch,
+# so a pull request cannot add its own author. Write access does not make
+# someone a maintainer; a line here does.
+yogeshprasad098

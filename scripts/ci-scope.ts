@@ -91,7 +91,7 @@ const DOCS = [
   /^docs\//,
   /^LICENSE/,
   /^\.gitignore$/,
-  /^\.github\/(ISSUE_TEMPLATE\/|CODEOWNERS$|dependabot\.yml$|VOUCHED\.td$|labeler\.yml$)/,
+  /^\.github\/(ISSUE_TEMPLATE\/|CODEOWNERS$|dependabot\.yml$|VOUCHED\.td$|labeler\.yml$|MAINTAINERS$)/,
   /^bacon\.toml$/,
 ];
 
