@@ -15,8 +15,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSEvent, NSEventModifierFlags, NSEventType, NSView, NSWindow,
-    NSWindowOrderingMode,
+    NSApplication, NSAutoresizingMaskOptions, NSEvent, NSEventModifierFlags, NSEventType, NSView,
+    NSWindow, NSWindowOrderingMode,
 };
 use objc2_foundation::{
     NSBundle, NSData, NSError, NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSURL,
@@ -802,6 +802,17 @@ pub fn inspector_probe(tab: TabId) -> Result<Value, String> {
             return json!({ "inspector": null });
         };
         let class = inspector.class().name().to_string_lossy().into_owned();
+        // The local inspector needs WebKit's private developer-extras
+        // preference (`isInspectable` covers only Safari's remote inspector).
+        // Wry sets it the same way for its devtools.
+        // SAFETY: the preferences object is the view's own, shared with its
+        // configuration; `developerExtrasEnabled` is a KVC-compliant BOOL key.
+        let extras = objc2::exception::catch(std::panic::AssertUnwindSafe(|| unsafe {
+            let preferences = view.configuration().preferences();
+            let yes = objc2_foundation::NSNumber::new_bool(true);
+            let () = msg_send![&*preferences, setValue: &*yes, forKey: ns_string!("developerExtrasEnabled")];
+        }))
+        .is_ok();
         let can = |name: &str, sel| json!([name, responds(inspector, sel)]);
         let methods = [
             can("show", objc2::sel!(show)),
@@ -809,8 +820,27 @@ pub fn inspector_probe(tab: TabId) -> Result<Value, String> {
             can("close", objc2::sel!(close)),
             can("isVisible", objc2::sel!(isVisible)),
         ];
-        json!({ "inspector": class, "methods": methods })
+        json!({ "inspector": class, "methods": methods, "developerExtras": extras })
     })
+}
+
+/// Every app window and the web views inside it: Web Inspector's frontend is
+/// a WKWebView of its own, docked into the tab's window or in a new window.
+pub fn web_view_census() -> Result<Value, String> {
+    fn count(view: &NSView) -> usize {
+        let own = usize::from(view.isKindOfClass(WKWebView::class()));
+        own + view.subviews().iter().map(|v| count(&v)).sum::<usize>()
+    }
+    let mtm = main_thread()?;
+    let windows = NSApplication::sharedApplication(mtm).windows();
+    let list: Vec<Value> = windows
+        .iter()
+        .map(|w| {
+            let views = w.contentView().map_or(0, |v| count(&v));
+            json!({ "title": w.title().to_string(), "visible": w.isVisible(), "webViews": views })
+        })
+        .collect();
+    Ok(json!(list))
 }
 
 /// Sends one argument-less message to the tab's `_inspector`: `attach`,

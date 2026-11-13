@@ -12,6 +12,8 @@ mod agent;
 #[cfg(target_os = "macos")]
 mod blocking;
 #[cfg(target_os = "macos")]
+mod downloads;
+#[cfg(target_os = "macos")]
 mod drm;
 #[cfg(target_os = "macos")]
 mod extensions;
@@ -44,6 +46,7 @@ pub const NAMES: &[&str] = &[
     "extensions",
     "drm",
     "media",
+    "downloads",
 ];
 
 #[cfg(target_os = "macos")]
@@ -60,6 +63,7 @@ pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
         "extensions" => extensions::run(ctx),
         "drm" => drm::run(ctx),
         "media" => media::run(ctx),
+        "downloads" => downloads::run(ctx),
         _ => Err(format!("no experiment {name}")),
     }
 }
