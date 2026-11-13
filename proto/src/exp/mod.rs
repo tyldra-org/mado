@@ -1,7 +1,9 @@
 //! Experiments. Each runs from `mado-proto --exp <name>` on a worker thread,
 //! returns JSON, and fails the run when its result says `"ok": false`.
 
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(target_os = "macos")]
+use serde_json::json;
 
 use crate::shell::Ctx;
 
@@ -43,12 +45,14 @@ pub fn run(name: &str, _ctx: &Ctx) -> Result<Value, String> {
 }
 
 /// Named pass/fail checks with what was observed for each.
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct Checks {
     list: Vec<Value>,
     ok: bool,
 }
 
+#[cfg(target_os = "macos")]
 impl Checks {
     pub fn new() -> Self {
         Checks {
