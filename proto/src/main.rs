@@ -3,6 +3,7 @@
 //! the folder is deleted when M0 ends. See `proto/README.md`.
 
 mod exp;
+#[cfg(target_os = "macos")]
 mod fixtures;
 #[cfg(target_os = "macos")]
 mod macos;

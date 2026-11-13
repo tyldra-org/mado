@@ -41,6 +41,13 @@ fn to_physical(rect: Rect, scale: f64) -> RECT {
     }
 }
 
+/// Records the overlay so tab views can go below it. On Windows this does
+/// nothing yet: which HWND to pass to `SetWindowPos` is experiment 1's first
+/// Windows question, answered by hand in the run sheet.
+pub fn register_overlay(_window: &tauri::Window) -> Result<(), String> {
+    Ok(())
+}
+
 /// Creates a tab view over `rect` and loads `url`. The controller is made
 /// asynchronously on the main thread; the returned id is valid at once.
 pub fn create_tab(window: &tauri::Window, rect: Rect, url: &str) -> Result<TabId, String> {
@@ -131,12 +138,6 @@ pub fn set_frame(window: &tauri::Window, tab: TabId, rect: Rect) -> Result<(), S
 }
 
 const MANUAL: &str = "the scripted check is macOS only; follow the Windows run sheet";
-
-pub fn clear_navigation(_tab: TabId) {}
-
-pub fn wait_navigation(_tab: TabId, _timeout: Duration) -> Result<Value, String> {
-    Err(MANUAL.into())
-}
 
 pub fn describe_views(_window: &tauri::Window) -> Result<Value, String> {
     Err(MANUAL.into())

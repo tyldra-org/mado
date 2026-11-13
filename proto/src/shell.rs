@@ -106,6 +106,8 @@ impl Shell {
     }
 
     /// How many page rectangles the UI has reported, and the last one.
+    // Only the scripted experiments, macOS-only, read it.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn reports(&self) -> Result<(u64, Option<Rect>), String> {
         let r = self.reports.lock().map_err(|_| "reports lock poisoned")?;
         Ok((r.count, r.last))
@@ -186,7 +188,9 @@ pub fn on_main<R: Send + 'static>(
 }
 
 /// What an experiment gets: the app, its one tab view and the CLI input.
+/// Experiments are scripted on macOS only, so Windows reads only `app`.
 #[derive(Debug)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct Ctx {
     pub app: AppHandle,
     pub tab: platform::TabId,

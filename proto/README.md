@@ -25,4 +25,4 @@ The M0 identity signs prototype builds only. The release identity in spec 15 §3
 
 ## Windows
 
-Untested. `src/windows_tab.rs` was written on a Mac and never compiled. The Windows run sheet in `mado-docs/research/m0-report.md` lists the steps.
+Not run on Windows yet. `proto/check-windows.sh` type-checks the Windows build from a Mac (Clippy, `-D warnings`, target `x86_64-pc-windows-msvc`), so the Windows code compiles; whether it works is for the Windows run sheet in `mado-docs/research/m0-report.md`. Scripted experiments (`--exp`) are macOS-only; on Windows the run sheet lists the manual steps.
