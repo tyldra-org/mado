@@ -734,6 +734,124 @@ pub fn view_classes(tab: TabId) -> Result<Vec<String>, String> {
     })
 }
 
+/// Adds a visible tab view over the first one whose media may play without a
+/// user gesture, as an experiment needs.
+pub fn add_media_tab(window: &tauri::Window) -> Result<TabId, String> {
+    let mtm = main_thread()?;
+    let content = content_view(window)?;
+    let frame = with_tab(0, |v| v.frame())?;
+    // SAFETY: plain configuration calls on the main thread.
+    let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
+    unsafe {
+        configuration.setMediaTypesRequiringUserActionForPlayback(
+            objc2_web_kit::WKAudiovisualMediaTypes::None,
+        );
+    }
+    insert_tab_with(&content, frame, &configuration)
+}
+
+/// `setAllMediaPlaybackSuspended:` (02 `SetMuted` row's suspend route).
+pub fn suspend_media(tab: TabId, suspended: bool) -> Result<mpsc::Receiver<()>, String> {
+    let (tx, rx) = mpsc::channel();
+    let block = RcBlock::new(move || {
+        let _ = tx.send(());
+    });
+    // SAFETY: a live web view and a block that only sends.
+    with_tab(tab, |view| unsafe {
+        view.setAllMediaPlaybackSuspended_completionHandler(suspended, Some(&block));
+    })?;
+    Ok(rx)
+}
+
+/// WebKit's own view of the tab's media: none, playing, paused, suspended.
+pub fn media_state(tab: TabId) -> Result<mpsc::Receiver<String>, String> {
+    let (tx, rx) = mpsc::channel();
+    let block = RcBlock::new(move |state: objc2_web_kit::WKMediaPlaybackState| {
+        let name = match state.0 {
+            0 => "none",
+            1 => "playing",
+            2 => "paused",
+            3 => "suspended",
+            _ => "unknown",
+        };
+        let _ = tx.send(name.to_owned());
+    });
+    // SAFETY: a live web view and a block that only sends.
+    with_tab(tab, |view| unsafe {
+        view.requestMediaPlaybackStateWithCompletionHandler(&block)
+    })?;
+    Ok(rx)
+}
+
+/// The programmatic Web Inspector route (02 `ShowDevTools`): WebKit's
+/// private `_inspector` object. It is docked into the tab's window, which
+/// is transparent in experiment runs, then closed again.
+pub fn inspector_probe(tab: TabId) -> Result<Value, String> {
+    with_tab(tab, |view| {
+        let responds = |obj: &AnyObject, sel: objc2::runtime::Sel| -> bool {
+            // SAFETY: respondsToSelector: is safe on any object.
+            unsafe { msg_send![obj, respondsToSelector: sel] }
+        };
+        if !responds(view, objc2::sel!(_inspector)) {
+            return json!({ "inspector": false });
+        }
+        // SAFETY: `-[WKWebView _inspector]` returns a `_WKInspector *` or nil.
+        let inspector: *mut AnyObject = unsafe { msg_send![view, _inspector] };
+        // SAFETY: nil or a live object owned by the web view.
+        let Some(inspector) = (unsafe { inspector.as_ref() }) else {
+            return json!({ "inspector": null });
+        };
+        let class = inspector.class().name().to_string_lossy().into_owned();
+        let can = |name: &str, sel| json!([name, responds(inspector, sel)]);
+        let methods = [
+            can("show", objc2::sel!(show)),
+            can("attach", objc2::sel!(attach)),
+            can("close", objc2::sel!(close)),
+            can("isVisible", objc2::sel!(isVisible)),
+        ];
+        json!({ "inspector": class, "methods": methods })
+    })
+}
+
+/// Sends one argument-less message to the tab's `_inspector`: `attach`,
+/// `show` and `close` return nothing, `isVisible` a boolean. An Objective-C
+/// exception comes back as an error.
+pub fn inspector_send(tab: TabId, message: &str) -> Result<Option<bool>, String> {
+    let message = message.to_owned();
+    with_tab(tab, move |view| {
+        // SAFETY: `_inspector` exists (checked by inspector_probe) and
+        // returns a `_WKInspector *` owned by the view, or nil.
+        let inspector: *mut AnyObject = unsafe { msg_send![view, _inspector] };
+        // SAFETY: nil or a live object.
+        let inspector = unsafe { inspector.as_ref() }.ok_or("no inspector")?;
+        objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: the selectors exist on _WKInspector (inspector_probe
+            // checks them) and take no arguments.
+            unsafe {
+                match message.as_str() {
+                    "attach" => {
+                        let () = msg_send![inspector, attach];
+                        None
+                    }
+                    "show" => {
+                        let () = msg_send![inspector, show];
+                        None
+                    }
+                    "close" => {
+                        let () = msg_send![inspector, close];
+                        None
+                    }
+                    _ => {
+                        let visible: bool = msg_send![inspector, isVisible];
+                        Some(visible)
+                    }
+                }
+            }
+        }))
+        .map_err(|e| format!("Objective-C exception: {e:?}"))
+    })?
+}
+
 /// Shows a hidden tab view, as activating a background tab does.
 pub fn show_tab(tab: TabId) -> Result<(), String> {
     with_tab(tab, |view| view.setHidden(false))
