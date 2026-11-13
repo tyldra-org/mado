@@ -289,6 +289,8 @@ pub fn run(args: Args) -> ExitCode {
         eprintln!("mado-proto: no experiment {name}; `--exp list` names them");
         return ExitCode::from(2);
     }
+    #[cfg(target_os = "macos")]
+    platform::ignore_saved_state();
     let built = tauri::Builder::default()
         .manage(Shell::default())
         .invoke_handler(tauri::generate_handler![navigate, report_content_rect])

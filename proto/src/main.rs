@@ -10,6 +10,8 @@ mod fixtures;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
+mod perm;
+#[cfg(target_os = "macos")]
 mod procs;
 mod shell;
 #[cfg(target_os = "macos")]
