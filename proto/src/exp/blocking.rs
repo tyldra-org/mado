@@ -169,8 +169,14 @@ fn synthetic_rule(i: usize) -> String {
     )
 }
 
+/// This run's rule stores, removed when the run ends; compiled lists take
+/// hundreds of megabytes across a run.
+fn stores_root() -> PathBuf {
+    std::env::temp_dir().join(format!("mado-proto-rules-{}", std::process::id()))
+}
+
 fn fresh_store(ctx: &Ctx, name: &str) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join(format!("mado-proto-rules-{}-{name}", std::process::id()));
+    let dir = stores_root().join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let d = dir.clone();
@@ -280,6 +286,12 @@ fn blocked_counts(ctx: &Ctx, checks: &mut Checks) -> Result<Value, String> {
 }
 
 pub fn run(ctx: &Ctx) -> Result<Value, String> {
+    let result = measure_all(ctx);
+    let _ = std::fs::remove_dir_all(stores_root());
+    result
+}
+
+fn measure_all(ctx: &Ctx) -> Result<Value, String> {
     let mut checks = Checks::new();
 
     // Lists and engine.
