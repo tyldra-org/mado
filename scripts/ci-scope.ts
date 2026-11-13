@@ -63,6 +63,8 @@ const TS = [
   /(^|\/)tsconfig(\..+)?\.json$/,
   // mado-types generates the TypeScript in ui/src/generated/.
   /^crates\/mado-types\//,
+  // Biome lints and formats the prototype's scripts, styles and config.
+  /^proto\/.+\.(js|json|css)$/,
 ];
 
 const TS_GLOBAL = [
@@ -95,6 +97,13 @@ const DOCS = [
   /^bacon\.toml$/,
 ];
 
+/**
+ * The throwaway M0 prototype (16 §5). It is its own Cargo workspace that no
+ * check builds; the lists above still pick up the files Biome and
+ * shellcheck read.
+ */
+const PROTO = [/^proto\//];
+
 /** Every list above. A path in none of them runs everything. */
 const LISTED = [
   ...FULL,
@@ -106,6 +115,7 @@ const LISTED = [
   ...SHELL,
   ...WORKFLOWS,
   ...DOCS,
+  ...PROTO,
 ];
 
 const any = (file: string, patterns: RegExp[]) => patterns.some((p) => p.test(file));

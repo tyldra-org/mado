@@ -96,6 +96,21 @@ describe("classify", () => {
     expect(classify([".github/workflows/release.yml"])).toMatchObject({ workflows: true });
   });
 
+  test("the M0 prototype runs only the linters that read its files", () => {
+    expect(classify(["proto/src/main.rs", "proto/macos/Info.plist"])).toEqual({
+      full: false,
+      rust: false,
+      ts: false,
+      tsGlobal: false,
+      supply: false,
+      shell: false,
+      workflows: false,
+    });
+    expect(classify(["proto/ui/shell.js"])).toMatchObject({ ts: true, tsGlobal: false });
+    expect(classify(["proto/tauri.conf.json"])).toMatchObject({ ts: true, rust: false });
+    expect(classify(["proto/signing.sh"])).toMatchObject({ shell: true, rust: false });
+  });
+
   test("a path no list names runs everything, never nothing", () => {
     expect(unlisted(["README.md", "lists/easylist.txt"])).toEqual(["lists/easylist.txt"]);
     expect(classify(["lists/easylist.txt"])).toEqual(EVERYTHING);
