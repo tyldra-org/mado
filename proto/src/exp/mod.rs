@@ -16,6 +16,8 @@ mod drm;
 #[cfg(target_os = "macos")]
 mod extensions;
 #[cfg(target_os = "macos")]
+mod media;
+#[cfg(target_os = "macos")]
 mod memory;
 #[cfg(target_os = "macos")]
 mod network;
@@ -41,6 +43,7 @@ pub const NAMES: &[&str] = &[
     "network",
     "extensions",
     "drm",
+    "media",
 ];
 
 #[cfg(target_os = "macos")]
@@ -56,6 +59,7 @@ pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
         "network" => network::run(ctx),
         "extensions" => extensions::run(ctx),
         "drm" => drm::run(ctx),
+        "media" => media::run(ctx),
         _ => Err(format!("no experiment {name}")),
     }
 }
