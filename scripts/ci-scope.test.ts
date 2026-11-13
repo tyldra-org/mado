@@ -26,6 +26,7 @@ describe("classify", () => {
         ".github/dependabot.yml",
         ".github/VOUCHED.td",
         ".github/labeler.yml",
+        ".github/MAINTAINERS",
         "bacon.toml",
         "LICENSE",
         ".gitignore",
