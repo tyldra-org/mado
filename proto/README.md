@@ -2,7 +2,7 @@
 
 Throwaway code that answers platform questions on a real Mac before the real implementation starts: native tab views under Tauri, extensions, blocking cost, session restore, DRM playback, Keychain behaviour with a self-signed build, off-screen agent tabs and more.
 
-Nothing here ships, and the folder is deleted when milestone M0 ends. The deliverable is the M0 report.
+Nothing here ships. The deliverable is the M0 report. M0 is done for macOS, but the folder stays until its last users are done: `proto/supervised.sh` for the checks that moved to M2-T06, M2-T07, M4-T06 and M4-T07, and the Windows half in M8-T01. Delete it after those.
 
 The prototype is its own Cargo workspace with its own lockfile. The main workspace, its lints and CI never build it; Biome and shellcheck still read its scripts.
 
