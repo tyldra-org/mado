@@ -12,6 +12,10 @@ mod agent;
 #[cfg(target_os = "macos")]
 mod blocking;
 #[cfg(target_os = "macos")]
+mod drm;
+#[cfg(target_os = "macos")]
+mod extensions;
+#[cfg(target_os = "macos")]
 mod memory;
 #[cfg(target_os = "macos")]
 mod network;
@@ -27,7 +31,16 @@ mod shell_check;
 mod sites;
 
 pub const NAMES: &[&str] = &[
-    "shell", "overlay", "session", "memory", "agent", "blocking", "platform", "network",
+    "shell",
+    "overlay",
+    "session",
+    "memory",
+    "agent",
+    "blocking",
+    "platform",
+    "network",
+    "extensions",
+    "drm",
 ];
 
 #[cfg(target_os = "macos")]
@@ -41,6 +54,8 @@ pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
         "blocking" => blocking::run(ctx),
         "platform" => platform::run(ctx),
         "network" => network::run(ctx),
+        "extensions" => extensions::run(ctx),
+        "drm" => drm::run(ctx),
         _ => Err(format!("no experiment {name}")),
     }
 }

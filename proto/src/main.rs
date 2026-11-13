@@ -10,6 +10,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod procs;
 mod shell;
+#[cfg(target_os = "macos")]
+mod webext;
 #[cfg(windows)]
 mod windows_tab;
 

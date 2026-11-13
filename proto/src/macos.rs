@@ -208,11 +208,11 @@ impl NavigationDelegate {
     }
 }
 
-fn main_thread() -> Result<MainThreadMarker, String> {
+pub(crate) fn main_thread() -> Result<MainThreadMarker, String> {
     MainThreadMarker::new().ok_or_else(|| "WebKit is touched only on the main thread".into())
 }
 
-fn content_view(window: &tauri::Window) -> Result<Retained<NSView>, String> {
+pub(crate) fn content_view(window: &tauri::Window) -> Result<Retained<NSView>, String> {
     let ns_window = window
         .ns_window()
         .map_err(|e| e.to_string())?
@@ -755,7 +755,7 @@ fn insert_tab(content: &NSView, frame: NSRect) -> Result<TabId, String> {
     insert_tab_with(content, frame, &configuration)
 }
 
-fn insert_tab_with(
+pub(crate) fn insert_tab_with(
     content: &NSView,
     frame: NSRect,
     configuration: &WKWebViewConfiguration,
@@ -797,7 +797,7 @@ fn insert_tab_with(
     Ok(id)
 }
 
-fn with_tab<R>(tab: TabId, f: impl FnOnce(&WKWebView) -> R) -> Result<R, String> {
+pub(crate) fn with_tab<R>(tab: TabId, f: impl FnOnce(&WKWebView) -> R) -> Result<R, String> {
     main_thread()?;
     TABS.with_borrow(|tabs| tabs.get(tab).and_then(Option::as_ref).map(|t| f(&t.view)))
         .ok_or_else(|| format!("no tab {tab}"))
@@ -1066,7 +1066,7 @@ pub fn ui_safe_top(window: &tauri::Window) -> Result<f64, String> {
 
 /// Starts `body` (an async function body) in the page world of `view`. The
 /// body's return value comes back as JSON on the receiver.
-fn start_eval(view: &WKWebView, body: &str) -> mpsc::Receiver<Result<Value, String>> {
+pub(crate) fn start_eval(view: &WKWebView, body: &str) -> mpsc::Receiver<Result<Value, String>> {
     let (tx, rx) = mpsc::channel();
     let wrapped = format!("return JSON.stringify(await (async () => {{ {body} }})() ?? null);");
     let block = RcBlock::new(move |result: *mut AnyObject, error: *mut NSError| {
