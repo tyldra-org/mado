@@ -2,7 +2,7 @@
 
 # Mado
 
-**A private, open-source web browser for Mac and Windows, built on the engine your system already ships.**
+**A private, open-source web browser for Mac, built on the engine your system already ships.**
 
 [Platforms](#platforms) · [Privacy](#privacy) · [Roadmap](#roadmap) · [FAQ](#faq) · [Build from source](#build-from-source) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
@@ -14,7 +14,7 @@
 > [!IMPORTANT]
 > **Mado is pre-alpha.** The design and the repository scaffold are in place; building starts with the engine prototype. There is nothing to install yet. Watch this repository's releases to hear when the first build is out.
 
-Mado is an open-source web browser for macOS and Windows, written in Rust. It works like Chrome where your habits live: the same shortcuts, menus, tab behaviour and settings layout. It differs where it should: vertical tabs down the side, a built-in ad blocker, its own password manager, and optional AI that works with the subscriptions or keys you already have. Pages render in the engine your operating system already ships, WebKit on macOS and WebView2 on Windows, so there is no second browser engine to download and the engine gets security fixes with your OS updates.
+Mado is an open-source web browser for macOS, written in Rust. Windows and Linux come later. It works like Chrome where your habits live: the same shortcuts, menus, tab behaviour and settings layout. It differs where it should: vertical tabs down the side, a built-in ad blocker, its own password manager, and optional AI that works with the subscriptions or keys you already have. Pages render in the engine your operating system already ships, WebKit on macOS, so there is no second browser engine to download and the engine gets security fixes with your OS updates.
 
 ## What Mado will do
 
@@ -38,10 +38,10 @@ Mado is an open-source web browser for macOS and Windows, written in Rust. It wo
 | Platform | Engine | Minimum |
 | --- | --- | --- |
 | macOS (Apple silicon and Intel) | WebKit (WKWebView) | macOS 15.4 |
-| Windows (x64) | Microsoft Edge WebView2 | Windows 10 |
-| Linux | Later | |
+| Windows (x64) | Microsoft Edge WebView2 | Later |
+| Linux | Later | Later |
 
-A feature ships on both macOS and Windows, or the gap is stated in the app.
+Mado is built for macOS first. Windows and Linux follow once the macOS browser is usable; the engine sits behind one Rust trait so they can.
 
 ## How it works
 
@@ -51,7 +51,7 @@ A Rust core owns every piece of browser state: tabs, history, settings, password
 
 | Milestone | Release | Delivers |
 | --- | --- | --- |
-| M0 Prototype | | Answers open engine questions on real WebKit and WebView2 |
+| M0 Prototype | | Answers open engine questions on real WebKit (macOS) |
 | M1 Foundation | | Core, storage, settings, app shell, release pipeline |
 | M2 Browsing core | v0.1 | A browser you can use every day |
 | M3 Extensions and blocker | v0.2 | Chrome Web Store extensions and the built-in blocker |
@@ -70,7 +70,7 @@ Not yet. Mado is pre-alpha, and v0.1 is the first build meant for everyday brows
 
 ### Which browser engine does Mado use?
 
-The one your system already ships. On macOS that is WebKit, the engine Safari uses. On Windows it is Microsoft Edge WebView2, which is built on Chromium and kept up to date by Microsoft. Mado bundles no engine of its own, so engine security fixes arrive with your system's updates.
+The one your system already ships. On macOS that is WebKit, the engine Safari uses. On Windows, when it comes, it will be Microsoft Edge WebView2, which is built on Chromium and kept up to date by Microsoft. Mado bundles no engine of its own, so engine security fixes arrive with your system's updates.
 
 ### Will Mado run Chrome extensions?
 
@@ -83,7 +83,7 @@ Yes, by default, from v0.2. The built-in blocker reads uBlock Origin's filter li
 ### How is Mado different from Chrome, Safari or Arc?
 
 - **Chrome:** Mado keeps Chrome's shortcuts, menus and tab groups, with no telemetry and no bundled engine.
-- **Safari:** Mado uses Safari's engine on macOS, adds Chrome Web Store extensions, and runs on Windows too.
+- **Safari:** Mado uses Safari's engine on macOS, and adds Chrome Web Store extensions.
 - **Arc:** tabs sit down the side, as in Arc. Mado is open source under the MPL 2.0 and needs no account.
 
 ### Does Mado collect my data?
@@ -94,9 +94,9 @@ No. Mado has no telemetry and needs no account to browse. Mado itself contacts o
 
 No. AI is off until you turn it on. Then it works with your own API keys, a local model, or a subscription through its official CLI.
 
-### Will Mado run on Linux?
+### Will Mado run on Windows or Linux?
 
-Later. macOS and Windows come first.
+Later. macOS comes first; Windows (on WebView2) and Linux follow.
 
 ## Build from source
 

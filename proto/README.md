@@ -1,6 +1,6 @@
 # M0 prototype
 
-Throwaway code that answers platform questions on real macOS and Windows machines before the real implementation starts: native tab views under Tauri, extensions, blocking cost, session restore, DRM playback, Keychain behaviour with a self-signed build, off-screen agent tabs and more.
+Throwaway code that answers platform questions on a real Mac before the real implementation starts: native tab views under Tauri, extensions, blocking cost, session restore, DRM playback, Keychain behaviour with a self-signed build, off-screen agent tabs and more.
 
 Nothing here ships, and the folder is deleted when milestone M0 ends. The deliverable is the M0 report.
 
@@ -25,4 +25,4 @@ The M0 identity signs prototype builds only. The release identity in spec 15 §3
 
 ## Windows
 
-Not run on Windows yet. `proto/check-windows.sh` type-checks the Windows build from a Mac (Clippy, `-D warnings`, target `x86_64-pc-windows-msvc`), so the Windows code compiles; whether it works is for the Windows run sheet in `mado-docs/research/m0-report.md`. Scripted experiments (`--exp`) are macOS-only; on Windows the run sheet lists the manual steps.
+Deferred: M0 covers macOS only for now; Windows and Linux come later. `proto/check-windows.sh` type-checks the Windows build from a Mac (Clippy, `-D warnings`, target `x86_64-pc-windows-msvc`), so the Windows code compiles; whether it works is for the Windows run sheet in `mado-docs/research/m0-report.md`. Scripted experiments (`--exp`) are macOS-only; on Windows the run sheet lists the manual steps.

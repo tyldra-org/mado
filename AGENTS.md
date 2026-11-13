@@ -4,7 +4,7 @@ Instructions for AI coding agents working on Mado. Humans start with [CONTRIBUTI
 
 This root file covers what applies everywhere. Some folders have their own `AGENTS.md` (listed in [Where code lives](#where-code-lives)); read it before editing there. The closest file wins, and the user's instructions win over all of them.
 
-Mado is a desktop web browser for macOS and Windows. A Rust core owns every piece of browser state. Pages render in the engine the operating system ships: WKWebView on macOS, WebView2 on Windows. The interface is Svelte 5 and TypeScript inside Tauri 2. Each open profile is its own OS process.
+Mado is a desktop web browser for macOS (Windows and Linux later). A Rust core owns every piece of browser state. Pages render in the engine the operating system ships: WKWebView on macOS, WebView2 on Windows. The interface is Svelte 5 and TypeScript inside Tauri 2. Each open profile is its own OS process.
 
 Status: pre-alpha. Most crates are empty and say in their `lib.rs` which spec section and roadmap task will fill them.
 
@@ -16,7 +16,7 @@ Every change is judged against these. If a task seems to need breaking one, stop
 2. **Web pages are hostile.** Nothing a page sends is trusted. Page content never reaches Tauri commands, and every page message is validated in Rust before Mado acts on it.
 3. **Private by default.** No telemetry. Mado contacts only the hosts listed in the privacy spec. Never log URLs from private windows, page content, credentials, tokens or AI prompts.
 4. **The user controls everything.** Every behaviour has a setting, every optional feature can be switched off, and a switch the user turned off stays off. Some settings are protected: agents, the CLI and MCP can never change them.
-5. **Two platforms, one behaviour.** A feature works on macOS and Windows, or the gap is stated in the spec and shown in the app.
+5. **macOS first.** Mado targets macOS for now; Windows and Linux come later. Keep engine code behind the `Engine` trait so they can follow, and keep the Windows code compiling.
 6. **Zero cost.** No paid services, servers or certificates. A feature that needs one is not built.
 
 ## Glossary
