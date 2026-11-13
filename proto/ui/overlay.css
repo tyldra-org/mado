@@ -1,0 +1,13 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font: 13px system-ui;
+}
+body {
+  display: grid;
+  place-items: center;
+  background: #f4cccc;
+  border: 2px solid #990000;
+  box-sizing: border-box;
+}
