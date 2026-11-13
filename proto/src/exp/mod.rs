@@ -14,7 +14,11 @@ mod blocking;
 #[cfg(target_os = "macos")]
 mod memory;
 #[cfg(target_os = "macos")]
+mod network;
+#[cfg(target_os = "macos")]
 mod overlay;
+#[cfg(target_os = "macos")]
+mod platform;
 #[cfg(target_os = "macos")]
 mod session;
 #[cfg(target_os = "macos")]
@@ -22,7 +26,9 @@ mod shell_check;
 #[cfg(target_os = "macos")]
 mod sites;
 
-pub const NAMES: &[&str] = &["shell", "overlay", "session", "memory", "agent", "blocking"];
+pub const NAMES: &[&str] = &[
+    "shell", "overlay", "session", "memory", "agent", "blocking", "platform", "network",
+];
 
 #[cfg(target_os = "macos")]
 pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
@@ -33,6 +39,8 @@ pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
         "memory" => memory::run(ctx),
         "agent" => agent::run(ctx),
         "blocking" => blocking::run(ctx),
+        "platform" => platform::run(ctx),
+        "network" => network::run(ctx),
         _ => Err(format!("no experiment {name}")),
     }
 }

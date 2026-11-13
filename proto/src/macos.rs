@@ -24,7 +24,7 @@ use objc2_foundation::{
 };
 use objc2_web_kit::{
     WKContentRuleList, WKContentRuleListStore, WKContentWorld, WKNavigation, WKNavigationDelegate,
-    WKWebView, WKWebViewConfiguration,
+    WKUserScript, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -567,6 +567,173 @@ pub fn apply_rules(tab: TabId, id: &str) -> Result<(), String> {
     })
 }
 
+#[link(name = "Network", kind = "framework")]
+unsafe extern "C" {
+    // <Network/endpoint.h> and <Network/proxy_config.h> (macOS 14+). Both
+    // return retained objects.
+    fn nw_endpoint_create_host(
+        hostname: *const std::ffi::c_char,
+        port: *const std::ffi::c_char,
+    ) -> *mut AnyObject;
+    fn nw_proxy_config_create_http_connect(
+        endpoint: *mut AnyObject,
+        tls_options: *mut AnyObject,
+    ) -> *mut AnyObject;
+}
+
+/// Adds a hidden tab view with its own non-persistent data store, as a
+/// profile has its own store, optionally sending all its traffic through an
+/// HTTP CONNECT proxy at 127.0.0.1:`proxy_port`
+/// (`WKWebsiteDataStore.proxyConfigurations`, 13 network settings).
+pub fn add_tab_with_store(
+    window: &tauri::Window,
+    proxy_port: Option<u16>,
+) -> Result<TabId, String> {
+    let mtm = main_thread()?;
+    let content = content_view(window)?;
+    let frame = with_tab(0, |v| v.frame())?;
+    // SAFETY: plain constructors on the main thread.
+    let (configuration, store) = unsafe {
+        (
+            WKWebViewConfiguration::new(mtm),
+            WKWebsiteDataStore::nonPersistentDataStore(mtm),
+        )
+    };
+    if let Some(port) = proxy_port {
+        let host = std::ffi::CString::new("127.0.0.1").map_err(|e| e.to_string())?;
+        let port = std::ffi::CString::new(port.to_string()).map_err(|e| e.to_string())?;
+        // SAFETY: valid C strings; both functions return +1 objects, which
+        // Retained::from_raw takes over.
+        let config = unsafe {
+            let endpoint = nw_endpoint_create_host(host.as_ptr(), port.as_ptr());
+            let endpoint = Retained::from_raw(endpoint).ok_or("nw_endpoint_create_host failed")?;
+            let raw = nw_proxy_config_create_http_connect(
+                Retained::as_ptr(&endpoint).cast_mut(),
+                std::ptr::null_mut(),
+            );
+            Retained::from_raw(raw).ok_or("nw_proxy_config_create_http_connect failed")?
+        };
+        let list = objc2_foundation::NSArray::from_retained_slice(&[config]);
+        let selector = objc2::sel!(setProxyConfigurations:);
+        // SAFETY: respondsToSelector: is safe on any object.
+        let responds: bool = unsafe { msg_send![&*store, respondsToSelector: selector] };
+        if !responds {
+            return Err("WKWebsiteDataStore has no proxyConfigurations".into());
+        }
+        // SAFETY: the property takes an NSArray of nw_proxy_config_t.
+        let () = unsafe { msg_send![&*store, setProxyConfigurations: &*list] };
+    }
+    // SAFETY: setting the store on a fresh configuration.
+    unsafe { configuration.setWebsiteDataStore(&store) };
+    let id = insert_tab_with(&content, frame, &configuration)?;
+    with_tab(id, |v| v.setHidden(true))?;
+    Ok(id)
+}
+
+/// Adds a user script that runs at document start in the page world, as
+/// Mado's page scripts are.
+pub fn add_user_script(tab: TabId, source: &str) -> Result<(), String> {
+    let mtm = main_thread()?;
+    // SAFETY: a fresh user script from a string, on the main thread.
+    let script = unsafe {
+        WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+            WKUserScript::alloc(mtm),
+            &NSString::from_str(source),
+            objc2_web_kit::WKUserScriptInjectionTime::AtDocumentStart,
+            true,
+        )
+    };
+    with_tab(tab, |view| {
+        // SAFETY: the controller of a live web view.
+        unsafe {
+            view.configuration()
+                .userContentController()
+                .addUserScript(&script)
+        };
+    })
+}
+
+pub fn reload(tab: TabId) -> Result<(), String> {
+    with_tab(tab, |view| {
+        // SAFETY: a navigation call on a live web view.
+        unsafe { view.reload() };
+    })
+}
+
+/// The tab's page as `.webarchive` bytes.
+pub fn web_archive(tab: TabId) -> Result<mpsc::Receiver<Result<Vec<u8>, String>>, String> {
+    let (tx, rx) = mpsc::channel();
+    let block = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
+        // SAFETY: WebKit passes valid data or a valid error.
+        let outcome = match (unsafe { data.as_ref() }, unsafe { error.as_ref() }) {
+            (Some(data), _) => Ok(data.to_vec()),
+            (None, Some(error)) => Err(describe_error(error)),
+            (None, None) => Err("no data and no error".into()),
+        };
+        let _ = tx.send(outcome);
+    });
+    // SAFETY: a live web view and a block that only sends.
+    with_tab(tab, |view| unsafe {
+        view.createWebArchiveDataWithCompletionHandler(&block)
+    })?;
+    Ok(rx)
+}
+
+/// Loads `bytes` as a document of type `mime`.
+pub fn load_data(tab: TabId, bytes: &[u8], mime: &str, base: &str) -> Result<(), String> {
+    let data = NSData::with_bytes(bytes);
+    let base = NSURL::URLWithString(&NSString::from_str(base)).ok_or("bad base URL")?;
+    with_tab(tab, |view| {
+        // SAFETY: loading data into a live web view on the main thread.
+        unsafe {
+            view.loadData_MIMEType_characterEncodingName_baseURL(
+                &data,
+                &NSString::from_str(mime),
+                &NSString::from_str("utf-8"),
+                &base,
+            )
+        };
+    })
+}
+
+/// WebKit's public find: whether `text` is on the page. It reports no count.
+pub fn find(tab: TabId, text: &str) -> Result<mpsc::Receiver<bool>, String> {
+    let mtm = main_thread()?;
+    let (tx, rx) = mpsc::channel();
+    let block = RcBlock::new(
+        move |result: std::ptr::NonNull<objc2_web_kit::WKFindResult>| {
+            // SAFETY: WebKit passes a valid result.
+            let _ = tx.send(unsafe { result.as_ref().matchFound() });
+        },
+    );
+    // SAFETY: a fresh configuration; a block that only sends.
+    let configuration = unsafe { objc2_web_kit::WKFindConfiguration::new(mtm) };
+    with_tab(tab, |view| unsafe {
+        view.findString_withConfiguration_completionHandler(
+            &NSString::from_str(text),
+            Some(&configuration),
+            &block,
+        );
+    })?;
+    Ok(rx)
+}
+
+/// Class names of every view inside the tab view, to spot WebKit's own
+/// warning views.
+pub fn view_classes(tab: TabId) -> Result<Vec<String>, String> {
+    fn walk(view: &NSView, out: &mut Vec<String>) {
+        out.push(view.class().name().to_string_lossy().into_owned());
+        for child in view.subviews().iter() {
+            walk(&child, out);
+        }
+    }
+    with_tab(tab, |view| {
+        let mut out = Vec::new();
+        walk(view, &mut out);
+        out
+    })
+}
+
 /// Shows a hidden tab view, as activating a background tab does.
 pub fn show_tab(tab: TabId) -> Result<(), String> {
     with_tab(tab, |view| view.setHidden(false))
@@ -585,9 +752,18 @@ fn insert_tab(content: &NSView, frame: NSRect) -> Result<TabId, String> {
     let mtm = main_thread()?;
     // SAFETY: creating a default configuration on the main thread.
     let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
+    insert_tab_with(content, frame, &configuration)
+}
+
+fn insert_tab_with(
+    content: &NSView,
+    frame: NSRect,
+    configuration: &WKWebViewConfiguration,
+) -> Result<TabId, String> {
+    let mtm = main_thread()?;
     // SAFETY: a fresh configuration and a finite frame, on the main thread.
     let view = unsafe {
-        WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &configuration)
+        WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, configuration)
     };
     let id = TABS.with_borrow(Vec::len);
     let delegate = NavigationDelegate::new(mtm, id);
