@@ -6,7 +6,6 @@
       - any-glob-to-any-file:
           - crates/mado-engine/**
           - crates/mado-engine-webkit/**
-          - crates/mado-engine-webview2/**
           - inject/**
 
 "area: core":
@@ -82,11 +81,6 @@
   - changed-files:
       - any-glob-to-any-file:
           - crates/mado-engine-webkit/**
-
-"platform: windows":
-  - changed-files:
-      - any-glob-to-any-file:
-          - crates/mado-engine-webview2/**
 
 # A CHANGELOG entry alone doesn't make a pull request documentation.
 "documentation":

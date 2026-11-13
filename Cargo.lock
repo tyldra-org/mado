@@ -43,10 +43,6 @@ name = "mado-engine-webkit"
 version = "0.0.0"
 
 [[package]]
-name = "mado-engine-webview2"
-version = "0.0.0"
-
-[[package]]
 name = "mado-extensions"
 version = "0.0.0"
 

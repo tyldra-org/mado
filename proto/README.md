@@ -2,7 +2,7 @@
 
 Throwaway code that answers platform questions on a real Mac before the real implementation starts: native tab views under Tauri, extensions, blocking cost, session restore, DRM playback, Keychain behaviour with a self-signed build, off-screen agent tabs and more.
 
-Nothing here ships. The deliverable is the M0 report. M0 is done for macOS, but the folder stays until its last users are done: `proto/supervised.sh` for the checks that moved to M2-T06, M2-T07, M4-T06 and M4-T07, and the Windows half in M8-T01. Delete it after those.
+Nothing here ships. The deliverable is the M0 report. M0 is done for macOS, but the folder stays until `proto/supervised.sh` has run the checks that moved to M2-T06, M2-T07, M4-T06 and M4-T07. Delete it after those.
 
 The prototype is its own Cargo workspace with its own lockfile. The main workspace, its lints and CI never build it; Biome and shellcheck still read its scripts.
 
@@ -26,7 +26,3 @@ proto/target/MadoProto.app/Contents/MacOS/mado-proto --exp overlay \
 The steps that need someone at the Mac (speech recognition, 1Password's approval prompt, `bw serve` after `bw login`, DRM playback with real accounts) run from `proto/supervised.sh`, one prompt at a time. Don't run `--exp permissions` with `MADO_PROTO_SUPERVISED` set from a terminal: macOS then asks on the terminal's behalf, and ends the app when the terminal has no speech recognition usage text.
 
 The M0 identity signs prototype builds only. The release identity in spec 15 §3 and its CI secret belong to the maintainer.
-
-## Windows
-
-Deferred: M0 covers macOS only; the Windows half runs in roadmap M8-T01, after the UI design pass. `proto/check-windows.sh` type-checks the Windows build from a Mac (Clippy, `-D warnings`, target `x86_64-pc-windows-msvc`), so the Windows code compiles; whether it works is for the Windows run sheet in `mado-docs/research/m0-report.md`. Scripted experiments (`--exp`) are macOS-only; on Windows the run sheet lists the manual steps.

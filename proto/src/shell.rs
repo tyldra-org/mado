@@ -15,11 +15,9 @@ use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl};
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
-#[cfg(windows)]
-use crate::windows_tab as platform;
 
-#[cfg(not(any(target_os = "macos", windows)))]
-compile_error!("the M0 prototype runs on macOS and Windows only");
+#[cfg(not(target_os = "macos"))]
+compile_error!("the M0 prototype runs on macOS only");
 
 pub const USAGE: &str = "usage: mado-proto [--url <url>] [--exp <name> [--arg <value>] [--out <file>] [--screenshot <png>]]
 
@@ -188,9 +186,7 @@ pub fn on_main<R: Send + 'static>(
 }
 
 /// What an experiment gets: the app, its one tab view and the CLI input.
-/// Experiments are scripted on macOS only, so Windows reads only `app`.
 #[derive(Debug)]
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct Ctx {
     pub app: AppHandle,
     pub tab: platform::TabId,
@@ -321,12 +317,9 @@ pub fn run(args: Args) -> ExitCode {
 
 fn run_experiment(ctx: &Ctx, name: &str, out: Option<PathBuf>, screenshot: Option<PathBuf>) {
     let started = Instant::now();
-    #[cfg(target_os = "macos")]
     let placed = ctx
         .window()
         .and_then(|window| on_main(&ctx.app, move || platform::hide_window(&window))?);
-    #[cfg(not(target_os = "macos"))]
-    let placed: Result<(), String> = Ok(());
     let result = placed
         .and_then(|()| ctx.shell().wait_report(0, STEP_TIMEOUT))
         .and_then(|_| crate::exp::run(name, ctx));

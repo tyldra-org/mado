@@ -47,7 +47,7 @@ Mado is a web browser, so the most important reports are about:
 - Bypassing site permissions, download safety, certificate errors or private windows.
 - Tampered updates, extension packages or filter lists being accepted.
 
-Bugs in WebKit or WebView2 themselves belong to Apple or Microsoft; tell us too if Mado makes them reachable.
+Bugs in WebKit itself belong to Apple; tell us too if Mado makes them reachable.
 
 ## Disclosure policy
 

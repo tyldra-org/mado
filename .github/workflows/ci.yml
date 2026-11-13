@@ -92,11 +92,11 @@ jobs:
     name: Rust (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    # Mado ships on macOS and Windows; both engines must lint, build and pass.
+    # Mado ships on macOS: lint, build and test on a Mac.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
@@ -145,12 +145,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Format, lint and typecheck do not depend on the OS: run them once,
-          # on the fastest runner. Build and test also run on Windows.
+          # Format, lint, typecheck, build and test do not depend on the OS:
+          # run them once, on the fastest runner.
           - os: ubuntu-latest
             stages: format lint build test
-          - os: windows-latest
-            stages: build test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     defaults:
@@ -170,7 +168,7 @@ jobs:
         id: bun-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.os == 'Windows' && '~\.bun' || '~/.bun/install/cache' }}
+          path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
       - name: Install dependencies
@@ -179,7 +177,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.os == 'Windows' && '~\.bun' || '~/.bun/install/cache' }}
+          path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - name: Check
         env:

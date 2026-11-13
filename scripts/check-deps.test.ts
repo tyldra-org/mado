@@ -15,7 +15,7 @@ describe("findViolations", () => {
   });
 
   test("rejects the core depending on an engine adapter", () => {
-    expect(findViolations({ "mado-core": ["mado-engine-webview2"] })).toHaveLength(1);
+    expect(findViolations({ "mado-core": ["mado-engine-webkit"] })).toHaveLength(1);
   });
 
   test("rejects the CLI depending on anything but mado-types", () => {

@@ -1,6 +1,6 @@
 //! Mado M0 prototype: a throwaway Tauri app that answers the engine questions
 //! the specs mark "(verify in M0)". Nothing outside `proto/` imports it, and
-//! the folder is deleted once M8-T01 and the supervised checks are done. See
+//! the folder is deleted once the supervised checks are done. See
 //! `proto/README.md`.
 
 #[cfg(target_os = "macos")]
@@ -17,8 +17,6 @@ mod procs;
 mod shell;
 #[cfg(target_os = "macos")]
 mod webext;
-#[cfg(windows)]
-mod windows_tab;
 
 use std::process::ExitCode;
 

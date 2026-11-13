@@ -35,14 +35,14 @@ bun install --frozen-lockfile
 
    Individual stages:
 
-   | Stage | Rust half | TypeScript half |
-   | --- | --- | --- |
-   | Format | `cargo fmt --all --check` | `bun run format:check` |
-   | Lint | `cargo clippy --workspace --all-targets --locked -- -D warnings && bun run deps:check` | `bun run lint` |
-   | Build | `cargo build --workspace --locked` | `bun run build` |
-   | Test | `cargo nextest run --workspace` plus `cargo test --doc`, or `cargo test --workspace` without nextest | `bun test`, then Vitest in `ui/` (`bun run test:ui`) |
-   | Supply chain | `cargo deny check` | |
-   | Shell and workflows | `shellcheck`, `actionlint`, `zizmor` | |
+   | Stage               | Rust half                                                                                            | TypeScript half                                      |
+   | ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+   | Format              | `cargo fmt --all --check`                                                                            | `bun run format:check`                               |
+   | Lint                | `cargo clippy --workspace --all-targets --locked -- -D warnings && bun run deps:check`               | `bun run lint`                                       |
+   | Build               | `cargo build --workspace --locked`                                                                   | `bun run build`                                      |
+   | Test                | `cargo nextest run --workspace` plus `cargo test --doc`, or `cargo test --workspace` without nextest | `bun test`, then Vitest in `ui/` (`bun run test:ui`) |
+   | Supply chain        | `cargo deny check`                                                                                   |                                                      |
+   | Shell and workflows | `shellcheck`, `actionlint`, `zizmor`                                                                 |                                                      |
 
    `bun run format` and `cargo fmt --all` fix formatting.
 
@@ -50,31 +50,31 @@ bun install --frozen-lockfile
 
    While iterating, run the narrowest check: `cargo test -p mado-<name>` for one crate, `bun test <file>` or `bun test --changed` for JavaScript and TypeScript, `bun run --cwd ui test <file>` for a Svelte component. Component and runes tests are named `*.svelte.test.ts` and run under Vitest; other tests are `*.test.ts` and run under `bun test`.
 
-6. Mado targets macOS first; Windows (M8) and Linux (M9) come after the UI design pass. If your change touches platform code, say which platforms you ran it on. CI also builds the Windows code so it keeps compiling.
+6. Mado targets macOS only. If your change touches platform code, say which macOS version you ran it on.
 
-   CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS and Windows. A TypeScript change runs format, lint and typecheck once and the tests it reaches on Linux and Windows. Dependency, toolchain or CI changes check everything, and so does every push to `main`. So does a file in none of the lists in `scripts/ci-scope.ts`: when you add a new kind of file, add it to the list for what reads it, with a case in `scripts/ci-scope.test.ts`.
+   CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS. A TypeScript change runs format, lint, typecheck and the tests it reaches. Dependency, toolchain or CI changes check everything, and so does every push to `main`. So does a file in none of the lists in `scripts/ci-scope.ts`: when you add a new kind of file, add it to the list for what reads it, with a case in `scripts/ci-scope.test.ts`.
 
 ## Optional local tools
 
 None of these are required; each makes a local loop faster or shows something the checks do not. Install the Cargo tools with `cargo install --locked <name>` (or `cargo binstall <name>`).
 
-| Tool | Use it for | Command |
-| --- | --- | --- |
-| `cargo-nextest` | Faster Rust tests; `check.sh` uses it when present | `cargo nextest run -p mado-<name>`, one test with `-E 'test(<name>)'`. It skips doc tests: `cargo test -p mado-<name> --doc` |
-| `bacon` | Clippy or tests rerun on every save, with Mado's jobs from `bacon.toml` | `bacon` (Clippy as CI runs it), `bacon nextest`, `bacon doc` |
-| `sccache` | Reuses compiled crates across branches and checkouts | Set `rustc-wrapper` in your own `~/.cargo/config.toml`, never in this repository |
-| `cargo-llvm-cov` | Coverage, to see which behaviour no test reaches | `rustup component add llvm-tools`, then `cargo llvm-cov nextest -p mado-<name> --no-tests=pass --html` |
-| `samply` | CPU profiles of the app or a benchmark | `samply record <binary>` opens the profile in the Firefox Profiler |
-| `cargo-llvm-lines` | Generic code that bloats compile time | `cargo llvm-lines -p mado-<name>` |
-| `cargo-machete` | Unused dependencies | `cargo machete` |
-| `hyperfine` | Before and after timings for a speed-up | `hyperfine --warmup 1 '<before>' '<after>'` |
+| Tool               | Use it for                                                              | Command                                                                                                                      |
+| ------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `cargo-nextest`    | Faster Rust tests; `check.sh` uses it when present                      | `cargo nextest run -p mado-<name>`, one test with `-E 'test(<name>)'`. It skips doc tests: `cargo test -p mado-<name> --doc` |
+| `bacon`            | Clippy or tests rerun on every save, with Mado's jobs from `bacon.toml` | `bacon` (Clippy as CI runs it), `bacon nextest`, `bacon doc`                                                                 |
+| `sccache`          | Reuses compiled crates across branches and checkouts                    | Set `rustc-wrapper` in your own `~/.cargo/config.toml`, never in this repository                                             |
+| `cargo-llvm-cov`   | Coverage, to see which behaviour no test reaches                        | `rustup component add llvm-tools`, then `cargo llvm-cov nextest -p mado-<name> --no-tests=pass --html`                       |
+| `samply`           | CPU profiles of the app or a benchmark                                  | `samply record <binary>` opens the profile in the Firefox Profiler                                                           |
+| `cargo-llvm-lines` | Generic code that bloats compile time                                   | `cargo llvm-lines -p mado-<name>`                                                                                            |
+| `cargo-machete`    | Unused dependencies                                                     | `cargo machete`                                                                                                              |
+| `hyperfine`        | Before and after timings for a speed-up                                 | `hyperfine --warmup 1 '<before>' '<after>'`                                                                                  |
 
-Debug Rust with `rust-lldb` or your editor's LLDB integration on the test or app binary, and `RUST_LOG=debug` for log output. Debug the UI with the Web Inspector of the platform's web view: Safari's Develop menu for WKWebView on macOS, Edge DevTools for WebView2 on Windows. On macOS the system linker is already fast; no linker setup is needed.
+Debug Rust with `rust-lldb` or your editor's LLDB integration on the test or app binary, and `RUST_LOG=debug` for log output. Debug the UI with the Web Inspector of the platform's web view: Safari's Develop menu for WKWebView. The system linker is already fast; no linker setup is needed.
 
 ## Code rules
 
 - The Rust core owns all browser state. The UI only sends commands and renders what the core sends back.
-- Engine code stays inside `mado-engine-webkit` and `mado-engine-webview2`; nothing else calls WebKit or WebView2 directly. `bun run deps:check` enforces the crate dependency direction.
+- Engine code stays inside `mado-engine-webkit`; nothing else calls WebKit directly. `bun run deps:check` enforces the crate dependency direction.
 - Web pages are untrusted. Anything a page sends is validated in Rust before Mado acts on it.
 - User-facing text goes in `ui/src/i18n/en.json`, never in code.
 - `unsafe` is allowed only in the engine adapters and `mado-platform`, with a `// SAFETY:` comment on every block.
@@ -92,7 +92,7 @@ Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `buil
 
 ## Labels and trust
 
-Issues and pull requests carry an `area:` label for the part of Mado they touch, such as `area: engine` or `area: passwords`, and a `platform:` label when they concern only macOS or Windows; pull requests get theirs from the files they change. Anyone may open a pull request. People the maintainer trusts, after a merged pull request or a roadmap task agreed on its issue, are listed in [`.github/VOUCHED.td`](.github/VOUCHED.td), and their pull requests are marked `contributor: vouched`. Issues and pull requests from people denounced there close automatically.
+Issues and pull requests carry an `area:` label for the part of Mado they touch, such as `area: engine` or `area: passwords`; pull requests get theirs from the files they change. Anyone may open a pull request. People the maintainer trusts, after a merged pull request or a roadmap task agreed on its issue, are listed in [`.github/VOUCHED.td`](.github/VOUCHED.td), and their pull requests are marked `contributor: vouched`. Issues and pull requests from people denounced there close automatically.
 
 ## Files only maintainers change
 
