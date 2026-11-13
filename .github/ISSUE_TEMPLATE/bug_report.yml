@@ -10,7 +10,7 @@ body:
       value: |
         Thanks for the report. Security vulnerabilities must be reported
         privately; see SECURITY.md. A site that looks broken? Check whether it
-        also breaks in Safari (macOS) or Edge (Windows), and say so below.
+        also breaks in Safari, and say so below.
   - type: dropdown
     id: area
     attributes:
@@ -56,26 +56,17 @@ body:
       description: From Mado > About, or the commit SHA if you built it yourself.
     validations:
       required: true
-  - type: dropdown
-    id: platform
-    attributes:
-      label: Platform
-      options:
-        - macOS
-        - Windows
-    validations:
-      required: true
   - type: input
     id: os
     attributes:
-      label: Operating system version
-      placeholder: macOS 26.1 or Windows 11 24H2
+      label: macOS version
+      placeholder: macOS 26.1
     validations:
       required: true
   - type: dropdown
     id: other-browser
     attributes:
-      label: Does it also happen in Safari (macOS) or Edge (Windows)?
+      label: Does it also happen in Safari?
       options:
         - "No, only in Mado"
         - "Yes, there too"

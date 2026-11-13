@@ -7,7 +7,6 @@ members = [
     "crates/mado-storage",
     "crates/mado-engine",
     "crates/mado-engine-webkit",
-    "crates/mado-engine-webview2",
     "crates/mado-settings",
     "crates/mado-safety",
     "crates/mado-permissions",

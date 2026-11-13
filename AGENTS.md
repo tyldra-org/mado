@@ -4,7 +4,7 @@ Instructions for AI coding agents working on Mado. Humans start with [CONTRIBUTI
 
 This root file covers what applies everywhere. Some folders have their own `AGENTS.md` (listed in [Where code lives](#where-code-lives)); read it before editing there. The closest file wins, and the user's instructions win over all of them.
 
-Mado is a desktop web browser for macOS. Windows (roadmap M8) and Linux (M9) come after the UI design pass. A Rust core owns every piece of browser state. Pages render in the engine the operating system ships: WKWebView on macOS, WebView2 on Windows. The interface is Svelte 5 and TypeScript inside Tauri 2. Each open profile is its own OS process.
+Mado is a desktop web browser for macOS. A Rust core owns every piece of browser state. Pages render in WKWebView, the engine macOS ships. The interface is Svelte 5 and TypeScript inside Tauri 2. Each open profile is its own OS process.
 
 Status: pre-alpha. Most crates are empty and say in their `lib.rs` which spec section and roadmap task will fill them.
 
@@ -16,7 +16,7 @@ Every change is judged against these. If a task seems to need breaking one, stop
 2. **Web pages are hostile.** Nothing a page sends is trusted. Page content never reaches Tauri commands, and every page message is validated in Rust before Mado acts on it.
 3. **Private by default.** No telemetry. Mado contacts only the hosts listed in the privacy spec. Never log URLs from private windows, page content, credentials, tokens or AI prompts.
 4. **The user controls everything.** Every behaviour has a setting, every optional feature can be switched off, and a switch the user turned off stays off. Some settings are protected: agents, the CLI and MCP can never change them.
-5. **macOS first.** Mado targets macOS until the UI design pass (M6) is done; Windows is M8 and Linux M9. Keep engine code behind the `Engine` trait so they can follow, and keep the Windows code compiling.
+5. **macOS only.** Mado targets macOS. Do not add Windows or Linux code, CI jobs or docs. Keep engine code behind the `Engine` trait.
 6. **Zero cost.** No paid services, servers or certificates. A feature that needs one is not built.
 
 ## Glossary
@@ -27,7 +27,7 @@ Use these words the same way in code, comments, commits and replies.
 - **core**: the `mado-core` actor inside one profile process. It is the only owner of state.
 - **state document**: the tree the core owns and the UI mirrors. **patch**: a numbered JSON Patch that moves the UI's copy forward one revision.
 - **command**: a typed request to the core (`tab.close`, `settings.set`). **origin**: who sent it (UI, overlay, settings window, internal page, control client, agent). The origin comes from the transport, never the payload.
-- **engine**: WebKit or WebView2 behind the `Engine` trait. **adapter**: `mado-engine-webkit` or `mado-engine-webview2`.
+- **engine**: WebKit behind the `Engine` trait. **adapter**: `mado-engine-webkit`.
 - **tab view**: the native web view showing one tab. **UI webview**: Tauri webview drawing Mado's own chrome. **overlay**: a second Tauri webview above tab views for menus, prompts and popups.
 - **page script**: a script from `inject/` running inside web pages. **internal page**: a `mado://` page such as history or downloads.
 - **profile process**: one running Mado process for one profile. **private window**: a temporary profile that leaves nothing behind.
@@ -48,19 +48,19 @@ Until the UI is designed (milestone M6), screens are plain functional components
 
 ## Commands
 
-| Purpose | Command |
-| --- | --- |
-| Install | `bun install --frozen-lockfile` (the Rust toolchain pinned in `rust-toolchain.toml` installs itself) |
-| Everything CI runs | `./scripts/check.sh` (stages: `--list`; one stage: `./scripts/check.sh lint`; one language: `--scope rust` or `--scope ts`). Missing tools such as `shellcheck`, `actionlint`, `zizmor` or `cargo-deny` are skipped and named; CI runs `--all`, where a skip fails |
-| One crate | `cargo test -p mado-<name>`, `cargo clippy -p mado-<name> --all-targets -- -D warnings` |
-| JS and TS tests | `bun test` (plain `*.test.ts`), or `bun test <path>` for one file |
-| Svelte component and runes tests | `bun run test:ui` (Vitest, `ui/src/**/*.svelte.test.ts`) |
-| Types | `bun run typecheck` |
-| Format | `cargo fmt --all && bun run format` |
-| Crate dependency rules | `bun run deps:check` |
-| UI dev server | `bun run dev:ui` |
-| Page scripts | `bun run build:inject` |
-| What CI runs for your committed changes | `bun scripts/ci-scope.ts areas origin/main` (jobs), `bun scripts/ci-scope.ts cargo origin/main` (crates) |
+| Purpose                                 | Command                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Install                                 | `bun install --frozen-lockfile` (the Rust toolchain pinned in `rust-toolchain.toml` installs itself)                                                                                                                                                               |
+| Everything CI runs                      | `./scripts/check.sh` (stages: `--list`; one stage: `./scripts/check.sh lint`; one language: `--scope rust` or `--scope ts`). Missing tools such as `shellcheck`, `actionlint`, `zizmor` or `cargo-deny` are skipped and named; CI runs `--all`, where a skip fails |
+| One crate                               | `cargo test -p mado-<name>`, `cargo clippy -p mado-<name> --all-targets -- -D warnings`                                                                                                                                                                            |
+| JS and TS tests                         | `bun test` (plain `*.test.ts`), or `bun test <path>` for one file                                                                                                                                                                                                  |
+| Svelte component and runes tests        | `bun run test:ui` (Vitest, `ui/src/**/*.svelte.test.ts`)                                                                                                                                                                                                           |
+| Types                                   | `bun run typecheck`                                                                                                                                                                                                                                                |
+| Format                                  | `cargo fmt --all && bun run format`                                                                                                                                                                                                                                |
+| Crate dependency rules                  | `bun run deps:check`                                                                                                                                                                                                                                               |
+| UI dev server                           | `bun run dev:ui`                                                                                                                                                                                                                                                   |
+| Page scripts                            | `bun run build:inject`                                                                                                                                                                                                                                             |
+| What CI runs for your committed changes | `bun scripts/ci-scope.ts areas origin/main` (jobs), `bun scripts/ci-scope.ts cargo origin/main` (crates)                                                                                                                                                           |
 
 While iterating, run the narrowest check for what you touched, never the full suite:
 
@@ -72,17 +72,17 @@ While iterating, run the narrowest check for what you touched, never the full su
 
 Use these when installed; they live on the developer's machine, never in this repository. `bacon` and the samply viewer are interactive, so recommend them to the user and run the plain commands yourself.
 
-| Need | Tool |
-| --- | --- |
-| Why a Rust test fails | `cargo test -p mado-<name> --no-run` prints the binary; `rust-lldb -- <binary> <test> --exact`; `RUST_LOG=debug` |
-| Where CPU time goes (engines, core, from M2) | `samply record --save-only -o /tmp/mado.json.gz -- <binary>`; the user opens it with `samply load` |
-| Which code no test reaches | `cargo llvm-cov nextest -p mado-<name> --no-tests=pass --summary-only` |
-| Generic code slowing builds | `cargo llvm-lines -p mado-<name> --lib` |
-| Unused dependencies | `cargo machete`, then confirm each by building |
-| Prove a speed-up | `hyperfine --warmup 1 '<before>' '<after>'` (cold Rust builds: `--prepare 'cargo clean -p mado-<name>'`) |
-| Why a Svelte effect reruns | `$inspect.trace()` as its first statement; remove before committing |
-| Check a changed component | `bunx @sveltejs/mcp svelte-autofixer <file> --svelte-version <installed>` |
-| Debug the UI inside the app (from M1) | Safari Web Inspector on macOS (WKWebView), Edge DevTools on Windows (WebView2) |
+| Need                                         | Tool                                                                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Why a Rust test fails                        | `cargo test -p mado-<name> --no-run` prints the binary; `rust-lldb -- <binary> <test> --exact`; `RUST_LOG=debug` |
+| Where CPU time goes (engines, core, from M2) | `samply record --save-only -o /tmp/mado.json.gz -- <binary>`; the user opens it with `samply load`               |
+| Which code no test reaches                   | `cargo llvm-cov nextest -p mado-<name> --no-tests=pass --summary-only`                                           |
+| Generic code slowing builds                  | `cargo llvm-lines -p mado-<name> --lib`                                                                          |
+| Unused dependencies                          | `cargo machete`, then confirm each by building                                                                   |
+| Prove a speed-up                             | `hyperfine --warmup 1 '<before>' '<after>'` (cold Rust builds: `--prepare 'cargo clean -p mado-<name>'`)         |
+| Why a Svelte effect reruns                   | `$inspect.trace()` as its first statement; remove before committing                                              |
+| Check a changed component                    | `bunx @sveltejs/mcp svelte-autofixer <file> --svelte-version <installed>`                                        |
+| Debug the UI inside the app (from M1)        | Safari Web Inspector (WKWebView)                                                                                 |
 
 Run project tools through `bun run` or `bunx`, never a global install: the global `tsc` may be a different TypeScript than the lockfile's. Installing or upgrading a tool is the user's call; Cargo tools come from `cargo binstall`.
 
@@ -98,22 +98,21 @@ Full detail: `mado-docs/spec/01-process-and-ipc.md` and `02-engine.md`.
 
 ## Where code lives
 
-| Path | Contents | Read first |
-| --- | --- | --- |
-| `app/` | The application binary; becomes the Tauri 2 shell in M1 | |
-| `crates/mado-types/` | IDs, state document, commands, events, errors; exported to TypeScript with ts-rs (wired in M1; until then `ui/src/generated/` holds only its README) | |
-| `crates/mado-core/` | The core actor | |
-| `crates/mado-engine/` | The `Engine` trait and engine events | |
-| `crates/mado-engine-webkit/` | macOS adapter (WKWebView, WKWebExtension) | its `AGENTS.md` |
-| `crates/mado-engine-webview2/` | Windows adapter (WebView2) | its `AGENTS.md` |
-| `crates/mado-<area>/` | storage, settings, safety, permissions, navigation, extensions, blocker, vault, autofill, import, ai, agent, control, platform | the crate's `lib.rs` |
-| `crates/mado-cli/` | The `mado` command line | |
-| `ui/` | Svelte 5 interface: main window, overlay, settings window, internal pages | `ui/AGENTS.md` |
-| `inject/` | Page scripts injected into web pages | `inject/AGENTS.md` |
-| `lists/` | Signed data lists the app fetches | |
-| `tests/` | Fixtures and the end-to-end harness; engine fixture pages go in `tests/pages/` (created with the first engine task) | |
-| `proto/` | The throwaway M0 prototype; never import from it | |
-| `scripts/` | `check.sh` and repository checks | |
+| Path                         | Contents                                                                                                                                             | Read first           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `app/`                       | The application binary; becomes the Tauri 2 shell in M1                                                                                              |                      |
+| `crates/mado-types/`         | IDs, state document, commands, events, errors; exported to TypeScript with ts-rs (wired in M1; until then `ui/src/generated/` holds only its README) |                      |
+| `crates/mado-core/`          | The core actor                                                                                                                                       |                      |
+| `crates/mado-engine/`        | The `Engine` trait and engine events                                                                                                                 |                      |
+| `crates/mado-engine-webkit/` | macOS adapter (WKWebView, WKWebExtension)                                                                                                            | its `AGENTS.md`      |
+| `crates/mado-<area>/`        | storage, settings, safety, permissions, navigation, extensions, blocker, vault, autofill, import, ai, agent, control, platform                       | the crate's `lib.rs` |
+| `crates/mado-cli/`           | The `mado` command line                                                                                                                              |                      |
+| `ui/`                        | Svelte 5 interface: main window, overlay, settings window, internal pages                                                                            | `ui/AGENTS.md`       |
+| `inject/`                    | Page scripts injected into web pages                                                                                                                 | `inject/AGENTS.md`   |
+| `lists/`                     | Signed data lists the app fetches                                                                                                                    |                      |
+| `tests/`                     | Fixtures and the end-to-end harness; engine fixture pages go in `tests/pages/` (created with the first engine task)                                  |                      |
+| `proto/`                     | The throwaway M0 prototype; never import from it                                                                                                     |                      |
+| `scripts/`                   | `check.sh` and repository checks                                                                                                                     |                      |
 
 Crate dependency direction (enforced by `bun run deps:check`): nothing depends on `mado-app`; only `mado-app` depends on an engine adapter; `mado-types` depends on no workspace crate; `mado-engine` and `mado-cli` depend only on `mado-types`.
 
@@ -121,28 +120,28 @@ Crate dependency direction (enforced by `bun run deps:check`): nothing depends o
 
 Before the first action of any task, find the rows below that match the work and load those skills first, from the global `~/.agents/skills/` installation. Do not start reading code, editing or running commands until they are loaded, even when the task looks familiar. When several rows match, load each. When the work changes mid-task (for example from Rust to UI, or from coding to a commit), load the newly matching skills before continuing. The skills are not vendored here and are not required of human contributors.
 
-| Work | Skill |
-| --- | --- |
-| Any non-trivial code change: design, implementation, refactoring, debugging, performance | `engineering-judgment` |
-| Rust in `app/` or `crates/`: ownership, traits, async, `unsafe` in the adapters, Cargo, Clippy | `rust-development` |
-| TypeScript in `ui/`, `inject/` or `scripts/`: types, boundary validation, tsconfig | `typescript-development` |
-| Bun: `bun test`, `bun build`, scripts, workspaces, `bun.lock` | `bun-development` |
-| Svelte components, runes, `.svelte.ts` modules and UI tests in `ui/` | `svelte-development` |
-| Svelte UI screens, layout, motion, color (from M6; placeholders before that) | `design` |
-| Reviewing a diff, branch or pull request | `code-review` plus the stack skill |
-| CI workflows, `scripts/check.sh`, `scripts/ci-scope.ts`, README, CONTRIBUTING, SECURITY, releases | `open-source-repo` |
-| Only when the user asks to simplify code or for a strict quality review | `code-quality` |
-| Any Git command: status, diff, log, staging, commits, branches, worktrees, history | `git` |
-| GitHub work: issues, pull requests, reviews, Actions and CI logs, releases, settings | `github` |
-| This file or a folder `AGENTS.md` | `agents-md` |
-| Commit messages, PR text, docs and comments people read | `unslop` |
+| Work                                                                                              | Skill                              |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Any non-trivial code change: design, implementation, refactoring, debugging, performance          | `engineering-judgment`             |
+| Rust in `app/` or `crates/`: ownership, traits, async, `unsafe` in the adapters, Cargo, Clippy    | `rust-development`                 |
+| TypeScript in `ui/`, `inject/` or `scripts/`: types, boundary validation, tsconfig                | `typescript-development`           |
+| Bun: `bun test`, `bun build`, scripts, workspaces, `bun.lock`                                     | `bun-development`                  |
+| Svelte components, runes, `.svelte.ts` modules and UI tests in `ui/`                              | `svelte-development`               |
+| Svelte UI screens, layout, motion, color (from M6; placeholders before that)                      | `design`                           |
+| Reviewing a diff, branch or pull request                                                          | `code-review` plus the stack skill |
+| CI workflows, `scripts/check.sh`, `scripts/ci-scope.ts`, README, CONTRIBUTING, SECURITY, releases | `open-source-repo`                 |
+| Only when the user asks to simplify code or for a strict quality review                           | `code-quality`                     |
+| Any Git command: status, diff, log, staging, commits, branches, worktrees, history                | `git`                              |
+| GitHub work: issues, pull requests, reviews, Actions and CI logs, releases, settings              | `github`                           |
+| This file or a folder `AGENTS.md`                                                                 | `agents-md`                        |
+| Commit messages, PR text, docs and comments people read                                           | `unslop`                           |
 
 ## Ways to hurt yourself
 
 1. **Using the user's real browser data.** `~/Library/Application Support/Mado` and `%LOCALAPPDATA%\Mado` hold the user's real profiles, passwords and history. Never run a development build against them, and never open them read-write. Development builds use `.mado-dev/` in the repository (gitignored).
 2. **Killing by pattern.** Never `pkill -f mado` or kill a PID found by name: the user may be browsing in Mado while you work. Kill only a PID you started.
 3. **Opening a door for web pages.** Never give a tab view Tauri access, never trust an origin or URL taken from a message payload, never inject a script into the page world when the Mado world would do.
-4. **Engine calls off the main thread.** WebKit and WebView2 objects are touched only on the main thread. The core never blocks waiting for one.
+4. **Engine calls off the main thread.** WebKit objects are touched only on the main thread. The core never blocks waiting for one.
 5. **Leaking secrets.** Never log, print, snapshot or send to a model a password, card number, 2FA secret, API key, token or cookie. Never put secrets in test fixtures.
 6. **Editing generated files.** `ui/src/generated/` comes from `mado-types`. Change the Rust type and regenerate.
 7. **Silent network calls.** A new outbound request needs its host in the privacy spec's list. Never add analytics or crash reporting that sends without consent.
@@ -165,7 +164,6 @@ Unless you work as the maintainer, do not edit the files CONTRIBUTING lists unde
 
 The most common bug in a browser is a feature that works where you tested it and is missing everywhere else. Before you call a change done, go through this list and say which entries applied:
 
-- **Platforms.** macOS and Windows adapters. If you changed one, the other needs the same behaviour or a stated gap.
 - **Windows of every kind.** Normal, private, guest, popup, and agent tabs. Private windows keep nothing; agent tabs never take focus and stay out of history.
 - **Profiles.** Each profile is its own process; anything shared (app settings, filter lists, updates) must work with several running at once.
 - **Entry points.** A command reachable from the UI is usually also reachable from the menu bar, a keyboard shortcut, the command bar, a context menu, the CLI and MCP. Settings appear in settings search.
@@ -192,7 +190,7 @@ Do not say a change is done, ready or working until:
 1. The focused tests for what you changed pass, and new behaviour has a test that fails without the change.
 2. `./scripts/check.sh` passes.
 3. Once the app runs (M1 onward), you started it and exercised the change on its happy path, on the platform you are on.
-4. Your reply says which platform you ran it on and which you did not. Windows behaviour you could not run is "untested on Windows", never "done".
+4. Your reply says which macOS version you ran it on.
 
 Engine behaviour that no document confirms is marked "(verify in M0)" in the specs. Do not guess it: use the M0 report, or ask.
 

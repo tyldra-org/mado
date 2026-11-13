@@ -4,7 +4,7 @@
 
 export type Graph = Record<string, string[]>;
 
-const ADAPTERS = ["mado-engine-webkit", "mado-engine-webview2"];
+const ADAPTERS = ["mado-engine-webkit"];
 
 export function findViolations(graph: Graph): string[] {
   const violations: string[] = [];

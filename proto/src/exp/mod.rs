@@ -84,13 +84,6 @@ pub fn run(name: &str, ctx: &Ctx) -> Result<Value, String> {
     }
 }
 
-#[cfg(windows)]
-pub fn run(name: &str, _ctx: &Ctx) -> Result<Value, String> {
-    Err(format!(
-        "{name}: experiments are scripted on macOS only; follow the Windows run sheet"
-    ))
-}
-
 /// Named pass/fail checks with what was observed for each.
 #[cfg(target_os = "macos")]
 #[derive(Debug)]

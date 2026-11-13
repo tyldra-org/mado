@@ -1,5 +1,5 @@
 //! Public sites that load without signing in, used where an experiment needs
-//! real-world pages (14 memory here; 5 blocking cost on Windows). The list
+//! real-world pages (experiment 14, memory). The list
 //! and the date of a run go in the report, since the sites change.
 
 pub const SITES: [&str; 50] = [
