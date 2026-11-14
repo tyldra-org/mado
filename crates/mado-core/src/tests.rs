@@ -479,7 +479,8 @@ fn values_written_by_the_core_reach_the_database() {
 
 /// Waits until `check` holds, polling the fake engine.
 fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..500 {
+    // Generous: CI runners are slower than a developer's Mac.
+    for _ in 0..3000 {
         if check() {
             return;
         }
@@ -739,6 +740,13 @@ fn maximum_memory_saver_never_sleeps_exempt_tabs() {
     let awake = new_tab(&core, w, "https://www.awake.example/");
     let plain = new_tab(&core, w, "https://plain.example/");
     let front = new_tab(&core, w, "https://front.example/");
+    // Loads commit asynchronously and reset typed text: let them finish.
+    eventually("every tab loaded", || {
+        let s = state_of(&core);
+        [audio, typed, awake, plain, front]
+            .iter()
+            .all(|t| s.tabs[t].life == mado_types::state::TabLife::Live)
+    });
     core.page.send(mado_engine::EngineEvent::AudioChanged {
         tab: audio,
         playing: true,

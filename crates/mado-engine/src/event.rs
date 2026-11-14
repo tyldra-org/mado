@@ -5,7 +5,6 @@
 use std::path::PathBuf;
 
 use mado_types::{TabId, WindowId};
-use serde_json::Value;
 
 use crate::caps::PermissionKind;
 use crate::nav::{NavDecision, NavRequest, NetError};
@@ -410,12 +409,13 @@ pub enum EngineEvent {
         context: ContextData,
         reply: Reply<Option<ContextAction>>,
     },
-    /// Raw, unvalidated: the core validates it with `page::validate`.
+    /// A message the adapter validated with `page::validate` against the
+    /// tab's current nonce (spec 02 §5.2); the frame comes from the engine.
     PageMessage {
         tab: TabId,
         world: World,
         frame: FrameInfo,
-        message: Value,
+        message: crate::page::PageMessage,
     },
     ProcessGone {
         tab: TabId,

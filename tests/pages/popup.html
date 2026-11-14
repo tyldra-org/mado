@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Popup</title>
+<p>Calls window.open without a user gesture, which the pop-up blocker
+must stop (spec 05 §7).</p>
+<script>
+  setTimeout(() => {
+    const w = window.open("http://pages.mado.test/index.html", "_blank");
+    document.title = w ? "Popup: opened" : "Popup: blocked";
+  }, 50);
+</script>

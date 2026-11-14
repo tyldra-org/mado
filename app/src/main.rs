@@ -354,6 +354,14 @@ fn start_owner(
         .ok()
         .and_then(|mut r| r.take())
         .ok_or("the owner started twice")?;
+    let info = owner.profile.info();
+    windows::install_webkit(
+        app,
+        Arc::clone(&owner.core),
+        id,
+        info.is_private || info.is_guest,
+        settings.value(mado_settings::lookup("developer.inspectPages").ok_or("registry")?) == true,
+    )?;
     // Read before this run marks itself unclean (spec 04 §8).
     let clean_start = core_app_db
         .readers()
@@ -366,8 +374,11 @@ fn start_owner(
         backups: paths.backups(id),
         settings,
         engine: TauriWindows::handle(app.clone(), Arc::clone(&owner.core)),
-        // The Safari version is appended by the WebKit adapter (M2-T02).
-        user_agent: mado_engine::UserAgent::EngineDefault,
+        // Sites treat Mado as Safari (spec 02 §6).
+        user_agent: mado_engine_webkit::safari_version()
+            .map_or(mado_engine::UserAgent::EngineDefault, |version| {
+                mado_engine::UserAgent::Safari { version }
+            }),
         clean_start,
         ui: Box::new(TauriUi { app: app.clone() }),
         updates: Box::new(update::start(
