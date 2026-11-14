@@ -7,6 +7,7 @@
   import { t } from "../i18n";
   import Notices from "./Notices.svelte";
   import TabStrip from "./TabStrip.svelte";
+  import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
   import UnsavedPrompt from "./UnsavedPrompt.svelte";
 
   let { store, windowId }: { store: CoreStore; windowId: WindowId } = $props();
@@ -53,6 +54,7 @@
     <h1>{store.state?.profile.name ?? t("app.name")}</h1>
     <TabStrip {store} {windowId} />
     <UnsavedPrompt {store} {windowId} />
+    <UnresponsivePrompt {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}></main>
   <Notices {store} />

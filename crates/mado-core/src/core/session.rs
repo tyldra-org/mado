@@ -425,6 +425,15 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            cmd @ (Command::TabReload { .. }
+            | Command::TabStop { .. }
+            | Command::TabBack { .. }
+            | Command::TabForward { .. }
+            | Command::TabZoom { .. }
+            | Command::TabFind { .. }
+            | Command::TabPrint { .. }
+            | Command::TabSave { .. }
+            | Command::TabAnswerUnresponsive { .. }) => self.page_command(cmd, rec),
             Command::TabHoverInfo { tab_id } => {
                 let t = self.model.tab(tab_id)?;
                 let mut info = json!({
@@ -1242,8 +1251,14 @@ impl Core {
                 Some(_) => {}
             }
         }
-        for (id, b) in &before.tabs {
-            if !after.tabs.contains_key(id) && live(b) {
+        let gone: Vec<TabId> = before
+            .tabs
+            .keys()
+            .filter(|id| !after.tabs.contains_key(id))
+            .copied()
+            .collect();
+        for id in &gone {
+            if before.tabs.get(id).is_some_and(live) {
                 last.push(EngineOp::DestroyTab(*id));
             }
         }
@@ -1283,10 +1298,13 @@ impl Core {
                 first.push(EngineOp::ApplyWindow(*wid, WindowCommand::SetTitle(text)));
             }
         }
+        for id in gone {
+            self.forget_tab(id);
+        }
         (first, last)
     }
 
-    fn spec_for(&self, t: &TabState) -> TabSpec {
+    pub(super) fn spec_for(&self, t: &TabState) -> TabSpec {
         let window = self.model.windows.get(&t.window_id);
         let initial = match self.model.extras.get(&t.id).and_then(|e| e.session.clone()) {
             Some(blob) => TabInitial::Restore(blob),
@@ -1357,6 +1375,9 @@ impl Core {
                     if !is_same_document {
                         t.has_unsaved_input = false;
                     }
+                }
+                if !is_same_document {
+                    self.new_document(tab, rec);
                 }
                 self.save_session(tab);
             }
@@ -1453,6 +1474,12 @@ impl Core {
                     self.close_tabs(&[tab], false);
                 }
             }
+            EngineEvent::PageMessage {
+                tab,
+                frame,
+                message,
+                ..
+            } => self.page_message(tab, &frame, message, rec),
             EngineEvent::NewWindowRequested {
                 tab,
                 request,

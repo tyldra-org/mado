@@ -425,6 +425,18 @@ pub enum PromptState {
         window_id: Option<WindowId>,
         tabs: Vec<UnsavedTab>,
     },
+    Unresponsive(UnresponsivePrompt),
+}
+
+/// A tab whose page stopped answering (spec 02 §5.3). Answered with
+/// `tab.answerUnresponsive`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UnresponsivePrompt {
+    pub id: PromptId,
+    pub tab_id: TabId,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

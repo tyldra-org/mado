@@ -14,6 +14,8 @@ pub enum Timer {
     DailyBackup,
     /// Looks for tabs to sleep (spec 04 §7).
     SleepCheck,
+    /// Looks for pages that stopped sending heartbeats (spec 02 §5.3).
+    HeartbeatCheck,
     /// A deleted group's Undo ran out.
     ForgetDeletedGroup(mado_types::GroupId),
 }

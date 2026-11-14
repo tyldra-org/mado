@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Hang</title>
+<p>Stops answering for 14 seconds after a second, then recovers
+(`status` heartbeat, spec 02 §5.3).</p>
+<script>
+  setTimeout(() => {
+    const end = Date.now() + 14000;
+    while (Date.now() < end) {}
+    document.title = "Hang: recovered";
+  }, 1000);
+</script>

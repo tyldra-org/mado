@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Forms</title>
+<textarea id="t"></textarea>
+<p>Types into the text area (`forms` unsaved input).</p>
+<script>
+  setTimeout(() => {
+    const t = document.getElementById("t");
+    t.value = "draft";
+    t.dispatchEvent(new Event("input", { bubbles: true }));
+    document.title = "Forms: typed";
+  }, 300);
+</script>

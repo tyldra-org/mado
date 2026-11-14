@@ -78,11 +78,15 @@ run("WebKit adapter", () => {
     return { window: windowId, tab };
   }
 
-  const tabWhere = (id: string, check: (t: Tab) => boolean) =>
-    until(`tab ${id}`, async () => {
-      const t = (await state()).tabs[id];
-      return t && check(t) ? t : undefined;
-    });
+  const tabWhere = (id: string, check: (t: Tab) => boolean, ms?: number) =>
+    until(
+      `tab ${id}`,
+      async () => {
+        const t = (await state()).tabs[id];
+        return t && check(t) ? t : undefined;
+      },
+      ms,
+    );
 
   test("pages load, history and titles reach the state (02 §8 check 1, navigation events)", async () => {
     const { tab } = await open("http://pages.mado.test/nav/a.html");
@@ -120,6 +124,71 @@ run("WebKit adapter", () => {
     expect(t.title).toBe("Popup: blocked");
     expect((await state()).windows[window]?.tabOrder.length).toBe(1);
   });
+
+  test("status reports the page's icons", async () => {
+    const { tab } = await open("http://pages.mado.test/scripts/favicon.html");
+    const t = await tabWhere(tab, (t) => !!(t as Tab & { favicon: string | null }).favicon);
+    expect((t as Tab & { favicon: string }).favicon).toBe("http://pages.mado.test/icon-32.png");
+  });
+
+  test("forms marks typed text", async () => {
+    const { tab } = await open("http://pages.mado.test/scripts/forms.html");
+    await tabWhere(tab, (t) => (t as Tab & { hasUnsavedInput: boolean }).hasUnsavedInput);
+  });
+
+  test("find counts matches in the page's text", async () => {
+    const { window, tab } = await open("http://pages.mado.test/scripts/find.html");
+    await tabWhere(tab, (t) => t.title === "Find" && t.life === "live");
+    await mado.control.call("tab.find", { tabId: tab, query: "apple" });
+    const bar = await until("find results", async () => {
+      const w = (await state()).windows[window] as Win & {
+        findBar: { query: string; matches: number | null; active: number | null } | null;
+      };
+      return w.findBar?.matches != null ? w.findBar : undefined;
+    });
+    expect(bar).toEqual({ query: "apple", matches: 3, active: 1 });
+  });
+
+  test("media mutes the page's media elements", async () => {
+    const { tab } = await open("http://pages.mado.test/scripts/media.html");
+    await tabWhere(tab, (t) => t.title === "Media: on" && t.life === "live");
+    await mado.control.call("tab.mute", { tabIds: [tab], muted: true });
+    await tabWhere(tab, (t) => t.title === "Media: muted");
+  });
+
+  test("the shims answer for the permission flow to come", async () => {
+    const { tab } = await open("http://pages.mado.test/scripts/shims.html");
+    const t = await tabWhere(tab, (t) => t.title.includes("geo"));
+    expect(JSON.parse(t.title.slice("Shims: ".length))).toEqual({
+      protocol: "registered",
+      notification: "default",
+      geo: 1,
+    });
+  });
+
+  test("a page that stops answering gets the unresponsive prompt, which goes when it recovers (02 §5.3)", async () => {
+    const { tab } = await open("http://pages.mado.test/scripts/hang.html");
+    type P = { type: string; tabId?: string };
+    const prompts = async () =>
+      Object.values(
+        (await mado.control.call<{ state: { prompts: Record<string, P> } }>("state.get")).state
+          .prompts,
+      );
+    await until(
+      "the prompt",
+      async () =>
+        (await prompts()).some((p) => p.type === "unresponsive" && p.tabId === tab)
+          ? true
+          : undefined,
+      20_000,
+    );
+    await tabWhere(tab, (t) => t.title === "Hang: recovered", 20_000);
+    await until(
+      "the prompt to go",
+      async () => ((await prompts()).some((p) => p.tabId === tab) ? undefined : true),
+      10_000,
+    );
+  }, 45_000);
 
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");

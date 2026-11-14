@@ -13,6 +13,7 @@ const entries = (await readdir(srcDir))
 const result = await Bun.build({
   entrypoints: entries,
   outdir: outDir,
+  root: srcDir,
   target: "browser",
   format: "iife",
   minify: true,

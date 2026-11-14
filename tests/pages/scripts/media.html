@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Media: on</title>
+<audio id="a"><track kind="captions" /></audio>
+<p>The title follows the audio element's muted flag (`media` mute).</p>
+<script>
+  const a = document.getElementById("a");
+  a.addEventListener(
+    "volumechange",
+    () => (document.title = a.muted ? "Media: muted" : "Media: on"),
+  );
+</script>

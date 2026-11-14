@@ -1,6 +1,7 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
+mod pages;
 mod session;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -126,6 +127,8 @@ pub struct CoreConfig {
     pub user_agent: UserAgent,
     /// The last run of this profile quit cleanly (spec 04 §8).
     pub clean_start: bool,
+    /// The page scripts every tab gets (spec 02 §5).
+    pub page_scripts: mado_engine::PageScriptSet,
     pub ui: Box<dyn UiSink>,
     pub updates: Box<dyn Updates>,
     /// The time source, Unix milliseconds. Tests pass a fixed clock.
@@ -206,6 +209,16 @@ pub struct Core {
     adopted: BTreeSet<TabId>,
     /// Tabs going to sleep, waiting for their session.
     sleeping: BTreeSet<TabId>,
+    /// When each tab's page last sent a heartbeat (spec 02 §5.3).
+    heartbeats: BTreeMap<TabId, i64>,
+    /// Tabs showing "Page unresponsive", with their prompt.
+    unresponsive: BTreeMap<TabId, PromptId>,
+    /// Page text waiting for history indexing (M2-T10).
+    page_text: BTreeMap<TabId, String>,
+    /// The element under the pointer at the last context menu (M2-T07).
+    context_targets: BTreeMap<TabId, mado_engine::page::ContextTarget>,
+    /// Tabs whose protected video failed (M2-T06 offers Safari).
+    drm_failed: BTreeSet<TabId>,
     ui: Box<dyn UiSink>,
     updates: Box<dyn Updates>,
     clock: fn() -> i64,
@@ -275,6 +288,7 @@ impl Core {
                 })
         };
         let closed = std::mem::take(&mut loaded.closed);
+        let page_scripts = config.page_scripts;
         let mut core = Self {
             state: State {
                 profile: config.profile,
@@ -300,6 +314,11 @@ impl Core {
             power: Power::default(),
             adopted: BTreeSet::new(),
             sleeping: BTreeSet::new(),
+            heartbeats: BTreeMap::new(),
+            unresponsive: BTreeMap::new(),
+            page_text: BTreeMap::new(),
+            context_targets: BTreeMap::new(),
+            drm_failed: BTreeSet::new(),
             ui: config.ui,
             updates: config.updates,
             clock: config.clock,
@@ -310,8 +329,12 @@ impl Core {
             hooks: Hooks::default(),
         };
         core.mirror_all_settings();
-        // The proxy applies to every tab view, so before the first one.
+        // The proxy and page scripts apply to every tab view, so before the
+        // first one.
         core.engine.send(EngineOp::SetProxy(core.proxy()));
+        core.engine.send(EngineOp::SetPageScripts(page_scripts));
+        core.timers
+            .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
         core.timers.schedule(Timer::DailyBackup, DAY);
         core
     }
@@ -812,6 +835,11 @@ impl Core {
                 self.sleep_check(false);
                 self.timers
                     .schedule(Timer::SleepCheck, session::SLEEP_CHECK);
+            }
+            Timer::HeartbeatCheck => {
+                self.heartbeat_check(&mut rec);
+                self.timers
+                    .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
             }
             Timer::ForgetDeletedGroup(group) => {
                 self.deleted_groups.remove(&group);
