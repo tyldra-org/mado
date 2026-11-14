@@ -273,6 +273,9 @@ version = "0.0.0"
 [[package]]
 name = "mado-engine"
 version = "0.0.0"
+dependencies = [
+ "mado-types",
+]
 
 [[package]]
 name = "mado-engine-webkit"
