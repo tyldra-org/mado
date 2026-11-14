@@ -476,3 +476,107 @@ fn values_written_by_the_core_reach_the_database() {
         .expect("stored");
     assert_eq!(value, "\"off\"");
 }
+
+/// Waits until `check` holds, polling the fake engine.
+fn eventually(what: &str, mut check: impl FnMut() -> bool) {
+    for _ in 0..500 {
+        if check() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+#[test]
+fn the_core_decides_every_navigation_the_engine_asks_about() {
+    use mado_engine::{EngineOp, ExternalReason, NavDecision, TabInitial, TabSpec, UserAgent};
+    use mado_types::TabId;
+    let core = TestCore::start();
+    core.handle.send(Input::Internal(Internal::OpenWindow {
+        bounds: Bounds::default(),
+    }));
+    let state = || core.engine.lock().unwrap_or_else(|e| e.into_inner());
+    eventually("the window", || !state().windows.is_empty());
+    let window = *state().windows.keys().next().expect("a window");
+    let tab = TabId::new();
+    core.engine_ops.send(EngineOp::CreateTab(TabSpec {
+        tab,
+        window,
+        initial: TabInitial::Url("http://news.example/".into()),
+        private: false,
+        agent: false,
+        user_agent: UserAgent::EngineDefault,
+        zoom: 1.0,
+        visible: true,
+        frame: None,
+        javascript: true,
+    }));
+    // HTTPS-first: the core redirects, then allows the HTTPS load.
+    eventually("the upgraded page", || {
+        state()
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.url().map(str::to_owned))
+            == Some("https://news.example/".into())
+    });
+    // An app link never navigates; mado: is refused to a web page.
+    core.page
+        .page_navigates(tab, "zoommtg://zoom.us/join?confno=1", true);
+    core.page.page_navigates(tab, "mado://settings", true);
+    eventually("both decisions", || state().decisions.len() == 4);
+    let decisions: Vec<NavDecision> = state().decisions.iter().map(|d| d.2.clone()).collect();
+    assert_eq!(
+        decisions,
+        [
+            NavDecision::Redirect {
+                url: "https://news.example/".into()
+            },
+            NavDecision::Allow,
+            NavDecision::OpenExternal {
+                url: "zoommtg://zoom.us/join?confno=1".into(),
+                reason: ExternalReason::AppLink,
+            },
+            NavDecision::Cancel,
+        ]
+    );
+    assert_eq!(state().tabs[&tab].history, ["https://news.example/"]);
+}
+
+#[test]
+fn https_first_follows_its_setting() {
+    use mado_engine::{EngineOp, NavDecision, TabInitial, TabSpec, UserAgent};
+    use mado_types::TabId;
+    let core = TestCore::start();
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "security.httpsFirst".into(),
+            value: json!("off"),
+            token: None,
+        },
+    )
+    .expect("set");
+    core.handle.send(Input::Internal(Internal::OpenWindow {
+        bounds: Bounds::default(),
+    }));
+    let state = || core.engine.lock().unwrap_or_else(|e| e.into_inner());
+    eventually("the window", || !state().windows.is_empty());
+    let window = *state().windows.keys().next().expect("a window");
+    let tab = TabId::new();
+    core.engine_ops.send(EngineOp::CreateTab(TabSpec {
+        tab,
+        window,
+        initial: TabInitial::Url("http://news.example/".into()),
+        private: false,
+        agent: false,
+        user_agent: UserAgent::EngineDefault,
+        zoom: 1.0,
+        visible: true,
+        frame: None,
+        javascript: true,
+    }));
+    eventually("the decision", || !state().decisions.is_empty());
+    assert_eq!(state().decisions[0].2, NavDecision::Allow);
+}

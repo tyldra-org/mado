@@ -2202,6 +2202,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2212,6 +2213,7 @@ dependencies = [
  "mado-types",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -2220,6 +2222,8 @@ version = "0.0.0"
 dependencies = [
  "mado-engine",
  "mado-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

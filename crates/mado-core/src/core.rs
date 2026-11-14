@@ -6,7 +6,7 @@ use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use mado_engine::{WindowCommand, WindowEngine, WindowEvent};
+use mado_engine::{EngineEvent, EngineHandle, EngineOp, WindowCommand};
 use mado_settings::types::Scope;
 use mado_settings::{Change, Outcome, Settings, Write, lookup, persist};
 use mado_storage::{BackupReason, Kind, Storage, backup, prune_backups};
@@ -18,6 +18,7 @@ use mado_types::{ErrorCode, MadoError, Patch, PatchRecorder, StateSnapshot, Wind
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::navigation::{self, HttpsFirst, PolicyContext};
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
 use crate::ui::{UiSink, Updates};
@@ -32,7 +33,8 @@ pub enum Input {
         cmd: Command,
         reply: Reply,
     },
-    Window(WindowEvent),
+    /// An event from the engine, on the main thread (spec 02 §1).
+    Engine(EngineEvent),
     Internal(Internal),
 }
 
@@ -91,7 +93,7 @@ pub struct CoreConfig {
     /// `<profile>/Backups/`.
     pub backups: PathBuf,
     pub settings: Settings,
-    pub engine: Box<dyn WindowEngine>,
+    pub engine: EngineHandle,
     pub ui: Box<dyn UiSink>,
     pub updates: Box<dyn Updates>,
     /// The time source, Unix milliseconds. Tests pass a fixed clock.
@@ -152,12 +154,12 @@ pub struct Core {
     app_db: Storage,
     profile_db: Storage,
     backups: PathBuf,
-    engine: Box<dyn WindowEngine>,
+    engine: EngineHandle,
     ui: Box<dyn UiSink>,
     updates: Box<dyn Updates>,
     clock: fn() -> i64,
     /// Engine commands a handler queued; sent after its patch (01 §2.1 step 6).
-    outbox: Vec<(WindowId, WindowCommand)>,
+    outbox: Vec<EngineOp>,
     next_notice: u64,
     inputs: mpsc::UnboundedSender<Input>,
     #[cfg(any(test, feature = "test-hooks"))]
@@ -288,8 +290,8 @@ impl Core {
                 reply = Some(r);
                 self.command(&origin, cmd, &mut rec, &mut reply)
             }
-            Input::Window(event) => {
-                self.window_event(event, &mut rec);
+            Input::Engine(event) => {
+                self.engine_event(event, &mut rec);
                 Ok(Value::Null)
             }
             Input::Internal(internal) => {
@@ -311,8 +313,8 @@ impl Core {
             Err(MadoError::internal())
         });
         self.emit(&mut rec);
-        for (window, cmd) in std::mem::take(&mut self.outbox) {
-            self.engine.apply_window(window, cmd);
+        for op in std::mem::take(&mut self.outbox) {
+            self.engine.send(op);
         }
         // A handler that answers later took the reply.
         if let Some(reply) = reply {
@@ -368,9 +370,9 @@ impl Core {
                     // when none is open, else bring the newest one forward.
                     let newest = self.state.windows.keys().next_back().copied();
                     match newest {
-                        Some(window) if !request.new_window => {
-                            self.outbox.push((window, WindowCommand::Focus))
-                        }
+                        Some(window) if !request.new_window => self
+                            .outbox
+                            .push(EngineOp::ApplyWindow(window, WindowCommand::Focus)),
                         _ => self.internal(
                             Internal::OpenWindow {
                                 bounds: Bounds::default(),
@@ -518,7 +520,7 @@ impl Core {
                     ..WindowState::default()
                 };
                 self.state.tx(rec).windows().insert(id, window);
-                self.outbox.push((
+                self.outbox.push(EngineOp::ApplyWindow(
                     id,
                     WindowCommand::Create {
                         window: id,
@@ -610,14 +612,33 @@ impl Core {
         }
     }
 
-    fn window_event(&mut self, event: WindowEvent, rec: &mut PatchRecorder) {
+    fn engine_event(&mut self, event: EngineEvent, rec: &mut PatchRecorder) {
         match event {
-            WindowEvent::Created { .. } => {}
-            WindowEvent::CloseRequested { window } => {
+            EngineEvent::WindowCreated { .. } => {}
+            EngineEvent::WindowCloseRequested { window } => {
                 if self.state.tx(rec).windows().remove(&window).is_some() {
-                    self.outbox.push((window, WindowCommand::Close));
+                    self.outbox
+                        .push(EngineOp::ApplyWindow(window, WindowCommand::Close));
                 }
             }
+            EngineEvent::DecidePolicy { request, reply, .. } => {
+                let https_first = HttpsFirst::from_setting(
+                    self.settings
+                        .value(lookup_def("security.httpsFirst"))
+                        .as_str()
+                        .unwrap_or_default(),
+                );
+                let context = PolicyContext {
+                    https_first,
+                    opens_externally: &|_| false,
+                    http_fallback: &|_| false,
+                };
+                reply.send(navigation::decide(&request, &context));
+            }
+            // Tab, page, permission, dialog and download events get their
+            // handlers with the tab model (M2-T05) and the tasks after it.
+            // An unanswered reply takes its safe default when dropped here.
+            other => tracing::trace!(event = other.name(), "engine event not handled yet"),
         }
     }
 
