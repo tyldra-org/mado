@@ -354,6 +354,11 @@ fn start_owner(
         .ok()
         .and_then(|mut r| r.take())
         .ok_or("the owner started twice")?;
+    // Read before this run marks itself unclean (spec 04 §8).
+    let clean_start = core_app_db
+        .readers()
+        .read(|c| mado_core::store::clean_quit(c, id))
+        .unwrap_or(true);
     let (handle, thread) = mado_core::start(CoreConfig {
         profile: owner.profile.info(),
         app_db: core_app_db,
@@ -361,6 +366,9 @@ fn start_owner(
         backups: paths.backups(id),
         settings,
         engine: TauriWindows::handle(app.clone(), Arc::clone(&owner.core)),
+        // The Safari version is appended by the WebKit adapter (M2-T02).
+        user_agent: mado_engine::UserAgent::EngineDefault,
+        clean_start,
         ui: Box::new(TauriUi { app: app.clone() }),
         updates: Box::new(update::start(
             app.clone(),
@@ -402,10 +410,24 @@ fn start_owner(
         mado_platform::dock::set_badge(Some(&owner.profile.initial()));
     }
     if !args.hidden {
-        handle.send(Input::Internal(Internal::OpenWindow {
+        handle.send(Input::Internal(Internal::Startup {
             bounds: Bounds::default(),
         }));
     }
+    // Memory pressure and the power source steer tab sleeping (04 §7).
+    let pressure = handle.clone();
+    mado_platform::power::watch_memory_pressure(move |level| {
+        pressure.send(Input::Internal(Internal::MemoryPressure {
+            critical: level == mado_platform::power::Pressure::Critical,
+        }));
+    });
+    let power = handle.clone();
+    mado_platform::power::watch_power(std::time::Duration::from_secs(60), move |source| {
+        power.send(Input::Internal(Internal::Power(mado_core::Power {
+            on_battery: source.on_battery,
+            percent: source.percent,
+        })));
+    });
     Ok(())
 }
 
@@ -526,7 +548,10 @@ fn run_app(
     let term_flag = Arc::clone(&quitting);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(Shared { core })
+        .manage(Shared {
+            core,
+            quitting: Arc::clone(&quitting),
+        })
         .invoke_handler(handlers())
         .menu(menu)
         .on_menu_event(move |app, event| match event.id().as_ref() {
@@ -542,8 +567,20 @@ fn run_app(
                 }
             }
             "quit" => {
-                quit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                app.exit(0);
+                // The core asks about typed text and a second ⌘Q (04 §9),
+                // then calls back through `UiSink::quit`.
+                let core = app
+                    .try_state::<Shared>()
+                    .and_then(|s| s.core.get().cloned());
+                match core {
+                    Some(core) => {
+                        core.send(Input::Internal(Internal::QuitRequested { shortcut: true }));
+                    }
+                    None => {
+                        quit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                        app.exit(0);
+                    }
+                }
             }
             _ => {}
         })

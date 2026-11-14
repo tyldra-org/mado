@@ -10,6 +10,8 @@
 
 mod core;
 pub mod navigation;
+pub mod store;
+pub mod tabs;
 mod timers;
 mod tokens;
 mod ui;
@@ -21,6 +23,6 @@ mod tests;
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub use core::TestHook;
-pub use core::{CoreConfig, CoreHandle, Input, Internal, Reply, start, system_clock};
+pub use core::{CoreConfig, CoreHandle, Input, Internal, Power, Reply, start, system_clock};
 pub use timers::Timer;
 pub use ui::{NoUpdates, UiSink, Updates};

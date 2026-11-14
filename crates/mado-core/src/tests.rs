@@ -488,30 +488,52 @@ fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
-#[test]
-fn the_core_decides_every_navigation_the_engine_asks_about() {
-    use mado_engine::{EngineOp, ExternalReason, NavDecision, TabInitial, TabSpec, UserAgent};
-    use mado_types::TabId;
-    let core = TestCore::start();
+/// Opens a window and returns it, with the fake engine's view of it.
+fn window(core: &TestCore) -> WindowId {
     core.handle.send(Input::Internal(Internal::OpenWindow {
         bounds: Bounds::default(),
     }));
+    eventually("the window", || {
+        !core
+            .engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .windows
+            .is_empty()
+    });
+    *core
+        .engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .windows
+        .keys()
+        .next()
+        .expect("a window")
+}
+
+fn new_tab(core: &TestCore, window: WindowId, url: &str) -> mado_types::TabId {
+    let v = ask(
+        core,
+        Origin::Ui { window },
+        Command::TabNew {
+            window_id: window,
+            url: Some(url.into()),
+            position: None,
+            background: false,
+            opener_id: None,
+        },
+    )
+    .expect("tab.new");
+    serde_json::from_value(v["tabId"].clone()).expect("a tab ID")
+}
+
+#[test]
+fn the_core_decides_every_navigation_the_engine_asks_about() {
+    use mado_engine::{ExternalReason, NavDecision};
+    let core = TestCore::start();
     let state = || core.engine.lock().unwrap_or_else(|e| e.into_inner());
-    eventually("the window", || !state().windows.is_empty());
-    let window = *state().windows.keys().next().expect("a window");
-    let tab = TabId::new();
-    core.engine_ops.send(EngineOp::CreateTab(TabSpec {
-        tab,
-        window,
-        initial: TabInitial::Url("http://news.example/".into()),
-        private: false,
-        agent: false,
-        user_agent: UserAgent::EngineDefault,
-        zoom: 1.0,
-        visible: true,
-        frame: None,
-        javascript: true,
-    }));
+    let w = window(&core);
+    let tab = new_tab(&core, w, "http://news.example/");
     // HTTPS-first: the core redirects, then allows the HTTPS load.
     eventually("the upgraded page", || {
         state()
@@ -524,10 +546,17 @@ fn the_core_decides_every_navigation_the_engine_asks_about() {
     core.page
         .page_navigates(tab, "zoommtg://zoom.us/join?confno=1", true);
     core.page.page_navigates(tab, "mado://settings", true);
-    eventually("both decisions", || state().decisions.len() == 4);
-    let decisions: Vec<NavDecision> = state().decisions.iter().map(|d| d.2.clone()).collect();
+    let mine = || -> Vec<NavDecision> {
+        state()
+            .decisions
+            .iter()
+            .filter(|d| d.0 == tab)
+            .map(|d| d.2.clone())
+            .collect()
+    };
+    eventually("every decision", || mine().len() == 4);
     assert_eq!(
-        decisions,
+        mine(),
         [
             NavDecision::Redirect {
                 url: "https://news.example/".into()
@@ -545,8 +574,7 @@ fn the_core_decides_every_navigation_the_engine_asks_about() {
 
 #[test]
 fn https_first_follows_its_setting() {
-    use mado_engine::{EngineOp, NavDecision, TabInitial, TabSpec, UserAgent};
-    use mado_types::TabId;
+    use mado_engine::NavDecision;
     let core = TestCore::start();
     ask(
         &core,
@@ -558,25 +586,267 @@ fn https_first_follows_its_setting() {
         },
     )
     .expect("set");
-    core.handle.send(Input::Internal(Internal::OpenWindow {
+    let w = window(&core);
+    let tab = new_tab(&core, w, "http://news.example/");
+    let state = || core.engine.lock().unwrap_or_else(|e| e.into_inner());
+    eventually("the decision", || {
+        state().decisions.iter().any(|d| d.0 == tab)
+    });
+    let first = state()
+        .decisions
+        .iter()
+        .find(|d| d.0 == tab)
+        .map(|d| d.2.clone());
+    assert_eq!(first, Some(NavDecision::Allow));
+}
+
+fn state_of(core: &TestCore) -> mado_types::state::State {
+    let snap = ask(core, Origin::System, Command::StateGet).expect("state.get");
+    serde_json::from_value(snap["state"].clone()).expect("a state")
+}
+
+fn startup(core: &TestCore) {
+    core.handle.send(Input::Internal(Internal::Startup {
         bounds: Bounds::default(),
     }));
-    let state = || core.engine.lock().unwrap_or_else(|e| e.into_inner());
-    eventually("the window", || !state().windows.is_empty());
-    let window = *state().windows.keys().next().expect("a window");
-    let tab = TabId::new();
-    core.engine_ops.send(EngineOp::CreateTab(TabSpec {
-        tab,
-        window,
-        initial: TabInitial::Url("http://news.example/".into()),
-        private: false,
-        agent: false,
-        user_agent: UserAgent::EngineDefault,
-        zoom: 1.0,
-        visible: true,
-        frame: None,
-        javascript: true,
-    }));
-    eventually("the decision", || !state().decisions.is_empty());
-    assert_eq!(state().decisions[0].2, NavDecision::Allow);
+    eventually("the first window", || !state_of(core).windows.is_empty());
+}
+
+fn tab_ids(v: &[mado_types::TabId]) -> Vec<mado_types::TabId> {
+    v.to_vec()
+}
+
+/// 04 §12 check 3: quit with 3 windows, relaunch with `newTab`, ⌘⇧T: all
+/// three windows come back with their groups and pins.
+#[test]
+fn a_relaunch_then_reopen_closed_brings_back_every_window() {
+    let core = TestCore::start();
+    startup(&core);
+    let first = *state_of(&core).windows.keys().next().expect("window");
+    let mut windows = vec![first];
+    for _ in 0..2 {
+        let v = ask(
+            &core,
+            Origin::System,
+            Command::WindowNew {
+                private: false,
+                urls: vec!["https://a.example/".into()],
+            },
+        )
+        .expect("window.new");
+        windows.push(serde_json::from_value(v["windowId"].clone()).expect("id"));
+    }
+    let mut tabs = Vec::new();
+    for (i, w) in windows.iter().enumerate() {
+        for n in 0..3 {
+            tabs.push((i, new_tab(&core, *w, &format!("https://w{i}t{n}.example/"))));
+        }
+    }
+    let pick = |w: usize, n: usize| {
+        tabs.iter()
+            .filter(|(i, _)| *i == w)
+            .nth(n)
+            .map(|t| t.1)
+            .expect("tab")
+    };
+    ask(
+        &core,
+        Origin::System,
+        Command::TabPin {
+            tab_ids: tab_ids(&[pick(0, 0)]),
+        },
+    )
+    .expect("pin");
+    ask(
+        &core,
+        Origin::System,
+        Command::GroupCreate {
+            tab_ids: tab_ids(&[pick(1, 1), pick(1, 2)]),
+            title: Some("Work".into()),
+            color: None,
+        },
+    )
+    .expect("group");
+    let before = state_of(&core);
+    let dir = core.stop();
+
+    let core = TestCore::start_in(dir, true);
+    startup(&core);
+    let fresh = state_of(&core);
+    assert_eq!(fresh.windows.len(), 1, "newTab opens one window");
+    assert!(
+        fresh
+            .tabs
+            .values()
+            .any(|t| t.pinned && t.url == "https://w0t0.example/"),
+        "pinned tabs return"
+    );
+    ask(&core, Origin::System, Command::SessionReopenClosed).expect("reopen");
+    let after = state_of(&core);
+    assert_eq!(after.windows.len(), 4);
+    let urls = |s: &mado_types::state::State| {
+        let mut u: Vec<String> = s
+            .tabs
+            .values()
+            .filter(|t| t.url != "mado://newtab")
+            .map(|t| t.url.clone())
+            .collect();
+        u.sort();
+        u
+    };
+    let mut want = urls(&before);
+    want.push("https://w0t0.example/".into());
+    want.sort();
+    assert_eq!(urls(&after), want);
+    let group = after
+        .groups
+        .values()
+        .find(|g| g.title == "Work")
+        .expect("the group came back");
+    let members = after
+        .tabs
+        .values()
+        .filter(|t| t.group_id == Some(group.id))
+        .count();
+    assert_eq!(members, 2);
+    assert_eq!(after.tabs.values().filter(|t| t.pinned).count(), 2);
+}
+
+/// 04 §12 check 4: in Maximum mode a tab playing audio, a tab with typed
+/// text and a tab on an always-awake site never sleep; others do.
+#[test]
+fn maximum_memory_saver_never_sleeps_exempt_tabs() {
+    let core = TestCore::start();
+    for (key, value) in [
+        ("tabs.memorySaver", json!("maximum")),
+        ("tabs.keepAwakeSites", json!(["awake.example"])),
+    ] {
+        ask(
+            &core,
+            Origin::Settings,
+            Command::SettingsSet {
+                key: key.into(),
+                value,
+                token: None,
+            },
+        )
+        .expect("set");
+    }
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let audio = new_tab(&core, w, "https://music.example/");
+    let typed = new_tab(&core, w, "https://form.example/");
+    let awake = new_tab(&core, w, "https://www.awake.example/");
+    let plain = new_tab(&core, w, "https://plain.example/");
+    let front = new_tab(&core, w, "https://front.example/");
+    core.page.send(mado_engine::EngineEvent::AudioChanged {
+        tab: audio,
+        playing: true,
+    });
+    core.handle
+        .send(Input::Internal(Internal::TestUnsavedInput { tab: typed }));
+    eventually("audio and typed text", || {
+        let s = state_of(&core);
+        s.tabs[&audio].audio.playing && s.tabs[&typed].has_unsaved_input
+    });
+    core.handle
+        .send(Input::Internal(Internal::MemoryPressure { critical: true }));
+    eventually("the plain tab sleeps", || {
+        state_of(&core).tabs[&plain].life == mado_types::state::TabLife::Sleeping
+    });
+    let s = state_of(&core);
+    for t in [audio, typed, awake, front] {
+        assert_ne!(
+            s.tabs[&t].life,
+            mado_types::state::TabLife::Sleeping,
+            "{}",
+            s.tabs[&t].url
+        );
+    }
+    // Its view is gone; waking it restores the saved session.
+    eventually("the view is gone", || {
+        !core
+            .engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tabs
+            .contains_key(&plain)
+    });
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::TabActivate { tab_id: plain },
+    )
+    .expect("activate");
+    eventually("the view is back", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tabs
+            .get(&plain)
+            .and_then(|t| t.url().map(str::to_owned))
+            == Some("https://plain.example/".into())
+    });
+}
+
+/// 04 §12 check 5: a saved group closes and reopens with its tabs in order
+/// and their titles, with only the first tab loading.
+#[test]
+fn a_saved_group_reopens_in_order_from_its_snapshots() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let a = new_tab(&core, w, "https://a.example/");
+    let b = new_tab(&core, w, "https://b.example/");
+    eventually("titles", || {
+        state_of(&core).tabs[&b].title == "https://b.example/"
+    });
+    let v = ask(
+        &core,
+        Origin::System,
+        Command::GroupCreate {
+            tab_ids: vec![a, b],
+            title: Some("G".into()),
+            color: None,
+        },
+    )
+    .expect("group");
+    let g: mado_types::GroupId = serde_json::from_value(v["groupId"].clone()).expect("id");
+    ask(&core, Origin::System, Command::GroupClose { group_id: g }).expect("close");
+    let s = state_of(&core);
+    assert_eq!(
+        s.saved_groups.iter().find(|x| x.id == g).map(|x| x.open),
+        Some(false)
+    );
+    let views_before = core
+        .engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .tabs
+        .len();
+    ask(
+        &core,
+        Origin::System,
+        Command::GroupReopen {
+            group_id: g,
+            window_id: w,
+        },
+    )
+    .expect("reopen");
+    let s = state_of(&core);
+    let order: Vec<&str> = s.windows[&w]
+        .tab_order
+        .iter()
+        .filter(|t| s.tabs[*t].group_id == Some(g))
+        .map(|t| s.tabs[t].title.as_str())
+        .collect();
+    assert_eq!(order, ["https://a.example/", "https://b.example/"]);
+    eventually("only the first tab has a view", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tabs
+            .len()
+            == views_before + 1
+    });
 }

@@ -13,6 +13,8 @@ use tauri::{AppHandle, Emitter, EventTarget};
 /// Shared with the Tauri command.
 pub struct Shared {
     pub core: Arc<OnceLock<CoreHandle>>,
+    /// Set when Mado really quits, so the exit is not prevented.
+    pub quitting: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// The origin a webview label carries. Nothing in the payload can claim one.
@@ -87,6 +89,30 @@ impl UiSink for TauriUi {
     fn notice(&mut self, notice: &Notice) {
         if let Err(e) = self.app.emit_filter("mado://notice", notice, listens) {
             tracing::error!(error = %e, "a notice was not delivered");
+        }
+    }
+
+    fn quit(&mut self) {
+        if let Some(shared) = tauri::Manager::try_state::<Shared>(&self.app) {
+            shared
+                .quitting
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        self.app.exit(0);
+    }
+
+    fn open_in_profile(&mut self, profile: mado_types::ProfileId, url: &str) {
+        // A launch with --profile hands the URL to that profile's process,
+        // starting it if needed (spec 01 §1.3).
+        let started = std::env::current_exe().and_then(|exe| {
+            std::process::Command::new(exe)
+                .arg("--profile")
+                .arg(profile.to_string())
+                .arg(url)
+                .spawn()
+        });
+        if let Err(e) = started {
+            tracing::error!(error = %e, "the other profile did not start");
         }
     }
 }

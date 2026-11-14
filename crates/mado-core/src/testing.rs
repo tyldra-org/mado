@@ -41,16 +41,17 @@ pub struct TestCore {
     pub sent: Arc<Mutex<Sent>>,
     pub engine: Arc<Mutex<FakeState>>,
     pub page: FakeControl,
-    /// Calls the engine directly, for tests that need tab views before the
-    /// core creates them itself.
-    pub engine_ops: EngineHandle,
     pub dir: tempfile::TempDir,
     pub thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl TestCore {
     pub fn start() -> Self {
-        let dir = tempfile::tempdir().expect("temp dir");
+        Self::start_in(tempfile::tempdir().expect("temp dir"), true)
+    }
+
+    /// A core over the databases in `dir`, as a relaunch would find them.
+    pub fn start_in(dir: tempfile::TempDir, clean_start: bool) -> Self {
         let root = dir.path();
         let backups = root.join("Backups");
         let app = open(
@@ -96,7 +97,9 @@ impl TestCore {
             profile_db: Storage::start(&profile).expect("profile storage"),
             backups,
             settings: Settings::new(Strings::english()),
-            engine: engine.clone(),
+            engine,
+            user_agent: mado_engine::UserAgent::EngineDefault,
+            clean_start,
             ui: Box::new(Collect(Arc::clone(&sent))),
             updates: Box::new(crate::NoUpdates),
             clock: || 1_800_000_000_000,
@@ -116,9 +119,22 @@ impl TestCore {
             sent,
             engine: engine_state,
             page,
-            engine_ops: engine,
             dir,
             thread: Some(thread),
         }
+    }
+}
+
+impl TestCore {
+    /// Quits the way the app does and hands back the databases.
+    pub fn stop(mut self) -> tempfile::TempDir {
+        let (done, rx) = tokio::sync::oneshot::channel();
+        self.handle
+            .send(Input::Internal(crate::Internal::Shutdown { done }));
+        let _ = rx.blocking_recv();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+        self.dir
     }
 }

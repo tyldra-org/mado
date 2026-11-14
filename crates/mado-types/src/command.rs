@@ -8,7 +8,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::MadoError;
-use crate::ids::{ClientId, TaskId, WindowId};
+use crate::ids::{ClientId, GroupId, TabId, TaskId, WindowId};
 
 /// Every command family of spec 01 §4.2, with the spec that defines it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -209,6 +209,160 @@ pub enum Command {
     /// `{ token }`, valid once for 60 seconds (spec 06 §5).
     #[serde(rename = "app.authenticate")]
     AppAuthenticate { reason: String },
+    // Windows, tabs, groups and sessions (spec 04 §2).
+    /// A window with one New Tab page or `urls`. `private` opens a private
+    /// window in its own process (spec 01).
+    #[serde(rename = "window.new", rename_all = "camelCase")]
+    WindowNew {
+        #[serde(default)]
+        private: bool,
+        #[serde(default)]
+        urls: Vec<String>,
+    },
+    #[serde(rename = "window.close", rename_all = "camelCase")]
+    WindowClose { window_id: WindowId },
+    /// The layout is an app setting; `windowId` is ignored in v1.
+    #[serde(rename = "window.setLayout", rename_all = "camelCase")]
+    WindowSetLayout {
+        #[serde(default)]
+        window_id: Option<WindowId>,
+        layout: crate::state::TabLayout,
+    },
+    /// Returns `{ tabId }`.
+    #[serde(rename = "tab.new", rename_all = "camelCase")]
+    TabNew {
+        window_id: WindowId,
+        #[serde(default)]
+        url: Option<String>,
+        #[serde(default)]
+        position: Option<TabPosition>,
+        #[serde(default)]
+        background: bool,
+        #[serde(default)]
+        opener_id: Option<TabId>,
+    },
+    #[serde(rename = "tab.close", rename_all = "camelCase")]
+    TabClose { tab_ids: Vec<TabId> },
+    #[serde(rename = "tab.activate", rename_all = "camelCase")]
+    TabActivate { tab_id: TabId },
+    /// `toGroupId`: absent keeps the group rules of a drop (join when
+    /// dropped inside a group, leave when outside); `null` leaves any group.
+    #[serde(rename = "tab.move", rename_all = "camelCase")]
+    TabMove {
+        tab_ids: Vec<TabId>,
+        #[serde(default)]
+        to_window_id: Option<WindowId>,
+        to_index: u32,
+        #[serde(default, with = "double_option")]
+        #[ts(type = "string | null | undefined")]
+        to_group_id: Option<Option<GroupId>>,
+    },
+    /// Returns `{ windowId }`.
+    #[serde(rename = "tab.toNewWindow", rename_all = "camelCase")]
+    TabToNewWindow {
+        tab_ids: Vec<TabId>,
+        #[serde(default)]
+        bounds: Option<crate::state::Bounds>,
+    },
+    #[serde(rename = "tab.pin", rename_all = "camelCase")]
+    TabPin { tab_ids: Vec<TabId> },
+    #[serde(rename = "tab.unpin", rename_all = "camelCase")]
+    TabUnpin { tab_ids: Vec<TabId> },
+    #[serde(rename = "tab.resetPin", rename_all = "camelCase")]
+    TabResetPin { tab_id: TabId },
+    /// An empty title clears the custom title.
+    #[serde(rename = "tab.rename", rename_all = "camelCase")]
+    TabRename { tab_id: TabId, title: String },
+    /// Returns `{ tabId }`.
+    #[serde(rename = "tab.duplicate", rename_all = "camelCase")]
+    TabDuplicate { tab_id: TabId },
+    #[serde(rename = "tab.sleep", rename_all = "camelCase")]
+    TabSleep { tab_ids: Vec<TabId> },
+    #[serde(rename = "tab.mute", rename_all = "camelCase")]
+    TabMute { tab_ids: Vec<TabId>, muted: bool },
+    #[serde(rename = "tab.muteSite", rename_all = "camelCase")]
+    TabMuteSite { host: String, muted: bool },
+    #[serde(rename = "tab.moveToProfile", rename_all = "camelCase")]
+    TabMoveToProfile {
+        tab_id: TabId,
+        profile_id: crate::ids::ProfileId,
+    },
+    #[serde(rename = "tab.selectNext", rename_all = "camelCase")]
+    TabSelectNext { window_id: WindowId },
+    #[serde(rename = "tab.selectPrevious", rename_all = "camelCase")]
+    TabSelectPrevious { window_id: WindowId },
+    /// 0-based; ⌘9 sends `last: true`.
+    #[serde(rename = "tab.selectIndex", rename_all = "camelCase")]
+    TabSelectIndex {
+        window_id: WindowId,
+        #[serde(default)]
+        index: u32,
+        #[serde(default)]
+        last: bool,
+    },
+    #[serde(rename = "tab.closeOthers", rename_all = "camelCase")]
+    TabCloseOthers { tab_id: TabId },
+    #[serde(rename = "tab.closeRight", rename_all = "camelCase")]
+    TabCloseRight { tab_id: TabId },
+    #[serde(rename = "tab.reloadAll", rename_all = "camelCase")]
+    TabReloadAll { window_id: WindowId },
+    /// Returns `{ title, url, sleeping, memoryBytes?, snapshot? }` (spec 04 §11).
+    #[serde(rename = "tab.hoverInfo", rename_all = "camelCase")]
+    TabHoverInfo { tab_id: TabId },
+    /// Returns `{ groupId }`.
+    #[serde(rename = "group.create", rename_all = "camelCase")]
+    GroupCreate {
+        tab_ids: Vec<TabId>,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        color: Option<crate::state::GroupColor>,
+    },
+    #[serde(rename = "group.update", rename_all = "camelCase")]
+    GroupUpdate {
+        group_id: GroupId,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        color: Option<crate::state::GroupColor>,
+        #[serde(default)]
+        collapsed: Option<bool>,
+    },
+    #[serde(rename = "group.ungroup", rename_all = "camelCase")]
+    GroupUngroup { group_id: GroupId },
+    #[serde(rename = "group.close", rename_all = "camelCase")]
+    GroupClose { group_id: GroupId },
+    #[serde(rename = "group.reopen", rename_all = "camelCase")]
+    GroupReopen {
+        group_id: GroupId,
+        window_id: WindowId,
+    },
+    #[serde(rename = "group.delete", rename_all = "camelCase")]
+    GroupDelete { group_id: GroupId },
+    /// The Undo of `group.delete`, within 10 seconds.
+    #[serde(rename = "group.undoDelete", rename_all = "camelCase")]
+    GroupUndoDelete { group_id: GroupId },
+    #[serde(rename = "group.setSaved", rename_all = "camelCase")]
+    GroupSetSaved { group_id: GroupId, saved: bool },
+    /// `windowId` absent: a new window.
+    #[serde(rename = "group.moveToWindow", rename_all = "camelCase")]
+    GroupMoveToWindow {
+        group_id: GroupId,
+        #[serde(default)]
+        window_id: Option<WindowId>,
+    },
+    /// Pops the closed stack (spec 04 §6).
+    #[serde(rename = "session.reopenClosed")]
+    SessionReopenClosed,
+    /// Returns the top 25 closed entries, newest first.
+    #[serde(rename = "session.recentlyClosed")]
+    SessionRecentlyClosed,
+    /// Answers the quit prompt (spec 04 §9): `proceed` quits or closes.
+    #[serde(rename = "session.confirmClose", rename_all = "camelCase")]
+    SessionConfirmClose {
+        prompt_id: crate::ids::PromptId,
+        proceed: bool,
+    },
     /// The page area of a window in the UI's CSS pixels, reported whenever
     /// it moves or resizes (spec 01 §5.2).
     #[serde(rename = "window.reportContentRect", rename_all = "camelCase")]
@@ -231,7 +385,43 @@ impl Command {
             | Self::SettingsSearch { .. }
             | Self::SettingsExport { .. }
             | Self::SettingsImport { .. } => CommandFamily::Settings,
-            Self::WindowReportContentRect { .. } => CommandFamily::Window,
+            Self::WindowReportContentRect { .. }
+            | Self::WindowNew { .. }
+            | Self::WindowClose { .. }
+            | Self::WindowSetLayout { .. } => CommandFamily::Window,
+            Self::TabNew { .. }
+            | Self::TabClose { .. }
+            | Self::TabActivate { .. }
+            | Self::TabMove { .. }
+            | Self::TabToNewWindow { .. }
+            | Self::TabPin { .. }
+            | Self::TabUnpin { .. }
+            | Self::TabResetPin { .. }
+            | Self::TabRename { .. }
+            | Self::TabDuplicate { .. }
+            | Self::TabSleep { .. }
+            | Self::TabMute { .. }
+            | Self::TabMuteSite { .. }
+            | Self::TabMoveToProfile { .. }
+            | Self::TabSelectNext { .. }
+            | Self::TabSelectPrevious { .. }
+            | Self::TabSelectIndex { .. }
+            | Self::TabCloseOthers { .. }
+            | Self::TabCloseRight { .. }
+            | Self::TabReloadAll { .. }
+            | Self::TabHoverInfo { .. } => CommandFamily::Tab,
+            Self::GroupCreate { .. }
+            | Self::GroupUpdate { .. }
+            | Self::GroupUngroup { .. }
+            | Self::GroupClose { .. }
+            | Self::GroupReopen { .. }
+            | Self::GroupDelete { .. }
+            | Self::GroupUndoDelete { .. }
+            | Self::GroupSetSaved { .. }
+            | Self::GroupMoveToWindow { .. } => CommandFamily::Group,
+            Self::SessionReopenClosed
+            | Self::SessionRecentlyClosed
+            | Self::SessionConfirmClose { .. } => CommandFamily::Session,
             Self::AppAuthenticate { .. } => CommandFamily::App,
             Self::UpdateCheck | Self::UpdateRelaunch => CommandFamily::Update,
         }
@@ -250,6 +440,42 @@ impl Command {
             Self::SettingsExport { .. } => "settings.export",
             Self::SettingsImport { .. } => "settings.import",
             Self::WindowReportContentRect { .. } => "window.reportContentRect",
+            Self::WindowNew { .. } => "window.new",
+            Self::WindowClose { .. } => "window.close",
+            Self::WindowSetLayout { .. } => "window.setLayout",
+            Self::TabNew { .. } => "tab.new",
+            Self::TabClose { .. } => "tab.close",
+            Self::TabActivate { .. } => "tab.activate",
+            Self::TabMove { .. } => "tab.move",
+            Self::TabToNewWindow { .. } => "tab.toNewWindow",
+            Self::TabPin { .. } => "tab.pin",
+            Self::TabUnpin { .. } => "tab.unpin",
+            Self::TabResetPin { .. } => "tab.resetPin",
+            Self::TabRename { .. } => "tab.rename",
+            Self::TabDuplicate { .. } => "tab.duplicate",
+            Self::TabSleep { .. } => "tab.sleep",
+            Self::TabMute { .. } => "tab.mute",
+            Self::TabMuteSite { .. } => "tab.muteSite",
+            Self::TabMoveToProfile { .. } => "tab.moveToProfile",
+            Self::TabSelectNext { .. } => "tab.selectNext",
+            Self::TabSelectPrevious { .. } => "tab.selectPrevious",
+            Self::TabSelectIndex { .. } => "tab.selectIndex",
+            Self::TabCloseOthers { .. } => "tab.closeOthers",
+            Self::TabCloseRight { .. } => "tab.closeRight",
+            Self::TabReloadAll { .. } => "tab.reloadAll",
+            Self::TabHoverInfo { .. } => "tab.hoverInfo",
+            Self::GroupCreate { .. } => "group.create",
+            Self::GroupUpdate { .. } => "group.update",
+            Self::GroupUngroup { .. } => "group.ungroup",
+            Self::GroupClose { .. } => "group.close",
+            Self::GroupReopen { .. } => "group.reopen",
+            Self::GroupDelete { .. } => "group.delete",
+            Self::GroupUndoDelete { .. } => "group.undoDelete",
+            Self::GroupSetSaved { .. } => "group.setSaved",
+            Self::GroupMoveToWindow { .. } => "group.moveToWindow",
+            Self::SessionReopenClosed => "session.reopenClosed",
+            Self::SessionRecentlyClosed => "session.recentlyClosed",
+            Self::SessionConfirmClose { .. } => "session.confirmClose",
             Self::AppAuthenticate { .. } => "app.authenticate",
             Self::UpdateCheck => "update.check",
             Self::UpdateRelaunch => "update.relaunch",
@@ -261,8 +487,50 @@ impl Command {
     pub fn is_query(&self) -> bool {
         matches!(
             self,
-            Self::StateGet | Self::SettingsGet { .. } | Self::SettingsSearch { .. }
+            Self::StateGet
+                | Self::SettingsGet { .. }
+                | Self::SettingsSearch { .. }
+                | Self::TabHoverInfo { .. }
+                | Self::SessionRecentlyClosed
         )
+    }
+}
+
+/// Where `tab.new` puts the tab (spec 04 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", untagged)]
+#[ts(export)]
+pub enum TabPosition {
+    Named(NamedPosition),
+    Index { index: u32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum NamedPosition {
+    AfterActive,
+    End,
+}
+
+/// `Option<Option<T>>` that tells a missing field from `null`.
+mod double_option {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer, T: Serialize>(
+        value: &Option<Option<T>>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            None => s.serialize_none(),
+            Some(inner) => inner.serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+        d: D,
+    ) -> Result<Option<Option<T>>, D::Error> {
+        Option::<T>::deserialize(d).map(Some)
     }
 }
 

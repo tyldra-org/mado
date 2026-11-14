@@ -1,6 +1,6 @@
 //! The core's timer wheel (spec 01 §2.2). Timers fire as inputs to the core
-//! loop. M1 schedules notice expiry and the daily backup; later tasks add
-//! tab sleeping, auto-revoke, routines, updates and filter lists.
+//! loop. M1 schedules notice expiry and the daily backup, M2 tab sleeping;
+//! later tasks add auto-revoke, routines, updates and filter lists.
 
 use std::time::Duration;
 
@@ -12,6 +12,10 @@ pub enum Timer {
     NoticeExpiry(String),
     /// Backs up the profile and vault databases (spec 03 §4).
     DailyBackup,
+    /// Looks for tabs to sleep (spec 04 §7).
+    SleepCheck,
+    /// A deleted group's Undo ran out.
+    ForgetDeletedGroup(mado_types::GroupId),
 }
 
 #[derive(Debug, Default)]

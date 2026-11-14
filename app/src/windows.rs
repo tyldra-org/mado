@@ -173,7 +173,7 @@ fn create(app: &AppHandle, id: WindowId, bounds: &Bounds) -> tauri::Result<()> {
         .title("Mado")
         .inner_size(width, height)
         .min_inner_size(500.0, 300.0);
-    if bounds.width > 0.0 {
+    if bounds.width > 0.0 && on_a_screen(app, bounds) {
         builder = builder.position(bounds.x, bounds.y);
     }
     let headless = headless();
@@ -200,6 +200,20 @@ fn create(app: &AppHandle, id: WindowId, bounds: &Bounds) -> tauri::Result<()> {
         window.set_focus()?;
     }
     Ok(())
+}
+
+/// Whether a saved window's top-left corner is on a screen that still
+/// exists. A window whose screen is gone opens on the main screen with its
+/// size (spec 04 §8 rule 5).
+fn on_a_screen(app: &AppHandle, b: &Bounds) -> bool {
+    app.available_monitors().is_ok_and(|monitors| {
+        monitors.iter().any(|m| {
+            let scale = m.scale_factor();
+            let pos = m.position().to_logical::<f64>(scale);
+            let size = m.size().to_logical::<f64>(scale);
+            b.x >= pos.x && b.y >= pos.y && b.x < pos.x + size.width && b.y < pos.y + size.height
+        })
+    })
 }
 
 /// End-to-end runs on a developer's Mac create real windows but keep them
