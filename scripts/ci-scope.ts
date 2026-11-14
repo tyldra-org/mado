@@ -57,6 +57,9 @@ const RUST_DIRS = /^(app|crates)\//;
 /** mado-types writes these; a hand edit must meet its drift check. */
 const GENERATED = /^ui\/src\/generated\//;
 
+/** mado-engine embeds the page scripts it bundles from here. */
+const PAGE_SCRIPTS = /^inject\//;
+
 const TS = [
   /^(ui|inject|tests)\//,
   /^scripts\/.+\.ts$/,
@@ -147,6 +150,7 @@ export function classify(files: readonly string[]): Areas {
       (f) =>
         RUST_DIRS.test(f) ||
         GENERATED.test(f) ||
+        PAGE_SCRIPTS.test(f) ||
         any(f, RUST_GLOBAL) ||
         f === "scripts/check-deps.ts",
     ),
@@ -176,6 +180,10 @@ export function affectedCrates(
   for (const file of files) {
     if (GENERATED.test(file)) {
       touched.add("mado-types");
+      continue;
+    }
+    if (PAGE_SCRIPTS.test(file)) {
+      touched.add("mado-engine");
       continue;
     }
     const owner = byDir.find((c) => c.dir === "" || file.startsWith(`${c.dir}/`));

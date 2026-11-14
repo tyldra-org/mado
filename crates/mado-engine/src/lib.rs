@@ -4,6 +4,7 @@
 //! M1-T03 adds `WindowCommand`, which the app shell needs in M1-T07; M2-T01
 //! adds the `Engine` trait, `TabCommand`, `EngineEvent` and capabilities.
 
+pub mod page;
 pub mod window;
 
 pub use window::{WindowCommand, WindowEngine, WindowEvent};
