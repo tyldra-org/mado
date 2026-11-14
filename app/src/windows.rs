@@ -70,17 +70,16 @@ impl Engine for TauriWindows {
         &self.caps
     }
 
-    fn create_tab(&mut self, _spec: TabSpec) -> Result<(), EngineError> {
-        Err(EngineError::Unsupported(
-            "tab views before the WebKit adapter (M2-T02)",
-        ))
+    fn create_tab(&mut self, spec: TabSpec) -> Result<(), EngineError> {
+        mado_engine_webkit::create_tab(spec)
     }
 
-    fn destroy_tab(&mut self, _tab: TabId) {}
+    fn destroy_tab(&mut self, tab: TabId) {
+        mado_engine_webkit::destroy_tab(tab);
+    }
 
-    fn apply(&mut self, _tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
-        cmd.fail(EngineError::NoTab);
-        Err(EngineError::NoTab)
+    fn apply(&mut self, tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
+        mado_engine_webkit::apply(tab, cmd)
     }
 
     fn apply_window(&mut self, window: WindowId, cmd: WindowCommand) {
@@ -89,15 +88,91 @@ impl Engine for TauriWindows {
         }
     }
 
-    fn set_page_scripts(&mut self, _scripts: PageScriptSet) {}
-
-    fn clear_data(&mut self, _req: ClearDataRequest, done: Callback<Result<(), EngineError>>) {
-        done(Err(EngineError::Unsupported(
-            "site data before the WebKit adapter (M2-T02)",
-        )));
+    fn set_page_scripts(&mut self, scripts: PageScriptSet) {
+        mado_engine_webkit::set_page_scripts(scripts);
     }
 
-    fn set_proxy(&mut self, _proxy: ProxyConfig) {}
+    fn clear_data(&mut self, req: ClearDataRequest, done: Callback<Result<(), EngineError>>) {
+        mado_engine_webkit::clear_data(req, done);
+    }
+
+    fn set_proxy(&mut self, proxy: ProxyConfig) {
+        mado_engine_webkit::set_proxy(proxy);
+    }
+}
+
+/// Where the adapter finds a window's content view.
+struct Host {
+    app: AppHandle,
+}
+
+impl mado_engine_webkit::WindowHost for Host {
+    fn ns_window(&self, window: WindowId) -> Option<*mut std::ffi::c_void> {
+        self.app.get_window(&window_label(window))?.ns_window().ok()
+    }
+}
+
+/// Installs the WebKit adapter for this profile. Call on the main thread
+/// before the core starts creating tabs.
+pub fn install_webkit(
+    app: &AppHandle,
+    core: Arc<OnceLock<CoreHandle>>,
+    profile: mado_types::ProfileId,
+    ephemeral: bool,
+    inspectable: bool,
+) -> Result<(), String> {
+    let mtm = objc2::MainThreadMarker::new().ok_or("WebKit starts on the main thread")?;
+    let runner_app = app.clone();
+    let runner: mado_engine_webkit::MainRunner = Arc::new(move |job| {
+        if let Err(e) = runner_app.run_on_main_thread(job) {
+            tracing::error!(error = %e, "the main thread is gone");
+        }
+    });
+    let events = EventSink::new(move |event| {
+        if let Some(core) = core.get() {
+            core.send(Input::Engine(event));
+        }
+    });
+    let assets = app.clone();
+    let resolver: mado_engine_webkit::SchemeResolver =
+        Arc::new(move |url: &str| resolve(&assets, url));
+    mado_engine_webkit::install(
+        mtm,
+        mado_engine_webkit::Config {
+            profile,
+            host: Box::new(Host { app: app.clone() }),
+            ephemeral,
+            events,
+            runner,
+            resolver,
+            inspectable,
+        },
+    );
+    Ok(())
+}
+
+/// `mado://<page>/...` (spec 01 §4.4): every internal page is the
+/// internal-page entry of the UI bundle, which reads its page from the URL;
+/// other paths are the bundle's assets (scripts, styles).
+fn resolve(app: &AppHandle, url: &str) -> Option<mado_engine_webkit::Resolved> {
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "mado" {
+        return None;
+    }
+    let path = parsed.path();
+    let asset = if path.is_empty() || path == "/" {
+        "internal.html"
+    } else {
+        path.trim_start_matches('/')
+    };
+    if asset.split('/').any(|part| part == "..") {
+        return None;
+    }
+    let found = app.asset_resolver().get(asset.to_owned())?;
+    Some(mado_engine_webkit::Resolved {
+        mime: found.mime_type,
+        body: found.bytes,
+    })
 }
 
 fn apply(

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The app starts: one process per profile with a profile lock, a second launch hands over to the first, and Cmd-Q or SIGTERM quits cleanly.
 - Settings: every setting of the design, stored per app or profile, with protection, undo, search, export and import, and a settings window.
 - Storage: SQLite databases that refuse a newer schema, back up before migrating and restore from a backup when damaged.
+- Web pages load in tabs through WebKit, each profile with its own website data and proxy, and sites see Mado as Safari.
 - Tabs, windows and groups: opening, closing and selecting tabs as Chrome does, pinned tabs, saved groups, ⌘⇧T for closed tabs, groups and windows, sleeping tabs with Memory Saver, startup modes with crash restore, and a warning before quitting with typed text.
 - Nightly builds for Apple silicon Macs, signed with Mado's own certificate, that update themselves on the nightly channel. Intel Macs are not supported.
 

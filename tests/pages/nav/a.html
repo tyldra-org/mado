@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Page A</title>
+<p>Page A. It moves on to page B by itself, so a test sees two history entries.</p>
+<script>
+  if (!location.hash) setTimeout(() => location.assign("b.html"), 50);
+</script>

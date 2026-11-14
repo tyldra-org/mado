@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Hostile</title>
+<p>Looks for anything Mado put in the page world and tries to forge a
+bridge message (spec 02 §8 check 2). The title reports what it found.</p>
+<script>
+  const found = [];
+  for (const key of Object.getOwnPropertyNames(window)) {
+    if (/mado/i.test(key)) found.push(key);
+  }
+  for (const sym of Object.getOwnPropertySymbols(window)) {
+    if (/mado/i.test(String(sym))) found.push(String(sym));
+  }
+  if (globalThis[Symbol.for("mado.bridge")]) found.push("mado.bridge");
+  const handlers = window.webkit?.messageHandlers;
+  if (handlers?.mado) found.push("messageHandlers.mado");
+  let forged = "no channel";
+  try {
+    handlers?.mado?.postMessage({ v: 1, nonce: "0".repeat(32), script: "status", type: "heartbeat", payload: {} });
+    if (handlers?.mado) forged = "sent";
+  } catch (e) {
+    forged = "threw";
+  }
+  document.title = `Hostile: ${found.length ? found.join(",") : "nothing"}; ${forged}`;
+</script>

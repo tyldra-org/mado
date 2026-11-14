@@ -21,7 +21,7 @@
     "format:check": "biome format . && prettier --check \"ui/**/*.svelte\"",
     "deps:check": "bun scripts/check-deps.ts",
     "typecheck:tests": "tsc -p tests --noEmit",
-    "test:e2e": "cargo build -p mado-app --features test-hooks && MADO_E2E_BIN=target/debug/mado-app bun test tests/e2e"
+    "test:e2e": "cargo build -p mado-app --features test-hooks && cargo build -p mado-fixture-server && MADO_E2E_BIN=target/debug/mado-app MADO_FIXTURE_BIN=target/debug/mado-fixture-server bun test tests/e2e"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",

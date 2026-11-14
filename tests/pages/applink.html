@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>App link</title>
+<p>Sends the tab to a zoommtg: link, which must start the app link flow and
+never navigate (spec 02 §8 check 5).</p>
+<script>
+  setTimeout(() => {
+    location.href = "zoommtg://zoom.us/join?confno=1";
+    setTimeout(() => (document.title = "App link: still here"), 300);
+  }, 50);
+</script>

@@ -1217,7 +1217,11 @@ impl Core {
         for (id, t) in &after.tabs {
             match before.tabs.get(id) {
                 None if live(t) => {
-                    if !self.adopted.remove(id) {
+                    if self.adopted.remove(id) {
+                        // The engine made this view in the opener's window;
+                        // put it where the core placed it.
+                        first.push(EngineOp::Apply(*id, TabCommand::SetWindow(t.window_id)));
+                    } else {
                         first.push(EngineOp::CreateTab(self.spec_for(t)));
                     }
                 }

@@ -310,6 +310,8 @@ impl Core {
             hooks: Hooks::default(),
         };
         core.mirror_all_settings();
+        // The proxy applies to every tab view, so before the first one.
+        core.engine.send(EngineOp::SetProxy(core.proxy()));
         core.timers.schedule(Timer::DailyBackup, DAY);
         core
     }
@@ -745,6 +747,9 @@ impl Core {
             mirror(&mut tx, &self.settings, &out.changes);
             side_effects(&mut tx, &out.changes);
         }
+        if out.changes.iter().any(|c| c.key.starts_with("proxy.")) {
+            self.outbox.push(EngineOp::SetProxy(self.proxy()));
+        }
         if let Some(log_id) = out.undo_notice
             && let Some(change) = out.changes.first()
         {
@@ -839,6 +844,34 @@ impl Core {
             }
         }
         self.settle(&model_before, &mut rec);
+    }
+
+    /// The profile's proxy from `proxy.*` (spec 06: proxy settings call
+    /// `engine.set_proxy`).
+    fn proxy(&self) -> mado_engine::ProxyConfig {
+        let s = |k: &str| {
+            self.settings
+                .value(lookup_def(k))
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let bypass = self
+            .settings
+            .value(lookup_def("proxy.bypass"))
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        mado_engine::ProxyConfig::from_settings(
+            &s("proxy.mode"),
+            &s("proxy.http"),
+            &s("proxy.socks5"),
+            bypass,
+        )
     }
 
     /// Lets queued writes finish; the app then checkpoints and releases the
