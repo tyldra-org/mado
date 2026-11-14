@@ -360,7 +360,7 @@ fn start_owner(
         profile_db,
         backups: paths.backups(id),
         settings,
-        engine: Box::new(TauriWindows::new(app.clone(), Arc::clone(&owner.core))),
+        engine: TauriWindows::handle(app.clone(), Arc::clone(&owner.core)),
         ui: Box::new(TauriUi { app: app.clone() }),
         updates: Box::new(update::start(
             app.clone(),
@@ -588,9 +588,9 @@ fn run_app(
             {
                 // The core removes the window from the state, then closes it.
                 api.prevent_close();
-                core.send(Input::Window(mado_engine::WindowEvent::CloseRequested {
-                    window: id,
-                }));
+                core.send(Input::Engine(
+                    mado_engine::EngineEvent::WindowCloseRequested { window: id },
+                ));
             }
         })
         .build(context())?;

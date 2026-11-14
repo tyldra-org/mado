@@ -2,7 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use mado_engine_fake::{FakeEngine, FakeState};
+use mado_engine::{EngineHandle, EventSink};
+use mado_engine_fake::{FakeControl, FakeEngine, FakeState};
 use mado_settings::{Settings, Strings};
 use mado_storage::{Kind, Storage, open};
 use mado_types::Patch;
@@ -39,6 +40,10 @@ pub struct TestCore {
     pub handle: CoreHandle,
     pub sent: Arc<Mutex<Sent>>,
     pub engine: Arc<Mutex<FakeState>>,
+    pub page: FakeControl,
+    /// Calls the engine directly, for tests that need tab views before the
+    /// core creates them itself.
+    pub engine_ops: EngineHandle,
     pub dir: tempfile::TempDir,
     pub thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -64,10 +69,24 @@ impl TestCore {
         .expect("profile db");
         let sent = Arc::new(Mutex::new(Sent::default()));
         let (events_tx, events_rx) = std::sync::mpsc::channel();
-        let engine = FakeEngine::new(move |e| {
-            let _ = events_tx.send(e);
-        });
+        let events_tx = Mutex::new(events_tx);
+        let engine = FakeEngine::new(EventSink::new(move |e| {
+            if let Ok(tx) = events_tx.lock() {
+                let _ = tx.send(e);
+            }
+        }));
         let engine_state = engine.state();
+        let page = engine.control();
+        let sink = EventSink::new({
+            let page = page.clone();
+            move |e| page.send(e)
+        });
+        let engine = Arc::new(Mutex::new(engine));
+        // The main thread's role: run each call on the engine.
+        let engine = EngineHandle::new(move |op| {
+            let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
+            op.run(&mut *engine, &sink);
+        });
         let (handle, thread) = crate::start(CoreConfig {
             profile: ProfileInfo {
                 name: "Test".into(),
@@ -77,7 +96,7 @@ impl TestCore {
             profile_db: Storage::start(&profile).expect("profile storage"),
             backups,
             settings: Settings::new(Strings::english()),
-            engine: Box::new(engine),
+            engine: engine.clone(),
             ui: Box::new(Collect(Arc::clone(&sent))),
             updates: Box::new(crate::NoUpdates),
             clock: || 1_800_000_000_000,
@@ -87,7 +106,7 @@ impl TestCore {
         let forward = handle.clone();
         std::thread::spawn(move || {
             while let Ok(e) = events_rx.recv() {
-                if !forward.send(Input::Window(e)) {
+                if !forward.send(Input::Engine(e)) {
                     break;
                 }
             }
@@ -96,6 +115,8 @@ impl TestCore {
             handle,
             sent,
             engine: engine_state,
+            page,
+            engine_ops: engine,
             dir,
             thread: Some(thread),
         }
