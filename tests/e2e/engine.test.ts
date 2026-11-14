@@ -142,7 +142,7 @@ run("WebKit adapter", () => {
     await mado.control.call("tab.find", { tabId: tab, query: "apple" });
     const bar = await until("find results", async () => {
       const w = (await state()).windows[window] as Win & {
-        findBar: { matches: number | null; active: number | null } | null;
+        findBar: { query: string; matches: number | null; active: number | null } | null;
       };
       return w.findBar?.matches != null ? w.findBar : undefined;
     });
