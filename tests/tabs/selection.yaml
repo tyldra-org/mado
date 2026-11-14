@@ -1,0 +1,92 @@
+# Which tab becomes active when the active tab closes (spec 04 §4), in
+# scripted scenarios that match Chrome. Read by mado-core's
+# `selection_matches_chrome` test.
+#
+# tabs: the window's tabs in strip order; the first is active.
+# Steps run in order:
+#   open: { name, opener?, foreground? }   a tab opened from a page (opener)
+#                                           or with ⌘T (no opener)
+#   activate: name
+#   close: name, or [names]
+#   pin: [names]
+#   group: [names]
+#   expect: name                            the active tab now
+
+- name: a link tab closes back to its opener
+  tabs: [a, b, c]
+  steps:
+    - open: { name: x, opener: a, foreground: true }
+    - close: x
+    - expect: a
+
+- name: choosing another tab forgets the opener
+  tabs: [a, b, c]
+  steps:
+    - open: { name: x, opener: a, foreground: true }
+    - activate: c
+    - activate: x
+    - close: x
+    - expect: b
+
+- name: a background link tab does not return to the opener
+  tabs: [a, b]
+  steps:
+    - open: { name: x, opener: a }
+    - activate: x
+    - close: x
+    - expect: b
+
+- name: without an opener the tab to the right is chosen
+  tabs: [a, b, c]
+  steps:
+    - activate: b
+    - close: b
+    - expect: c
+
+- name: the last tab falls back to the left
+  tabs: [a, b, c]
+  steps:
+    - activate: c
+    - close: c
+    - expect: b
+
+- name: inside a group the selection stays in the group
+  tabs: [a, b, c, d]
+  steps:
+    - group: [b, c]
+    - activate: c
+    - close: c
+    - expect: b
+
+- name: a group's last tab moves on to the right of the group
+  tabs: [a, b, c]
+  steps:
+    - group: [b]
+    - activate: b
+    - close: b
+    - expect: c
+
+- name: pinned tabs are chosen like any other
+  tabs: [a, b, c]
+  steps:
+    - pin: [a, b]
+    - activate: b
+    - close: b
+    - expect: c
+
+- name: closing several tabs picks the nearest survivor
+  tabs: [a, b, c, d, e]
+  steps:
+    - activate: b
+    - close: [b, c, d]
+    - expect: e
+
+- name: link tabs open after the opener and close back in order
+  tabs: [a, b]
+  steps:
+    - open: { name: x, opener: a, foreground: true }
+    - open: { name: y, opener: x, foreground: true }
+    - close: y
+    - expect: x
+    - close: x
+    - expect: a

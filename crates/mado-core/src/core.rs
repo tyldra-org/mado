@@ -1,27 +1,34 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
-use std::collections::BTreeMap;
+mod session;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use mado_engine::{EngineEvent, EngineHandle, EngineOp, WindowCommand};
+use mado_engine::tab::SessionBlob;
+use mado_engine::{EngineEvent, EngineHandle, EngineOp, UserAgent, WindowCommand};
 use mado_settings::types::Scope;
 use mado_settings::{Change, Outcome, Settings, Write, lookup, persist};
 use mado_storage::{BackupReason, Kind, Storage, backup, prune_backups};
 use mado_types::command::{Command, Origin};
-use mado_types::state::{
-    Bounds, Notice, NoticeAction, ProfileInfo, State, StatePatch, WindowState,
+use mado_types::state::{Bounds, Notice, NoticeAction, ProfileInfo, State, StatePatch};
+use mado_types::{
+    ErrorCode, GroupId, MadoError, Patch, PatchRecorder, PromptId, StateSnapshot, TabId, WindowId,
 };
-use mado_types::{ErrorCode, MadoError, Patch, PatchRecorder, StateSnapshot, WindowId};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::navigation::{self, HttpsFirst, PolicyContext};
+use crate::store::{self, Loaded};
+use crate::tabs::{ClosedEntry, Model};
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
 use crate::ui::{UiSink, Updates};
+use session::CloseAction;
+pub use session::Power;
 
 pub type Reply = oneshot::Sender<Result<Value, MadoError>>;
 
@@ -41,8 +48,25 @@ pub enum Input {
 /// Results of work the core spawned, and requests from the app itself.
 #[derive(Debug)]
 pub enum Internal {
-    /// Open a normal window (startup, or the Dock icon with no window).
+    /// The app is up: restore or open windows per `startup.mode` (spec 04 §8).
+    Startup { bounds: Bounds },
+    /// Open a normal window (the Dock icon with no window).
     OpenWindow { bounds: Bounds },
+    /// ⌘Q (`shortcut`), the Dock's Quit or the system asked Mado to quit.
+    QuitRequested { shortcut: bool },
+    /// macOS reported memory pressure (spec 04 §7).
+    MemoryPressure { critical: bool },
+    /// The power source changed (energy saver, spec 04 §7).
+    Power(Power),
+    /// A tab's history, saved after a navigation.
+    SessionSaved { tab: TabId, blob: SessionBlob },
+    /// The sleep procedure saved what it needs; the view may go.
+    SleepReady {
+        tab: TabId,
+        blob: Option<SessionBlob>,
+    },
+    /// The hover-card picture of a tab going to sleep.
+    SnapshotTaken { tab: TabId, jpeg: Vec<u8> },
     /// A settings file read off the core thread for `settings.import`.
     ImportRead {
         origin: Origin,
@@ -60,6 +84,10 @@ pub enum Internal {
     UpdateStatus(mado_types::state::UpdateState),
     /// Stops the loop after the queued writes (spec 01 §1.6).
     Shutdown { done: oneshot::Sender<()> },
+    /// Marks a tab as holding typed text, as the `forms` page script will
+    /// (M2-T04).
+    #[cfg(test)]
+    TestUnsavedInput { tab: TabId },
     /// A command handler that panics, to prove the core survives one.
     #[cfg(any(test, feature = "test-hooks"))]
     Panic,
@@ -94,6 +122,10 @@ pub struct CoreConfig {
     pub backups: PathBuf,
     pub settings: Settings,
     pub engine: EngineHandle,
+    /// The user agent tab views send (spec 02 §6).
+    pub user_agent: UserAgent,
+    /// The last run of this profile quit cleanly (spec 04 §8).
+    pub clean_start: bool,
     pub ui: Box<dyn UiSink>,
     pub updates: Box<dyn Updates>,
     /// The time source, Unix milliseconds. Tests pass a fixed clock.
@@ -155,6 +187,25 @@ pub struct Core {
     profile_db: Storage,
     backups: PathBuf,
     engine: EngineHandle,
+    user_agent: UserAgent,
+    clean_start: bool,
+    /// Windows, tabs and groups (spec 04); the document mirrors it.
+    model: Model,
+    /// What the database holds, to write only what changed.
+    persisted: Model,
+    /// What the last run left, until `Internal::Startup` uses it.
+    loaded: Loaded,
+    /// The closed stack, oldest first, with database IDs.
+    closed: Vec<(i64, ClosedEntry)>,
+    /// Groups deleted in the last 10 seconds, for Undo.
+    deleted_groups: BTreeMap<GroupId, ClosedEntry>,
+    close_prompts: BTreeMap<PromptId, CloseAction>,
+    quit_pressed_at: Option<i64>,
+    power: Power,
+    /// Tabs whose view the engine made itself (popups).
+    adopted: BTreeSet<TabId>,
+    /// Tabs going to sleep, waiting for their session.
+    sleeping: BTreeSet<TabId>,
     ui: Box<dyn UiSink>,
     updates: Box<dyn Updates>,
     clock: fn() -> i64,
@@ -211,6 +262,19 @@ pub fn start(config: CoreConfig) -> std::io::Result<(CoreHandle, std::thread::Jo
 
 impl Core {
     fn new(config: CoreConfig, inputs: mpsc::UnboundedSender<Input>) -> Self {
+        let mut loaded = if config.profile.is_private {
+            Loaded::default()
+        } else {
+            config
+                .profile_db
+                .readers()
+                .read(store::load)
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "the last session could not be read");
+                    Loaded::default()
+                })
+        };
+        let closed = std::mem::take(&mut loaded.closed);
         let mut core = Self {
             state: State {
                 profile: config.profile,
@@ -224,6 +288,18 @@ impl Core {
             profile_db: config.profile_db,
             backups: config.backups,
             engine: config.engine,
+            user_agent: config.user_agent,
+            clean_start: config.clean_start,
+            model: Model::default(),
+            persisted: Model::default(),
+            loaded,
+            closed,
+            deleted_groups: BTreeMap::new(),
+            close_prompts: BTreeMap::new(),
+            quit_pressed_at: None,
+            power: Power::default(),
+            adopted: BTreeSet::new(),
+            sleeping: BTreeSet::new(),
             ui: config.ui,
             updates: config.updates,
             clock: config.clock,
@@ -279,25 +355,33 @@ impl Core {
     fn step(&mut self, input: Input) {
         let state_before = self.state.clone();
         let settings_before = self.settings.clone();
+        let model_before = self.model.clone();
         let mut rec = PatchRecorder::new();
         let mut reply = None;
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| match input {
-            Input::Command {
-                origin,
-                cmd,
-                reply: r,
-            } => {
-                reply = Some(r);
-                self.command(&origin, cmd, &mut rec, &mut reply)
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let result = match input {
+                Input::Command {
+                    origin,
+                    cmd,
+                    reply: r,
+                } => {
+                    reply = Some(r);
+                    self.command(&origin, cmd, &mut rec, &mut reply)
+                }
+                Input::Engine(event) => {
+                    self.engine_event(event, &mut rec);
+                    Ok(Value::Null)
+                }
+                Input::Internal(internal) => {
+                    self.internal(internal, &mut rec);
+                    Ok(Value::Null)
+                }
+            };
+            #[cfg(debug_assertions)]
+            if let Err(broken) = self.model.check() {
+                panic!("tab model invariant broken: {broken}");
             }
-            Input::Engine(event) => {
-                self.engine_event(event, &mut rec);
-                Ok(Value::Null)
-            }
-            Input::Internal(internal) => {
-                self.internal(internal, &mut rec);
-                Ok(Value::Null)
-            }
+            result
         }));
         let result = result.unwrap_or_else(|panic| {
             let what = panic
@@ -308,18 +392,29 @@ impl Core {
             tracing::error!(panic = %what, "a core handler panicked; the state is unchanged");
             self.state = state_before;
             self.settings = settings_before;
+            self.model = model_before.clone();
             self.outbox.clear();
             rec.take();
             Err(MadoError::internal())
         });
-        self.emit(&mut rec);
-        for op in std::mem::take(&mut self.outbox) {
-            self.engine.send(op);
-        }
+        self.settle(&model_before, &mut rec);
         // A handler that answers later took the reply.
         if let Some(reply) = reply {
             let _ = reply.send(result);
         }
+    }
+
+    /// After a handler or timer: the document follows the model, one patch
+    /// goes out, then the engine calls (spec 01 §2.1 steps 5 and 6), then
+    /// the database write.
+    fn settle(&mut self, model_before: &Model, rec: &mut PatchRecorder) {
+        let (first, last) = self.reconcile(model_before, rec);
+        self.emit(rec);
+        let queued = std::mem::take(&mut self.outbox);
+        for op in first.into_iter().chain(queued).chain(last) {
+            self.engine.send(op);
+        }
+        self.persist_model();
     }
 
     fn emit(&mut self, rec: &mut PatchRecorder) {
@@ -365,20 +460,37 @@ impl Core {
             // which checks it before the command reaches the core (spec 01 §1.3).
             Command::LaunchForward(request) => match origin {
                 Origin::System => {
-                    // Opening the URLs as tabs arrives with tabs (M2, 05 links
-                    // from other apps). Until then: a new window when asked or
-                    // when none is open, else bring the newest one forward.
-                    let newest = self.state.windows.keys().next_back().copied();
-                    match newest {
-                        Some(window) if !request.new_window => self
-                            .outbox
-                            .push(EngineOp::ApplyWindow(window, WindowCommand::Focus)),
-                        _ => self.internal(
-                            Internal::OpenWindow {
-                                bounds: Bounds::default(),
-                            },
-                            rec,
-                        ),
+                    // Links from other apps (spec 05 §9): tabs in the current
+                    // window, or a new window when asked or none is open.
+                    let current = self.current_window();
+                    let external = self
+                        .settings
+                        .value(lookup_def("general.externalLinks"))
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned();
+                    match current {
+                        Some(window) if !request.new_window && external != "newWindow" => {
+                            let prefs = self.prefs();
+                            for url in &request.urls {
+                                self.model.open_tab(
+                                    window,
+                                    url.clone(),
+                                    None,
+                                    true,
+                                    None,
+                                    now,
+                                    prefs,
+                                )?;
+                            }
+                            self.outbox
+                                .push(EngineOp::ApplyWindow(window, WindowCommand::Focus));
+                        }
+                        _ => {
+                            let id = self.open_window(Bounds::default(), &request.urls)?;
+                            self.outbox
+                                .push(EngineOp::ApplyWindow(id, WindowCommand::Focus));
+                        }
                     }
                     Ok(Value::Null)
                 }
@@ -387,25 +499,6 @@ impl Core {
                     "error.launch.notAllowed",
                 )),
             },
-            Command::WindowReportContentRect {
-                window_id, rect, ..
-            } => {
-                // Only the window's own UI reports its page area.
-                if !matches!(origin, Origin::Ui { window } if *window == window_id) {
-                    return Err(MadoError::new(
-                        ErrorCode::PermissionDenied,
-                        "error.window.notYours",
-                    ));
-                }
-                let mut tx = self.state.tx(rec);
-                let mut window = tx
-                    .windows()
-                    .get(&window_id)
-                    .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.window.notFound"))?;
-                window.set_content_rect(Some(rect));
-                // The active tab view gets the rect from M2 (EngineCommand::SetFrame).
-                Ok(Value::Null)
-            }
             Command::UpdateCheck => {
                 self.updates.check();
                 Ok(Value::Null)
@@ -499,36 +592,44 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            other => self.tab_command(origin, other, rec),
         }
     }
 
     fn internal(&mut self, internal: Internal, rec: &mut PatchRecorder) {
         match internal {
+            Internal::Startup { bounds } => {
+                if let Err(e) = self.startup(bounds, rec) {
+                    tracing::error!(error = %e.message_key, "startup could not open a window");
+                }
+            }
             Internal::OpenWindow { bounds } => {
-                let id = WindowId::new();
-                let layout = if self.settings.value(lookup_def("appearance.layout")) == "horizontal"
-                {
-                    mado_types::state::TabLayout::Horizontal
-                } else {
-                    mado_types::state::TabLayout::Vertical
-                };
-                let window = WindowState {
-                    id,
-                    bounds: bounds.clone(),
-                    layout,
-                    is_private: self.state.profile.is_private,
-                    ..WindowState::default()
-                };
-                self.state.tx(rec).windows().insert(id, window);
-                self.outbox.push(EngineOp::ApplyWindow(
-                    id,
-                    WindowCommand::Create {
-                        window: id,
-                        bounds,
-                        kind: mado_types::state::WindowKind::Normal,
-                        private: self.state.profile.is_private,
-                    },
-                ));
+                if let Err(e) = self.open_window(bounds, &[]) {
+                    tracing::error!(error = %e.message_key, "a window could not open");
+                }
+            }
+            Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
+            #[cfg(test)]
+            Internal::TestUnsavedInput { tab } => {
+                if let Some(t) = self.model.tabs.get_mut(&tab) {
+                    t.has_unsaved_input = true;
+                }
+            }
+            Internal::MemoryPressure { critical } => {
+                tracing::info!(critical, "memory pressure");
+                self.sleep_check(true);
+            }
+            Internal::Power(power) => self.power = power,
+            Internal::SessionSaved { tab, blob } => {
+                if let Some(e) = self.model.extras.get_mut(&tab) {
+                    e.session = Some(blob);
+                }
+            }
+            Internal::SleepReady { tab, blob } => self.sleep_ready(tab, blob),
+            Internal::SnapshotTaken { tab, jpeg } => {
+                if let Some(e) = self.model.extras.get_mut(&tab) {
+                    e.snapshot = Some(jpeg);
+                }
             }
             Internal::ImportRead {
                 origin,
@@ -614,13 +715,6 @@ impl Core {
 
     fn engine_event(&mut self, event: EngineEvent, rec: &mut PatchRecorder) {
         match event {
-            EngineEvent::WindowCreated { .. } => {}
-            EngineEvent::WindowCloseRequested { window } => {
-                if self.state.tx(rec).windows().remove(&window).is_some() {
-                    self.outbox
-                        .push(EngineOp::ApplyWindow(window, WindowCommand::Close));
-                }
-            }
             EngineEvent::DecidePolicy { request, reply, .. } => {
                 let https_first = HttpsFirst::from_setting(
                     self.settings
@@ -635,10 +729,10 @@ impl Core {
                 };
                 reply.send(navigation::decide(&request, &context));
             }
-            // Tab, page, permission, dialog and download events get their
-            // handlers with the tab model (M2-T05) and the tasks after it.
-            // An unanswered reply takes its safe default when dropped here.
-            other => tracing::trace!(event = other.name(), "engine event not handled yet"),
+            // Tabs and windows (04). Page, permission, dialog and download
+            // events get their handlers with their tasks; an unanswered
+            // reply takes its safe default when dropped.
+            other => self.tab_event(other, rec),
         }
     }
 
@@ -707,7 +801,16 @@ impl Core {
 
     fn fire(&mut self, timer: Timer) {
         let mut rec = PatchRecorder::new();
+        let model_before = self.model.clone();
         match timer {
+            Timer::SleepCheck => {
+                self.sleep_check(false);
+                self.timers
+                    .schedule(Timer::SleepCheck, session::SLEEP_CHECK);
+            }
+            Timer::ForgetDeletedGroup(group) => {
+                self.deleted_groups.remove(&group);
+            }
             Timer::NoticeExpiry(id) => {
                 if self.state.notices.iter().any(|n| n.id == id) {
                     let notices = self
@@ -735,7 +838,7 @@ impl Core {
                 self.timers.schedule(Timer::DailyBackup, DAY);
             }
         }
-        self.emit(&mut rec);
+        self.settle(&model_before, &mut rec);
     }
 
     /// Lets queued writes finish; the app then checkpoints and releases the

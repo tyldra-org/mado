@@ -209,6 +209,10 @@ pub enum TabCommand {
     GoForward,
     GoToIndex(i32),
     SetFrame(Rect),
+    /// Moves the tab view into another window, keeping the page (a tab
+    /// dragged between windows, spec 04 §10). Not in 02 §1's listing: M2
+    /// roadmap, Spec issues.
+    SetWindow(WindowId),
     SetVisible(bool),
     Focus,
     SetZoom(f64),
@@ -263,6 +267,7 @@ impl TabCommand {
             Self::GoForward => "goForward",
             Self::GoToIndex(_) => "goToIndex",
             Self::SetFrame(_) => "setFrame",
+            Self::SetWindow(_) => "setWindow",
             Self::SetVisible(_) => "setVisible",
             Self::Focus => "focus",
             Self::SetZoom(_) => "setZoom",

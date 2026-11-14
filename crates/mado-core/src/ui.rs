@@ -8,6 +8,12 @@ use mado_types::state::Notice;
 pub trait UiSink: Send {
     fn patch(&mut self, patch: &Patch);
     fn notice(&mut self, notice: &Notice);
+    /// The core decided to quit (spec 04 §9): the app exits, running the
+    /// shutdown that writes the clean-quit marker.
+    fn quit(&mut self) {}
+    /// Hands `url` to the process of `profile`, starting it if needed
+    /// (`tab.moveToProfile`, spec 04 §2).
+    fn open_in_profile(&mut self, _profile: mado_types::ProfileId, _url: &str) {}
 }
 
 /// The app's updater (spec 15 §5): the core owns `state.update` and the

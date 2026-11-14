@@ -411,11 +411,30 @@ pub struct DownloadState {
 /// A prompt waiting for the user. Each kind is defined with its feature:
 /// permission and app-link prompts in 07, extension prompts in 09, password
 /// prompts in 11, approvals in 13, pairing in 14, takeover and restore in
-/// 04. M1 defines none; a later task adds a variant with its spec.
+/// 04.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export)]
-pub enum PromptState {}
+pub enum PromptState {
+    /// Quitting or closing a window would lose typed text (spec 04 §9).
+    /// Answered with `session.confirmClose`; Show activates a listed tab.
+    #[serde(rename_all = "camelCase")]
+    UnsavedText {
+        id: PromptId,
+        /// The window being closed; `None` when quitting.
+        window_id: Option<WindowId>,
+        tabs: Vec<UnsavedTab>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UnsavedTab {
+    pub tab_id: TabId,
+    pub title: String,
+    pub host: String,
+}
 
 /// A button on a notice: an `en.json` label and the command it sends.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

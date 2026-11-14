@@ -1,11 +1,13 @@
 <script lang="ts">
   // The browser window's UI webview. Placeholder until the design pass (M6):
-  // it mirrors the state, reports the page area and shows notices. Tabs, the
-  // sidebar and the address bar arrive in M2.
+  // it mirrors the state, reports the page area and shows tabs, prompts and
+  // notices. The address bar arrives with M2-T06.
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
   import { t } from "../i18n";
   import Notices from "./Notices.svelte";
+  import TabStrip from "./TabStrip.svelte";
+  import UnsavedPrompt from "./UnsavedPrompt.svelte";
 
   let { store, windowId }: { store: CoreStore; windowId: WindowId } = $props();
 
@@ -49,11 +51,10 @@
 <div class="window" data-theme={theme} data-layout={layout}>
   <header>
     <h1>{store.state?.profile.name ?? t("app.name")}</h1>
-    <p>{t("window.layout", { layout })}</p>
+    <TabStrip {store} {windowId} />
+    <UnsavedPrompt {store} {windowId} />
   </header>
-  <main bind:this={page} aria-label={t("window.pageArea")}>
-    <p>{t("app.placeholder")}</p>
-  </main>
+  <main bind:this={page} aria-label={t("window.pageArea")}></main>
   <Notices {store} />
 </div>
 

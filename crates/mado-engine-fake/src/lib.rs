@@ -440,6 +440,7 @@ impl Engine for FakeEngine {
                 control.go(tab, to)?;
             }
             TabCommand::SetFrame(rect) => t.frame = Some(rect),
+            TabCommand::SetWindow(w) => t.window = w,
             TabCommand::SetVisible(v) => t.visible = v,
             TabCommand::Focus => t.focused = true,
             TabCommand::SetZoom(z) => t.zoom = z,
