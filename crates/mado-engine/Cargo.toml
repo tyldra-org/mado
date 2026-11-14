@@ -10,3 +10,6 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+mado-types = { version = "0.0.0", path = "../mado-types" }
