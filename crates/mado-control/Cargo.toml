@@ -10,3 +10,15 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+getrandom = "0.4.3"
+mado-types = { version = "0.0.0", path = "../mado-types" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["net", "io-util", "rt", "macros", "time"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tempfile = "3.27.0"
