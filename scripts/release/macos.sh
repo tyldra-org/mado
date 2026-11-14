@@ -24,7 +24,10 @@ out=$(cd "$out" && pwd)
 
 work=$(mktemp -d)
 keychain="$work/release.keychain-db"
+searched=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
 cleanup() {
+  # shellcheck disable=SC2086 # one path per word, as listed
+  security list-keychains -d user -s $searched 2>/dev/null || true
   security delete-keychain "$keychain" 2>/dev/null || true
   rm -rf "$work"
 }
@@ -47,6 +50,9 @@ security set-keychain-settings "$keychain"
 security unlock-keychain -p "$keychain_password" "$keychain"
 security import "$work/identity" -f pkcs12 -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+# codesign finds the identity only in a keychain on the search list.
+# shellcheck disable=SC2086 # one path per word, as listed
+security list-keychains -d user -s "$keychain" $searched
 found=$(security find-certificate -a -Z "$keychain" | awk '/^SHA-1 hash:/ { print tolower($3) }')
 case " $found " in
   *" $sha1 "*) ;;
