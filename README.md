@@ -37,7 +37,7 @@ Mado is an open-source web browser for macOS, written in Rust. It works like Chr
 
 | Platform                        | Engine             | Minimum    |
 | ------------------------------- | ------------------ | ---------- |
-| macOS (Apple silicon and Intel) | WebKit (WKWebView) | macOS 15.4 |
+| macOS (Apple silicon) | WebKit (WKWebView) | macOS 15.4 |
 
 ## How it works
 
