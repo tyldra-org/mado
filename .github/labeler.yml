@@ -1,6 +1,7 @@
 # Area and platform labels for pull requests, by the paths they change. The
-# labeler workflow reads this file from main. Every label here exists on
-# GitHub. Areas follow the spec's topics; a crate belongs to one area.
+# labeler job in workflows/pull-requests.yml reads this file from main. Every
+# label here exists on GitHub. Areas follow the spec's topics; a crate belongs
+# to one area.
 "area: engine":
   - changed-files:
       - any-glob-to-any-file:

@@ -1,0 +1,225 @@
+# Pull request and issue checks that judge, label or close, in one file. Every
+# job reads metadata from the API and never checks out or runs the pull
+# request's code, so pull_request_target is safe here: the workflow and its
+# config come from the default branch, and a pull request cannot rewrite the
+# checks that judge it. This file is the only one the repository's Actions
+# policy allows pull_request_target for
+# (docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
+#
+# - protected-files (required): only the maintainers in .github/MAINTAINERS
+#   change what decides how the project is run, checked, released or
+#   licensed. Dependabot may change workflow files only, to update action
+#   pins. With no bypass on the ruleset, a failing pull request cannot merge.
+# - linked-issue (required): a pull request from outside names the issue it
+#   resolves ("Closes #12") or is linked under Development. Maintainers,
+#   Dependabot and Markdown-only changes need none. It reruns when the
+#   description changes, which is why it is not a job in ci.yml: an edit must
+#   not rerun the build.
+# - labeler: area labels by changed paths (.github/labeler.yml).
+# - contributors: reads .github/VOUCHED.td (github.com/mitchellh/vouch);
+#   closes issues and pull requests from denounced authors and labels pull
+#   requests "contributor: vouched" or "contributor: new". Collaborators and
+#   bots get no label. collaboration limited: set require-vouch to "true" on
+#   check-pr and add a template-file that says how to get vouched
+#   (references/trust-and-labels.md).
+name: pull-requests
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout; reads API metadata and default-branch config only
+    types: [opened, edited, reopened, synchronize]
+  issues:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  protected-files:
+    name: protected-files
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check the files this pull request changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # The only accounts that change protected files, whatever access anyone
+          # else is given: .github/MAINTAINERS on the default branch. A failed
+          # read stops the step (bash -e) instead of passing it.
+          maintainers=$(gh api "repos/$REPO/contents/.github/MAINTAINERS" -H 'Accept: application/vnd.github.raw')
+          while IFS= read -r line; do
+            login=${line%%#*}
+            login=${login//[[:space:]]/}
+            if [ -n "$login" ] && [ "${login,,}" = "${AUTHOR,,}" ]; then
+              echo "Opened by $AUTHOR, a maintainer: any file may change."
+              exit 0
+            fi
+          done <<< "$maintainers"
+          dependabot=0
+          if [ "$AUTHOR" = 'dependabot[bot]' ]; then dependabot=1; fi
+          protected() {
+            case $1 in
+              .github/*) return 0 ;;
+              LICENSE | LICENSE.* | LICENSE-* | COPYING | COPYING.* | NOTICE | NOTICE.*) return 0 ;;
+              SECURITY.md | CODE_OF_CONDUCT.md | CONTRIBUTING.md | GOVERNANCE.md | SUPPORT.md) return 0 ;;
+              MAINTAINERS | MAINTAINERS.md | CODEOWNERS | docs/CODEOWNERS) return 0 ;;
+              AGENTS.md | */AGENTS.md) return 0 ;;
+              scripts/check.sh | scripts/ci-scope.*) return 0 ;;
+              # Dependency policy, and the signed lists Mado ships.
+              scripts/check-deps.* | deny.toml | lists/*) return 0 ;;
+            esac
+            return 1
+          }
+          # A failed listing stops the step (bash -e) instead of passing it.
+          files=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          blocked=()
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            # Dependabot updates action pins in workflow files, nothing else here.
+            if [ "$dependabot" = 1 ]; then
+              case $file in .github/workflows/*) continue ;; esac
+            fi
+            if protected "$file"; then blocked+=("$file"); fi
+          done <<< "$files"
+          if [ ${#blocked[@]} -eq 0 ]; then
+            echo "No maintainer-owned files changed."
+            exit 0
+          fi
+          # File names come from the pull request; keep them from being read as
+          # workflow commands.
+          stop=$(openssl rand -hex 16)
+          echo "::stop-commands::$stop"
+          echo "Only maintainers change these files:"
+          printf '  %s\n' "${blocked[@]}"
+          echo "::$stop::"
+          echo "::error::This pull request changes files only maintainers change. Open an issue describing the change instead (CONTRIBUTING.md)."
+          exit 1
+
+  linked-issue:
+    name: linked-issue
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Find the issue this pull request resolves
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # Automation that opens pull requests. Add the login of any other bot
+          # this repository uses; a login ending in [bot] belongs to a GitHub
+          # App and no person can take it.
+          case $AUTHOR in
+            'dependabot[bot]')
+              echo "Opened by $AUTHOR: no issue needed."
+              exit 0
+              ;;
+          esac
+          # Failed reads stop the step (bash -e) instead of passing it.
+          linked=$(gh pr view "$NUMBER" --repo "$REPO" --json closingIssuesReferences \
+            --jq '.closingIssuesReferences | length')
+          if [ "$linked" -gt 0 ]; then
+            echo "Resolves $linked issue(s)."
+            exit 0
+          fi
+          maintainers=$(gh api "repos/$REPO/contents/.github/MAINTAINERS" -H 'Accept: application/vnd.github.raw')
+          while IFS= read -r line; do
+            login=${line%%#*}
+            login=${login//[[:space:]]/}
+            if [ -n "$login" ] && [ "${login,,}" = "${AUTHOR,,}" ]; then
+              echo "Opened by $AUTHOR, a maintainer: no issue needed."
+              exit 0
+            fi
+          done <<< "$maintainers"
+          files=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          markdown_only=1
+          while IFS= read -r file; do
+            case $file in
+              *.md) ;;
+              *) markdown_only=0 ;;
+            esac
+          done <<< "$files"
+          if [ "$markdown_only" = 1 ]; then
+            echo "Changes Markdown files only: no issue needed."
+            exit 0
+          fi
+          echo '::error::Link the issue this pull request resolves: add "Closes #<number>" to its description. Open an issue first if there is none. A change to Markdown files alone needs no issue.'
+          exit 1
+
+  labeler:
+    name: labeler
+    if: github.event_name == 'pull_request_target' && github.event.action != 'edited'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+
+  contributors:
+    name: contributors
+    if: github.event_name == 'issues' || github.event.action == 'opened' || github.event.action == 'reopened'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Close a denounced author's pull request
+        if: github.event_name == 'pull_request_target'
+        uses: mitchellh/vouch/action/check-pr@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          require-vouch: "false"
+          auto-close: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Close a denounced author's issue
+        if: github.event_name == 'issues'
+        uses: mitchellh/vouch/action/check-issue@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          require-vouch: "false"
+          auto-close: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Check the author
+        id: author
+        if: github.event_name == 'pull_request_target'
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          user: ${{ github.event.pull_request.user.login }}
+          allow-fail: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Label the pull request
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          STATUS: ${{ steps.author.outputs.status }}
+        run: |
+          case $STATUS in
+            vouched) label='contributor: vouched' ;;
+            unknown) label='contributor: new' ;;
+            *) echo "Author status: $STATUS; no label."; exit 0 ;;
+          esac
+          gh pr edit "$NUMBER" --repo "$REPO" --add-label "$label"
