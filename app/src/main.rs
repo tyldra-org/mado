@@ -132,12 +132,19 @@ fn main() -> ExitCode {
     }
 }
 
+/// The app's Tauri context, with the version the bundle was built as.
+fn context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
 fn diagnose(what: Option<&str>) -> ExitCode {
     const SERVICE: &str = "app.mado.selftest";
+    let version = context().package_info().version.to_string();
+    let version = version.as_str();
     let result = match what {
-        Some("keychain-write") => mado_platform::keychain::set(SERVICE, "update", VERSION.as_bytes()).map(|()| serde_json::json!({ "wrote": VERSION })),
+        Some("keychain-write") => mado_platform::keychain::set(SERVICE, "update", version.as_bytes()).map(|()| serde_json::json!({ "wrote": version })),
         Some("keychain-read") => mado_platform::keychain::get_without_prompt(SERVICE, "update")
-            .map(|v| serde_json::json!({ "read": v.map(|b| String::from_utf8_lossy(&b).into_owned()), "version": VERSION })),
+            .map(|v| serde_json::json!({ "read": v.map(|b| String::from_utf8_lossy(&b).into_owned()), "version": version })),
         _ => {
             eprintln!("mado: --diagnose keychain-write|keychain-read");
             return ExitCode::from(2);
@@ -586,7 +593,7 @@ fn run_app(
                 }));
             }
         })
-        .build(tauri::generate_context!())?;
+        .build(context())?;
     let _ = (paths, app_db);
     app.run(move |_app, event| match event {
         // Closing the last window keeps Mado running, as Mac apps do.

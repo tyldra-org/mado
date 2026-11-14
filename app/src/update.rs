@@ -58,7 +58,8 @@ pub fn in_rollout(install_id: &str, rollout: f64) -> bool {
 }
 
 /// The random install ID in `app_state`, made on first use. Used for the
-/// rollout and nothing else; never sent anywhere.
+/// rollout and nothing else; never sent anywhere. Blocks on SQLite: call it
+/// through `spawn_blocking`.
 fn install_id(app_db: &Storage) -> Option<String> {
     let existing = app_db
         .readers()
@@ -157,7 +158,7 @@ fn status(status: UpdateStatus, version: Option<String>, security: bool) -> Upda
 async fn check(
     app: &AppHandle,
     core: &CoreHandle,
-    app_db: &Storage,
+    app_db: &Arc<Storage>,
     staged: &Staged,
 ) -> UpdateState {
     let channel = core
@@ -201,7 +202,12 @@ async fn check(
     let rollout = update.raw_json["rollout"].as_f64().unwrap_or(1.0);
     let security = update.raw_json["security"].as_bool().unwrap_or(false);
     let version = Some(update.version.clone());
-    if !install_id(app_db).is_some_and(|id| in_rollout(&id, rollout)) {
+    let db = Arc::clone(app_db);
+    let id = tauri::async_runtime::spawn_blocking(move || install_id(&db))
+        .await
+        .ok()
+        .flatten();
+    if !id.is_some_and(|id| in_rollout(&id, rollout)) {
         tracing::info!(version = %update.version, rollout, "not in this update's rollout yet");
         return status(UpdateStatus::Idle, None, false);
     }
