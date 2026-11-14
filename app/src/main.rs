@@ -5,6 +5,8 @@
 //! request to the process that already owns it and exits.
 
 mod args;
+#[cfg(debug_assertions)]
+mod dev;
 mod ipc;
 mod lock;
 mod profiles;
@@ -200,6 +202,16 @@ fn claim(
     Err("Mado is not responding".into())
 }
 
+#[cfg(debug_assertions)]
+fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![ipc::mado_invoke, dev::mado_dev_platform]
+}
+
+#[cfg(not(debug_assertions))]
+fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![ipc::mado_invoke]
+}
+
 fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
     let quit = MenuItem::with_id(app, "quit", "Quit Mado", true, Some("CmdOrCtrl+Q"))?;
@@ -245,7 +257,27 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
-    Menu::with_items(app, &[&app_menu, &edit, &window])
+    #[cfg_attr(
+        not(debug_assertions),
+        expect(unused_mut, reason = "only debug builds add a menu")
+    )]
+    let mut menus: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&app_menu, &edit, &window];
+    #[cfg(debug_assertions)]
+    let developer = Submenu::with_items(
+        app,
+        "Developer",
+        true,
+        &[&MenuItem::with_id(
+            app,
+            "dev-platform",
+            "Platform Test Page",
+            true,
+            None::<&str>,
+        )?],
+    )?;
+    #[cfg(debug_assertions)]
+    menus.push(&developer);
+    Menu::with_items(app, &menus)
 }
 
 /// The settings window: one per process, label `settings` (spec 06 §9).
@@ -380,12 +412,18 @@ fn run_app(
     let term_flag = Arc::clone(&quitting);
     let app = tauri::Builder::default()
         .manage(Shared { core })
-        .invoke_handler(tauri::generate_handler![ipc::mado_invoke])
+        .invoke_handler(handlers())
         .menu(menu)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "settings" => {
                 if let Err(e) = open_settings(app) {
                     tracing::error!(error = %e, "the settings window did not open");
+                }
+            }
+            #[cfg(debug_assertions)]
+            "dev-platform" => {
+                if let Err(e) = dev::open(app) {
+                    tracing::error!(error = %e, "the platform test page did not open");
                 }
             }
             "quit" => {

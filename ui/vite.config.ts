@@ -20,6 +20,8 @@ export default defineConfig({
         settings: "settings.html",
         picker: "picker.html",
         internal: "internal.html",
+        // Opened only by development builds (M1-T10).
+        "dev-platform": "dev-platform.html",
       },
     },
   },
