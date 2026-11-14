@@ -315,8 +315,25 @@ impl Core {
             .map_err(|_| MadoError::internal()),
             // Accepted only from the control endpoint with the launch secret,
             // which checks it before the command reaches the core (spec 01 §1.3).
-            Command::LaunchForward(_) => match origin {
-                Origin::System => Ok(Value::Null),
+            Command::LaunchForward(request) => match origin {
+                Origin::System => {
+                    // Opening the URLs as tabs arrives with tabs (M2, 05 links
+                    // from other apps). Until then: a new window when asked or
+                    // when none is open, else bring the newest one forward.
+                    let newest = self.state.windows.keys().next_back().copied();
+                    match newest {
+                        Some(window) if !request.new_window => {
+                            self.outbox.push((window, WindowCommand::Focus))
+                        }
+                        _ => self.internal(
+                            Internal::OpenWindow {
+                                bounds: Bounds::default(),
+                            },
+                            rec,
+                        ),
+                    }
+                    Ok(Value::Null)
+                }
                 _ => Err(MadoError::new(
                     ErrorCode::PermissionDenied,
                     "error.launch.notAllowed",

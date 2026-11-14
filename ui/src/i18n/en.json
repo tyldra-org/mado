@@ -3,6 +3,7 @@
   "app.placeholder": "The browser interface arrives in milestone M1.",
   "error.coreStopped": "Mado is shutting down. Try again after it restarts.",
   "error.internal": "Something went wrong in Mado. Try again.",
+  "error.invoke.notAllowed": "This page can’t talk to Mado.",
   "error.launch.notAllowed": "Only another Mado launch can open pages this way.",
   "error.settings.authRequired": "Changing {key} needs Touch ID or your password.",
   "error.settings.file": "That file can’t be imported: {reason}.",

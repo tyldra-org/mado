@@ -3,6 +3,8 @@
 
 [graph]
 all-features = true
+# Mado ships for macOS only; Tauri's Linux (GTK) dependencies never build.
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 
 [advisories]
 version = 2

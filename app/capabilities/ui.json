@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ui",
+  "description": "Mado's own webviews (spec 01 §4.1): the UI and overlay of each window and the settings window may call mado_invoke and listen to the core's events. Tab views are not Tauri webviews and get nothing.",
+  "local": true,
+  "webviews": ["ui-*", "overlay-*", "settings"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "allow-mado-invoke"]
+}

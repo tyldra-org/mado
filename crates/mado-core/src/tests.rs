@@ -155,6 +155,52 @@ fn ten_thousand_random_commands_keep_the_ui_mirror_in_sync() {
 }
 
 #[test]
+fn a_forwarded_launch_opens_a_window_or_focuses_the_newest() {
+    use mado_types::command::{LaunchRequest, LaunchSource};
+    let core = TestCore::start();
+    let request = |new_window| LaunchRequest {
+        urls: vec![],
+        files: vec![],
+        new_window,
+        private: false,
+        source: LaunchSource::Dock,
+    };
+    ask(
+        &core,
+        Origin::System,
+        Command::LaunchForward(request(false)),
+    )
+    .expect("forwarded");
+    ask(
+        &core,
+        Origin::System,
+        Command::LaunchForward(request(false)),
+    )
+    .expect("forwarded");
+    ask(&core, Origin::System, Command::LaunchForward(request(true))).expect("forwarded");
+    let state = ask(&core, Origin::System, Command::StateGet).expect("state.get");
+    assert_eq!(
+        state["state"]["windows"].as_object().map(|w| w.len()),
+        Some(2)
+    );
+    let log = core.engine.lock().expect("lock").log.clone();
+    assert!(
+        log.iter()
+            .any(|(_, c)| matches!(c, mado_engine::WindowCommand::Focus))
+    );
+    // Only the control endpoint, after checking the secret, may forward.
+    let err = ask(
+        &core,
+        Origin::Ui {
+            window: WindowId::new(),
+        },
+        Command::LaunchForward(request(true)),
+    )
+    .expect_err("refused");
+    assert_eq!(err.code, ErrorCode::PermissionDenied);
+}
+
+#[test]
 fn a_protected_setting_from_a_control_client_changes_nothing() {
     let core = TestCore::start();
     let before = ask(&core, Origin::System, Command::StateGet).expect("state.get");

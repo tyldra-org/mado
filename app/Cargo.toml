@@ -14,3 +14,25 @@ path = "src/main.rs"
 
 [lints]
 workspace = true
+
+[dependencies]
+mado-control = { version = "0.0.0", path = "../crates/mado-control" }
+mado-core = { version = "0.0.0", path = "../crates/mado-core" }
+mado-engine = { version = "0.0.0", path = "../crates/mado-engine" }
+mado-platform = { version = "0.0.0", path = "../crates/mado-platform" }
+mado-settings = { version = "0.0.0", path = "../crates/mado-settings" }
+mado-storage = { version = "0.0.0", path = "../crates/mado-storage" }
+mado-types = { version = "0.0.0", path = "../crates/mado-types" }
+rusqlite = "0.42.0"
+serde_json = "1.0.154"
+tauri = { version = "2.12.5", features = ["unstable"] }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "signal"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+
+[build-dependencies]
+tauri-build = "2.7.4"
+
+[dev-dependencies]
+tempfile = "3.27.0"
