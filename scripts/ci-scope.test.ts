@@ -61,6 +61,15 @@ describe("classify", () => {
     ]);
   });
 
+  test("a page script also checks mado-engine, which embeds it", () => {
+    expect(classify(["inject/src/bridge.ts"])).toMatchObject({ rust: true, ts: true });
+    expect(affectedCrates(["inject/src/bridge.ts"], crates)).toEqual([
+      "mado-app",
+      "mado-engine",
+      "mado-engine-webkit",
+    ]);
+  });
+
   test("a UI file runs TypeScript only, scoped to the tests it reaches", () => {
     expect(classify(["ui/src/App.svelte"])).toMatchObject({
       rust: false,
