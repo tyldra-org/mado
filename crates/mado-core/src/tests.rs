@@ -201,6 +201,51 @@ fn a_forwarded_launch_opens_a_window_or_focuses_the_newest() {
 }
 
 #[test]
+fn only_a_window_s_own_ui_reports_its_page_area() {
+    let core = TestCore::start();
+    core.handle.send(Input::Internal(Internal::OpenWindow {
+        bounds: Bounds::default(),
+    }));
+    let state = ask(&core, Origin::System, Command::StateGet).expect("state.get");
+    let id: WindowId = state["state"]["windows"]
+        .as_object()
+        .and_then(|w| w.keys().next())
+        .and_then(|k| k.parse().ok())
+        .expect("a window");
+    let rect = mado_types::state::Rect {
+        x: 0.0,
+        y: 40.0,
+        width: 800.0,
+        height: 560.0,
+    };
+    let report = |origin| {
+        ask(
+            &core,
+            origin,
+            Command::WindowReportContentRect {
+                window_id: id,
+                rect,
+                scale: 2.0,
+            },
+        )
+    };
+    assert_eq!(
+        report(Origin::Ui {
+            window: WindowId::new()
+        })
+        .expect_err("refused")
+        .code,
+        ErrorCode::PermissionDenied
+    );
+    report(Origin::Ui { window: id }).expect("stored");
+    let state = ask(&core, Origin::System, Command::StateGet).expect("state.get");
+    assert_eq!(
+        state["state"]["windows"][id.to_string()]["contentRect"]["height"],
+        560.0
+    );
+}
+
+#[test]
 fn a_protected_setting_from_a_control_client_changes_nothing() {
     let core = TestCore::start();
     let before = ask(&core, Origin::System, Command::StateGet).expect("state.get");

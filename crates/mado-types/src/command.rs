@@ -199,6 +199,14 @@ pub enum Command {
     /// Returns a report: applied, skipped unknown, skipped protected, invalid.
     #[serde(rename = "settings.import")]
     SettingsImport { path: String },
+    /// The page area of a window in the UI's CSS pixels, reported whenever
+    /// it moves or resizes (spec 01 §5.2).
+    #[serde(rename = "window.reportContentRect", rename_all = "camelCase")]
+    WindowReportContentRect {
+        window_id: WindowId,
+        rect: crate::state::Rect,
+        scale: f64,
+    },
 }
 
 impl Command {
@@ -213,6 +221,7 @@ impl Command {
             | Self::SettingsSearch { .. }
             | Self::SettingsExport { .. }
             | Self::SettingsImport { .. } => CommandFamily::Settings,
+            Self::WindowReportContentRect { .. } => CommandFamily::Window,
         }
     }
 
@@ -228,6 +237,7 @@ impl Command {
             Self::SettingsSearch { .. } => "settings.search",
             Self::SettingsExport { .. } => "settings.export",
             Self::SettingsImport { .. } => "settings.import",
+            Self::WindowReportContentRect { .. } => "window.reportContentRect",
         }
     }
 

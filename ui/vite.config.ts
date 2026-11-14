@@ -12,6 +12,16 @@ export default defineConfig({
     outDir: "../app/resources/ui",
     emptyOutDir: true,
     target: "es2022",
+    // One page per webview kind (spec 01 §5.1, 06 §9, 01 §4.4).
+    rollupOptions: {
+      input: {
+        window: "window.html",
+        overlay: "overlay.html",
+        settings: "settings.html",
+        picker: "picker.html",
+        internal: "internal.html",
+      },
+    },
   },
   clearScreen: false,
   test: {
