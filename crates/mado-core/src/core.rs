@@ -1,6 +1,7 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
+mod marks;
 mod pages;
 mod session;
 mod visits;
@@ -71,6 +72,16 @@ pub enum Internal {
     SnapshotTaken { tab: TabId, jpeg: Vec<u8> },
     /// History recorded the visit of a tab's page.
     VisitRecorded { tab: TabId, visit: i64 },
+    /// A bookmark change was written.
+    BookmarksChanged,
+    /// Bookmarks were deleted; they wait for Undo.
+    BookmarksDeleted(Vec<crate::bookmarks::Node>),
+    /// Opens links as tabs (a bookmark folder).
+    OpenUrls {
+        urls: Vec<String>,
+        disposition: mado_types::command::OpenDisposition,
+        window: Option<WindowId>,
+    },
     /// A settings file read off the core thread for `settings.import`.
     ImportRead {
         origin: Origin,
@@ -216,6 +227,8 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// Deleted bookmarks waiting for Undo, by token.
+    deleted_bookmarks: BTreeMap<u64, Vec<crate::bookmarks::Node>>,
     /// Each tab's current navigation, for history (spec 12 §2.1).
     navs: visits::Navs,
     /// Transitions the core knows before the engine reports the visit
@@ -323,6 +336,7 @@ impl Core {
             heartbeats: BTreeMap::new(),
             unresponsive: BTreeMap::new(),
             navs: BTreeMap::new(),
+            deleted_bookmarks: BTreeMap::new(),
             pending_transition: BTreeMap::new(),
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
@@ -633,6 +647,21 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            cmd @ (Command::BookmarkTree { .. }
+            | Command::BookmarkSearch { .. }
+            | Command::BookmarkAdd { .. }
+            | Command::BookmarkAddFolder { .. }
+            | Command::BookmarkUpdate { .. }
+            | Command::BookmarkMove { .. }
+            | Command::BookmarkDelete { .. }
+            | Command::BookmarkUndoDelete { .. }
+            | Command::BookmarkSort { .. }
+            | Command::BookmarkOpenFolder { .. }
+            | Command::BookmarkRecent { .. }
+            | Command::BookmarkOfUrl { .. }
+            | Command::BookmarkAddAllTabs { .. }
+            | Command::BookmarkExport { .. }
+            | Command::BookmarkImport { .. }) => self.bookmark_command(cmd, rec, reply_to),
             cmd @ (Command::HistoryQuery { .. }
             | Command::HistoryDelete { .. }
             | Command::HistoryExclude { .. }
@@ -672,6 +701,17 @@ impl Core {
             }
             Internal::SleepReady { tab, blob } => self.sleep_ready(tab, blob),
             Internal::VisitRecorded { tab, visit } => self.visit_recorded(tab, visit),
+            Internal::BookmarksChanged => self.bookmarks_changed(rec),
+            Internal::BookmarksDeleted(nodes) => self.bookmarks_deleted(nodes, rec),
+            Internal::OpenUrls {
+                urls,
+                disposition,
+                window,
+            } => {
+                if let Err(e) = self.open_urls(&urls, disposition, window) {
+                    tracing::error!(error = %e.message_key, "the links did not open");
+                }
+            }
             Internal::SnapshotTaken { tab, jpeg } => {
                 if let Some(e) = self.model.extras.get_mut(&tab) {
                     e.snapshot = Some(jpeg);
@@ -861,6 +901,9 @@ impl Core {
                 self.heartbeat_check(&mut rec);
                 self.timers
                     .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
+            }
+            Timer::ForgetDeletedBookmarks(token) => {
+                self.deleted_bookmarks.remove(&token);
             }
             Timer::ForgetDeletedGroup(group) => {
                 self.deleted_groups.remove(&group);

@@ -117,12 +117,9 @@ describe("tab strip", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reopen closed tab" }));
     await fireEvent.click(screen.getByRole("button", { name: "Mute" }));
     await fireEvent.click(screen.getByRole("button", { name: "Unpin" }));
-    expect(seen.map((r) => r.cmd.type).filter((t) => t !== "state.get")).toEqual([
-      "tab.new",
-      "session.reopenClosed",
-      "tab.mute",
-      "tab.unpin",
-    ]);
+    expect(
+      seen.map((r) => r.cmd.type).filter((t) => t !== "state.get" && t !== "bookmark.tree"),
+    ).toEqual(["tab.new", "session.reopenClosed", "tab.mute", "tab.unpin"]);
   });
 
   test("a collapsed group shows only its active tab", async () => {

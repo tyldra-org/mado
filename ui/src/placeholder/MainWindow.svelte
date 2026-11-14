@@ -5,6 +5,7 @@
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
   import { t } from "../i18n";
+  import BookmarksBar from "./BookmarksBar.svelte";
   import Notices from "./Notices.svelte";
   import TabStrip from "./TabStrip.svelte";
   import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
@@ -53,6 +54,7 @@
   <header>
     <h1>{store.state?.profile.name ?? t("app.name")}</h1>
     <TabStrip {store} {windowId} />
+    <BookmarksBar {store} {windowId} />
     <UnsavedPrompt {store} {windowId} />
     <UnresponsivePrompt {store} {windowId} />
   </header>
