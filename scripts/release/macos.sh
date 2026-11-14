@@ -69,7 +69,9 @@ codesign -d -r- "$app" 2>&1 | grep -q "certificate leaf = H\"$sha1\""
 # 3. The updater archive and its minisign signature.
 tarball="$out/Mado_$arch.app.tar.gz"
 tar -C "$(dirname "$app")" -czf "$tarball" Mado.app
-bunx tauri signer sign "$tarball" >/dev/null
+# Bound to the version, so a manifest cannot pair another version number
+# with this archive (requireSignedVersion in tauri.conf.json).
+bunx tauri signer sign --app-version "$version" "$tarball" >/dev/null
 [ -f "$tarball.sig" ] || { echo "macos.sh: no signature" >&2; exit 1; }
 
 # 4. The disk image.
