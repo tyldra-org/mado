@@ -1,11 +1,15 @@
-# A tagged release (spec 15 §7): v1.2.3 goes to stable, v1.2.3-beta.N to
-# beta, offered to every install at once. The tag must match the version in
-# app/tauri.conf.json. Same jobs as nightly.yml after the version step.
+# Ships Mado (spec 15 §7, §9). A tag v1.2.3 goes to stable and v1.2.3-beta.N
+# to beta; the daily schedule and manual runs build main to nightly
+# (scripts/release/plan.ts decides). Every run tests end to end, builds and
+# signs for Apple silicon, then publishes (scripts/release/publish.ts).
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +18,8 @@ env:
   CARGO_TERM_COLOR: always
 
 concurrency:
-  group: release
+  # Tags and nightlies queue separately; neither cancels a publish.
+  group: release-${{ github.ref_type }}
   cancel-in-progress: false
 
 jobs:
@@ -22,26 +27,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      version: ${{ steps.v.outputs.version }}
-      channel: ${{ steps.v.outputs.channel }}
-      prerelease: ${{ steps.v.outputs.prerelease }}
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: v
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version=${TAG#v}
-          base=$(jq -r .version app/tauri.conf.json)
-          case "$version" in
-            *-nightly.*) echo "Nightly tags come from nightly.yml" >&2; exit 1 ;;
-            "$base") channel=stable; prerelease=false ;;
-            "$base"-beta.*) channel=beta; prerelease=true ;;
-            *) echo "Tag $TAG does not match app/tauri.conf.json version $base" >&2; exit 1 ;;
-          esac
-          { echo "version=$version"; echo "channel=$channel"; echo "prerelease=$prerelease"; } >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+          # A release must not restore a cache an untrusted run could write.
+          no-cache: true
+      - id: plan
+        run: bun scripts/release/plan.ts
 
   test:
     name: End to end
@@ -76,12 +75,9 @@ jobs:
         run: bun test tests/e2e
 
   build:
-    name: Build (${{ matrix.arch }})
+    name: Build and sign
     needs: [version, test]
-    strategy:
-      fail-fast: true
-      matrix:
-        arch: [aarch64, x86_64]
+    # Apple silicon runners; Mado ships for Apple silicon only.
     runs-on: macos-latest
     timeout-minutes: 60
     defaults:
@@ -109,16 +105,15 @@ jobs:
         run: bun run build
       - name: Build, sign and package
         env:
-          ARCH: ${{ matrix.arch }}
           VERSION: ${{ needs.version.outputs.version }}
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: scripts/release/macos.sh "$ARCH" "$VERSION" dist
+        run: scripts/release/macos.sh "$VERSION" dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mado-${{ matrix.arch }}
+          name: mado
           path: dist/
           if-no-files-found: error
 
@@ -137,35 +132,15 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-          # A release must not restore a cache an untrusted run could write.
           no-cache: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: mado-*
+          name: mado
           path: dist
-          merge-multiple: true
-      - name: Create the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
-          PRERELEASE: ${{ needs.version.outputs.prerelease }}
-        run: |
-          cat dist/SHA256SUMS-* > dist/SHA256SUMS
-          rm dist/SHA256SUMS-*
-          flags=()
-          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
-          gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Mado $VERSION" --notes "Mado $VERSION. Unsigned by Apple: see Privacy & Security, Open Anyway." "${flags[@]}"
-      - name: Point the channel at it
+      - name: Create the release and point the channel at it
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
           CHANNEL: ${{ needs.version.outputs.channel }}
-          ROLLOUT: "1"
-        run: |
-          cd dist
-          bun ../scripts/release/channel.ts "$VERSION" "$ROLLOUT" false "$CHANNEL.json"
-          gh release view channels --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create channels --repo "$GITHUB_REPOSITORY" --prerelease --title "Update channels" \
-              --notes "The files Mado's updater reads (spec 15 §5). Not a release."
-          gh release upload channels "$CHANNEL.json" --repo "$GITHUB_REPOSITORY" --clobber
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: bun scripts/release/publish.ts dist "$VERSION" "$CHANNEL" "$PRERELEASE"

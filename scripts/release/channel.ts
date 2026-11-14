@@ -1,10 +1,5 @@
-// Writes channels/<channel>.json, the document the updater reads (spec 15 §5).
-//
-//   bun scripts/release/channel.ts <version> <rollout> <security> <out>
-//
-// Reads the updater signatures next to the archives in the current folder:
-// Mado_aarch64.app.tar.gz.sig and Mado_x86_64.app.tar.gz.sig.
-import { readFile, writeFile } from "node:fs/promises";
+// channels/<channel>.json, the document the updater reads (spec 15 §5).
+// publish.ts writes it. Mado ships for Apple silicon only.
 
 export interface Channel {
   version: string;
@@ -15,7 +10,7 @@ export interface Channel {
   platforms: Record<string, { url: string; signature: string }>;
 }
 
-const ARCHES = { "darwin-aarch64": "aarch64", "darwin-x86_64": "x86_64" } as const;
+const ARCHES = { "darwin-aarch64": "aarch64" } as const;
 
 export function channel(
   version: string,
@@ -45,18 +40,4 @@ export function channel(
     security,
     platforms,
   };
-}
-
-if (import.meta.main) {
-  const [version, rollout, security, out] = process.argv.slice(2);
-  if (!version || !rollout || !security || !out) {
-    console.error("usage: channel.ts <version> <rollout> <security> <out>");
-    process.exit(2);
-  }
-  const signatures = {
-    "darwin-aarch64": await readFile("Mado_aarch64.app.tar.gz.sig", "utf8"),
-    "darwin-x86_64": await readFile("Mado_x86_64.app.tar.gz.sig", "utf8"),
-  };
-  const doc = channel(version, Number(rollout), security === "true", signatures);
-  await writeFile(out, `${JSON.stringify(doc, null, 2)}\n`);
 }

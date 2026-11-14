@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The app starts: one process per profile with a profile lock, a second launch hands over to the first, and Cmd-Q or SIGTERM quits cleanly.
 - Settings: every setting of the design, stored per app or profile, with protection, undo, search, export and import, and a settings window.
 - Storage: SQLite databases that refuse a newer schema, back up before migrating and restore from a backup when damaged.
-- Nightly builds for macOS, signed with Mado's own certificate, that update themselves on the nightly channel.
+- Nightly builds for Apple silicon Macs, signed with Mado's own certificate, that update themselves on the nightly channel. Intel Macs are not supported.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

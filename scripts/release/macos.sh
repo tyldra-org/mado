@@ -1,20 +1,20 @@
 #!/bin/sh
-# Builds, signs and packages Mado for one macOS target (spec 15 §2, §3, §6):
+# Builds, signs and packages Mado for Apple silicon (spec 15 §2, §3, §6):
 #
-#   scripts/release/macos.sh <aarch64|x86_64> <version> <out-dir>
+#   scripts/release/macos.sh <version> <out-dir>
 #
 # Needs MACOS_CERT_P12 (base64) and MACOS_CERT_PASSWORD for the self-signed
 # identity, and TAURI_SIGNING_PRIVATE_KEY (and _PASSWORD) for the updater
 # signature. Writes to <out-dir>:
-#   Mado_<version>_<arch>.dmg
-#   Mado_<arch>.app.tar.gz and .sig    (the updater archive)
-#   SHA256SUMS-<arch>
+#   Mado_<version>_aarch64.dmg
+#   Mado_aarch64.app.tar.gz and .sig   (the updater archive)
+#   SHA256SUMS
 # The UI and page scripts must be built first (bun run build).
 set -eu
 
-arch=${1:?arch}
-version=${2:?version}
-out=${3:?out-dir}
+version=${1:?version}
+out=${2:?out-dir}
+arch=aarch64
 root=$(cd "$(dirname "$0")/../.." && pwd)
 target="$arch-apple-darwin"
 sha1=$(tr -d '[:space:]' <"$root/app/macos/cert-sha1.txt")
@@ -84,5 +84,5 @@ cp -R "$app" "$staging/"
 ln -s /Applications "$staging/Applications"
 hdiutil create -volname "Mado" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$dmg" >/dev/null
 
-(cd "$out" && shasum -a 256 "$(basename "$dmg")" "$(basename "$tarball")" >"SHA256SUMS-$arch")
+(cd "$out" && shasum -a 256 "$(basename "$dmg")" "$(basename "$tarball")" >SHA256SUMS)
 printf '%s\n' "$dmg" "$tarball"

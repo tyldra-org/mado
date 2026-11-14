@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { channel } from "./channel";
 
-const sigs = { "darwin-aarch64": "sig-arm\n", "darwin-x86_64": "sig-intel" };
+const sigs = { "darwin-aarch64": "sig-arm\n" };
 
 describe("channel", () => {
   test("points each platform at its archive in the version's release", () => {
@@ -10,6 +10,7 @@ describe("channel", () => {
       url: "https://github.com/tyldra-org/mado/releases/download/v0.1.0-nightly.20261114.3/Mado_aarch64.app.tar.gz",
       signature: "sig-arm",
     });
+    expect(Object.keys(doc.platforms)).toEqual(["darwin-aarch64"]);
     expect(doc.pub_date).toBe("1970-01-01T00:00:00.000Z");
     expect(doc.rollout).toBe(1);
   });
