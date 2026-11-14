@@ -395,6 +395,85 @@ pub enum Command {
         #[serde(default)]
         window_id: Option<WindowId>,
     },
+    // Bookmarks (spec 12 §3.2). Queries return nodes `{ id, parentId,
+    // kind, title, url, index, root, createdAt, children? }`.
+    #[serde(rename = "bookmark.tree", rename_all = "camelCase")]
+    BookmarkTree {
+        #[serde(default)]
+        parent_id: Option<String>,
+    },
+    #[serde(rename = "bookmark.search", rename_all = "camelCase")]
+    BookmarkSearch { query: String },
+    /// Returns `{ id }`. Default parent: the last folder used, else Other
+    /// bookmarks.
+    #[serde(rename = "bookmark.add", rename_all = "camelCase")]
+    BookmarkAdd {
+        #[serde(default)]
+        parent_id: Option<String>,
+        title: String,
+        url: String,
+        #[serde(default)]
+        index: Option<u32>,
+    },
+    /// Returns `{ id }`.
+    #[serde(rename = "bookmark.addFolder", rename_all = "camelCase")]
+    BookmarkAddFolder {
+        #[serde(default)]
+        parent_id: Option<String>,
+        title: String,
+        #[serde(default)]
+        index: Option<u32>,
+    },
+    #[serde(rename = "bookmark.update", rename_all = "camelCase")]
+    BookmarkUpdate {
+        id: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        url: Option<String>,
+    },
+    #[serde(rename = "bookmark.move", rename_all = "camelCase")]
+    BookmarkMove {
+        id: String,
+        parent_id: String,
+        index: u32,
+    },
+    /// Offers Undo for 10 seconds (`bookmark.undoDelete`).
+    #[serde(rename = "bookmark.delete", rename_all = "camelCase")]
+    BookmarkDelete { ids: Vec<String> },
+    #[serde(rename = "bookmark.undoDelete", rename_all = "camelCase")]
+    BookmarkUndoDelete { token: u64 },
+    #[serde(rename = "bookmark.sort", rename_all = "camelCase")]
+    BookmarkSort {
+        folder_id: String,
+        by: BookmarkSortKey,
+    },
+    #[serde(rename = "bookmark.openFolder", rename_all = "camelCase")]
+    BookmarkOpenFolder {
+        id: String,
+        disposition: OpenDisposition,
+        #[serde(default)]
+        window_id: Option<WindowId>,
+    },
+    #[serde(rename = "bookmark.recent", rename_all = "camelCase")]
+    BookmarkRecent {
+        #[serde(default = "ten")]
+        limit: u32,
+    },
+    /// The bookmarks of one URL, for ⌘D's dialog.
+    #[serde(rename = "bookmark.ofUrl", rename_all = "camelCase")]
+    BookmarkOfUrl { url: String },
+    /// Returns `{ id }` of the new folder.
+    #[serde(rename = "bookmark.addAllTabs", rename_all = "camelCase")]
+    BookmarkAddAllTabs {
+        window_id: WindowId,
+        folder_name: String,
+    },
+    #[serde(rename = "bookmark.export", rename_all = "camelCase")]
+    BookmarkExport { path: String },
+    /// Returns `{ imported }`, the number of links.
+    #[serde(rename = "bookmark.import", rename_all = "camelCase")]
+    BookmarkImport { path: String },
     // History (spec 12 §2.3).
     /// Returns `{ days: [{ day, visits }], cursor }`, newest first. `day`
     /// is `YYYY-MM-DD` in the caller's time zone (`utcOffsetMinutes`, as
@@ -510,6 +589,21 @@ impl Command {
             | Self::GroupUndoDelete { .. }
             | Self::GroupSetSaved { .. }
             | Self::GroupMoveToWindow { .. } => CommandFamily::Group,
+            Self::BookmarkTree { .. }
+            | Self::BookmarkSearch { .. }
+            | Self::BookmarkAdd { .. }
+            | Self::BookmarkAddFolder { .. }
+            | Self::BookmarkUpdate { .. }
+            | Self::BookmarkMove { .. }
+            | Self::BookmarkDelete { .. }
+            | Self::BookmarkUndoDelete { .. }
+            | Self::BookmarkSort { .. }
+            | Self::BookmarkOpenFolder { .. }
+            | Self::BookmarkRecent { .. }
+            | Self::BookmarkOfUrl { .. }
+            | Self::BookmarkAddAllTabs { .. }
+            | Self::BookmarkExport { .. }
+            | Self::BookmarkImport { .. } => CommandFamily::Bookmark,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
             | Self::HistoryExclude { .. }
@@ -577,6 +671,21 @@ impl Command {
             Self::GroupUndoDelete { .. } => "group.undoDelete",
             Self::GroupSetSaved { .. } => "group.setSaved",
             Self::GroupMoveToWindow { .. } => "group.moveToWindow",
+            Self::BookmarkTree { .. } => "bookmark.tree",
+            Self::BookmarkSearch { .. } => "bookmark.search",
+            Self::BookmarkAdd { .. } => "bookmark.add",
+            Self::BookmarkAddFolder { .. } => "bookmark.addFolder",
+            Self::BookmarkUpdate { .. } => "bookmark.update",
+            Self::BookmarkMove { .. } => "bookmark.move",
+            Self::BookmarkDelete { .. } => "bookmark.delete",
+            Self::BookmarkUndoDelete { .. } => "bookmark.undoDelete",
+            Self::BookmarkSort { .. } => "bookmark.sort",
+            Self::BookmarkOpenFolder { .. } => "bookmark.openFolder",
+            Self::BookmarkRecent { .. } => "bookmark.recent",
+            Self::BookmarkOfUrl { .. } => "bookmark.ofUrl",
+            Self::BookmarkAddAllTabs { .. } => "bookmark.addAllTabs",
+            Self::BookmarkExport { .. } => "bookmark.export",
+            Self::BookmarkImport { .. } => "bookmark.import",
             Self::HistoryQuery { .. } => "history.query",
             Self::HistoryDelete { .. } => "history.delete",
             Self::HistoryExclude { .. } => "history.exclude",
@@ -601,6 +710,10 @@ impl Command {
                 | Self::TabHoverInfo { .. }
                 | Self::SessionRecentlyClosed
                 | Self::HistoryQuery { .. }
+                | Self::BookmarkTree { .. }
+                | Self::BookmarkSearch { .. }
+                | Self::BookmarkRecent { .. }
+                | Self::BookmarkOfUrl { .. }
         )
     }
 }
@@ -611,6 +724,28 @@ fn yes() -> bool {
 
 fn page() -> u32 {
     100
+}
+
+fn ten() -> u32 {
+    10
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum BookmarkSortKey {
+    Name,
+    Url,
+}
+
+/// Where links open (bookmark folders, context menus).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum OpenDisposition {
+    /// New tabs in the window, the first one active.
+    NewTabs,
+    NewWindow,
 }
 
 /// Unix milliseconds, `from` included, `to` not.

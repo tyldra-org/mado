@@ -35,6 +35,9 @@ pub struct State {
     #[patch(map)]
     pub groups: BTreeMap<GroupId, GroupState>,
     pub saved_groups: Vec<SavedGroupSummary>,
+    /// Goes up whenever bookmarks change, so views that show them fetch
+    /// again (bookmarks are not in the document, spec 01 §3).
+    pub bookmarks_rev: u64,
     #[patch(map)]
     pub downloads: BTreeMap<DownloadId, DownloadState>,
     /// Permission, dialog, auth, overlap and other prompts.

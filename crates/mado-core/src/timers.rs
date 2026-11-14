@@ -16,6 +16,8 @@ pub enum Timer {
     SleepCheck,
     /// Looks for pages that stopped sending heartbeats (spec 02 §5.3).
     HeartbeatCheck,
+    /// Deleted bookmarks' Undo ran out.
+    ForgetDeletedBookmarks(u64),
     /// A deleted group's Undo ran out.
     ForgetDeletedGroup(mado_types::GroupId),
 }

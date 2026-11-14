@@ -24,7 +24,12 @@ export type State = {
 /**
  * The revision; the UI sets it from each patch's `rev`.
  */
-rev: number, profile: ProfileInfo, windows: { [key in WindowId]: WindowState }, tabs: { [key in TabId]: TabState }, groups: { [key in GroupId]: GroupState }, savedGroups: Array<SavedGroupSummary>, downloads: { [key in DownloadId]: DownloadState }, 
+rev: number, profile: ProfileInfo, windows: { [key in WindowId]: WindowState }, tabs: { [key in TabId]: TabState }, groups: { [key in GroupId]: GroupState }, savedGroups: Array<SavedGroupSummary>, 
+/**
+ * Goes up whenever bookmarks change, so views that show them fetch
+ * again (bookmarks are not in the document, spec 01 §3).
+ */
+bookmarksRev: number, downloads: { [key in DownloadId]: DownloadState }, 
 /**
  * Permission, dialog, auth, overlap and other prompts.
  */
