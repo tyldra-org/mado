@@ -7,6 +7,7 @@ members = [
     "crates/mado-core",
     "crates/mado-storage",
     "crates/mado-engine",
+    "crates/mado-engine-fake",
     "crates/mado-engine-webkit",
     "crates/mado-settings",
     "crates/mado-safety",
