@@ -49,6 +49,18 @@ describe("classify", () => {
     expect(areas).toMatchObject({ rust: true, ts: false, supply: false });
   });
 
+  test("a generated type runs the mado-types drift check too", () => {
+    expect(classify(["ui/src/generated/State.ts"])).toMatchObject({ rust: true, ts: true });
+    expect(affectedCrates(["ui/src/generated/State.ts"], crates)).toEqual([
+      "mado-app",
+      "mado-cli",
+      "mado-core",
+      "mado-engine",
+      "mado-engine-webkit",
+      "mado-types",
+    ]);
+  });
+
   test("a UI file runs TypeScript only, scoped to the tests it reaches", () => {
     expect(classify(["ui/src/App.svelte"])).toMatchObject({
       rust: false,
