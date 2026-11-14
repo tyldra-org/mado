@@ -49,6 +49,11 @@ pub enum Internal {
     },
     /// `app.authenticate` succeeded; the token is good for 60 seconds.
     TokenIssued { token: String },
+    /// The answer to `app.authenticate`, from off the core thread.
+    Authenticated {
+        result: Result<String, String>,
+        reply: Reply,
+    },
     /// Stops the loop after the queued writes (spec 01 §1.6).
     Shutdown { done: oneshot::Sender<()> },
     /// A command handler that panics, to prove the core survives one.
@@ -358,6 +363,25 @@ impl Core {
                 // The active tab view gets the rect from M2 (EngineCommand::SetFrame).
                 Ok(Value::Null)
             }
+            Command::AppAuthenticate { reason } => {
+                // Only Mado's own windows may ask; the prompt names Mado.
+                if !origin.is_user() {
+                    return Err(MadoError::new(
+                        ErrorCode::Protected,
+                        "error.auth.notAllowed",
+                    ));
+                }
+                if let Some(reply) = reply_to.take() {
+                    let inputs = self.inputs.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let result =
+                            mado_platform::auth::authenticate(&reason).map_err(|e| e.to_string());
+                        let _ =
+                            inputs.send(Input::Internal(Internal::Authenticated { result, reply }));
+                    });
+                }
+                Ok(Value::Null)
+            }
             Command::SettingsGet { keys } => Ok(self.settings.get_many(keys.as_deref())?),
             Command::SettingsSearch { query } => Ok(json!(self.settings.search(&query))),
             Command::SettingsSet { key, value, token } => {
@@ -466,6 +490,19 @@ impl Core {
             Internal::TokenIssued { token } => {
                 let now = self.now();
                 self.tokens.issue(token, now);
+            }
+            Internal::Authenticated { result, reply } => {
+                let answer = result
+                    .map(|token| {
+                        let now = self.now();
+                        self.tokens.issue(token.clone(), now);
+                        json!({ "token": token })
+                    })
+                    .map_err(|reason| {
+                        MadoError::new(ErrorCode::PermissionDenied, "error.auth.failed")
+                            .arg("reason", reason)
+                    });
+                let _ = reply.send(answer);
             }
             Internal::Shutdown { .. } => {}
             #[cfg(any(test, feature = "test-hooks"))]
@@ -643,6 +680,14 @@ fn side_effects(tx: &mut StatePatch<'_>, changes: &[Change]) {
                         w.set_layout(layout);
                     }
                 }
+            }
+            "general.openAtLogin" => {
+                let on = change.new == true;
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = mado_platform::login::set(on) {
+                        tracing::warn!(error = %e, "open at login was not changed");
+                    }
+                });
             }
             // Turning AI or agents off stops their tasks (spec 06 §6).
             "features.ai" | "features.agents" if change.new == false => {

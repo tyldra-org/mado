@@ -20,7 +20,12 @@ dbg_macro = "deny"
 unwrap_used = "deny"
 
 [dependencies]
+block2 = "0.6.2"
+getrandom = "0.4.3"
 mado-types = { version = "0.0.0", path = "../mado-types" }
 objc2 = "0.6.5"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+security-framework = "3.7.0"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
