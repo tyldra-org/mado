@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Mado",
-  "version": "0.0.0",
-  "identifier": "app.mado",
+  "version": "0.1.0",
+  "identifier": "app.mado.Mado",
   "build": {
     "frontendDist": "resources/ui"
   },
@@ -14,7 +14,20 @@
     }
   },
   "bundle": {
-    "active": false,
-    "icon": ["icons/icon.png"]
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
+    "category": "public.app-category.productivity",
+    "copyright": "Mado contributors, MPL-2.0",
+    "macOS": {
+      "minimumSystemVersion": "15.4"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDMzRGOUYzQ0UyMzUyRDQKUldUVVVpUE84L2swckdEeUxiNWNJbnZwUjM3R29qQ3JsVng3ekc4ZW1XRkpwMHlXaUt0cEEwQ1gK",
+      "endpoints": [],
+      "requireSignedVersion": true
+    }
   }
 }

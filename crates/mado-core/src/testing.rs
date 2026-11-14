@@ -79,6 +79,7 @@ impl TestCore {
             settings: Settings::new(Strings::english()),
             engine: Box::new(engine),
             ui: Box::new(Collect(Arc::clone(&sent))),
+            updates: Box::new(crate::NoUpdates),
             clock: || 1_800_000_000_000,
         })
         .expect("core starts");

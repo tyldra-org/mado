@@ -1,0 +1,58 @@
+# A tagged release (spec 15 §7): v1.2.3 goes to stable, v1.2.3-beta.N to
+# beta, both at rollout 0.1; rollout.yml raises it. The tag must match the
+# version in app/tauri.conf.json.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      channel: ${{ steps.v.outputs.channel }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: v
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=${TAG#v}
+          base=$(jq -r .version app/tauri.conf.json)
+          case "$version" in
+            *-nightly.*) echo "Nightly tags come from nightly.yml" >&2; exit 1 ;;
+            "$base") channel=stable; prerelease=false ;;
+            "$base"-beta.*) channel=beta; prerelease=true ;;
+            *) echo "Tag $TAG does not match app/tauri.conf.json version $base" >&2; exit 1 ;;
+          esac
+          { echo "version=$version"; echo "channel=$channel"; echo "prerelease=$prerelease"; } >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: version
+    permissions:
+      contents: write
+    # actionlint does not know GitHub's $/ self-repository syntax yet.
+    uses: ./.github/workflows/package.yml # zizmor: ignore[self-repository]
+    with:
+      version: ${{ needs.version.outputs.version }}
+      channel: ${{ needs.version.outputs.channel }}
+      rollout: "0.1"
+      prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+    secrets:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

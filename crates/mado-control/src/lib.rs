@@ -9,6 +9,6 @@ mod endpoint;
 mod forward;
 mod secret;
 
-pub use endpoint::{Endpoint, ForwardHandler, serve};
+pub use endpoint::{CallHandler, Endpoint, ForwardHandler, TestAccess, serve};
 pub use forward::{ForwardError, forward};
 pub use secret::LaunchSecret;

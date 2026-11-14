@@ -1,0 +1,28 @@
+[package]
+name = "mado-fixture-server"
+description = "The test fixture server: tests/pages on *.mado.test hosts, over HTTP and HTTPS with a test CA, behind a proxy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = "0.8.9"
+hyper-util = { version = "0.1.21", features = ["server-auto", "tokio", "service"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+time = "0.3.55"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "io-util", "macros", "fs", "time"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+tower = "0.5.3"
+
+[dev-dependencies]
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }

@@ -80,7 +80,7 @@ mod tests {
             Box::pin(async { Ok(()) })
         });
         let endpoint = Endpoint::bind(&socket).expect("binds");
-        let server = tokio::spawn(serve(endpoint, secret.clone(), handler));
+        let server = tokio::spawn(serve(endpoint, secret.clone(), handler, None));
         let request = LaunchRequest {
             urls: vec!["https://example.com/".into()],
             files: vec![],
@@ -127,6 +127,71 @@ mod tests {
                 & 0o777,
             0o600
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn the_test_token_opens_a_session_for_commands() {
+        let dir = tempfile::tempdir().expect("dir");
+        let socket = dir.path().join("c.sock");
+        let secret = LaunchSecret::load_or_create(&dir.path().join("s")).expect("secret");
+        let handler: ForwardHandler = Arc::new(|_| Box::pin(async { Ok(()) }));
+        let call: crate::CallHandler = Arc::new(|method, params| {
+            Box::pin(async move {
+                if method == "settings.set" && params["key"] == "blocker.enabled" {
+                    Err(mado_types::MadoError::new(
+                        mado_types::ErrorCode::Protected,
+                        "error.settings.protected",
+                    ))
+                } else {
+                    Ok(serde_json::json!({ "method": method }))
+                }
+            })
+        });
+        let test = crate::TestAccess {
+            token: "t0k3n".into(),
+            call,
+        };
+        let server = tokio::spawn(serve(
+            Endpoint::bind(&socket).expect("binds"),
+            secret,
+            handler,
+            Some(test),
+        ));
+        let stream = UnixStream::connect(&socket).await.expect("connects");
+        let (read, mut write) = stream.into_split();
+        let mut lines = BufReader::new(read);
+        let mut ask = async |msg: &str| -> Value {
+            write
+                .write_all(format!("{msg}\n").as_bytes())
+                .await
+                .expect("writes");
+            let mut line = String::new();
+            lines.read_line(&mut line).await.expect("reads");
+            serde_json::from_str(&line).expect("json")
+        };
+        assert_eq!(
+            ask(r#"{"id":1,"method":"state.get"}"#).await["error"]["code"],
+            -32003,
+            "no session yet"
+        );
+        assert_eq!(
+            ask(r#"{"id":2,"method":"hello","params":{"token":"wrong"}}"#).await["error"]["code"],
+            -32001
+        );
+        assert_eq!(
+            ask(r#"{"id":3,"method":"hello","params":{"token":"t0k3n"}}"#).await["result"]["session"],
+            "test"
+        );
+        assert_eq!(
+            ask(r#"{"id":4,"method":"state.get"}"#).await["result"]["method"],
+            "state.get"
+        );
+        let refused = ask(
+            r#"{"id":5,"method":"settings.set","params":{"key":"blocker.enabled","value":false}}"#,
+        )
+        .await;
+        assert_eq!(refused["error"]["code"], -32002);
         server.abort();
     }
 

@@ -22,10 +22,34 @@ use crate::LaunchSecret;
 /// Messages larger than this close the connection (spec 14 §2).
 const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 const UNAUTHORIZED: i64 = -32001;
+const PROTECTED: i64 = -32002;
 const CONTROL_DISABLED: i64 = -32003;
 const INVALID_PARAMS: i64 = -32602;
 const PARSE_ERROR: i64 = -32700;
 const INTERNAL: i64 = -32603;
+
+/// Runs a method for a session that said `hello` with the test token:
+/// a command name (`settings.set`) or a test hook (`test.dropNextPatch`).
+pub type CallHandler = Arc<
+    dyn Fn(String, Value) -> Pin<Box<dyn Future<Output = Result<Value, MadoError>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// End-to-end tests' access (spec 16 §1): sessions that say `hello` with
+/// this token may call commands as a control client. The app passes it only
+/// in builds with the `test-hooks` feature.
+#[derive(Clone)]
+pub struct TestAccess {
+    pub token: String,
+    pub call: CallHandler,
+}
+
+impl std::fmt::Debug for TestAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TestAccess(..)")
+    }
+}
 
 pub type ForwardHandler = Arc<
     dyn Fn(LaunchRequest) -> Pin<Box<dyn Future<Output = Result<(), MadoError>> + Send>>
@@ -92,7 +116,12 @@ struct ForwardParams {
 }
 
 /// Accepts connections until the endpoint is dropped with its task.
-pub async fn serve(endpoint: Endpoint, secret: LaunchSecret, on_forward: ForwardHandler) {
+pub async fn serve(
+    endpoint: Endpoint,
+    secret: LaunchSecret,
+    on_forward: ForwardHandler,
+    test: Option<TestAccess>,
+) {
     let secret = Arc::new(secret);
     let listener = match endpoint
         .listener
@@ -116,8 +145,9 @@ pub async fn serve(endpoint: Endpoint, secret: LaunchSecret, on_forward: Forward
         }
         let secret = Arc::clone(&secret);
         let on_forward = Arc::clone(&on_forward);
+        let test = test.clone();
         tokio::spawn(async move {
-            let _ = connection(stream, &secret, &on_forward).await;
+            let _ = connection(stream, &secret, &on_forward, test.as_ref()).await;
         });
     }
 }
@@ -126,7 +156,9 @@ async fn connection(
     stream: UnixStream,
     secret: &LaunchSecret,
     on_forward: &ForwardHandler,
+    test: Option<&TestAccess>,
 ) -> std::io::Result<()> {
+    let mut session = false;
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read);
     let mut line = String::new();
@@ -141,7 +173,7 @@ async fn connection(
         }
         let reply = match serde_json::from_str::<Rpc>(&line) {
             Err(_) => error(Value::Null, PARSE_ERROR, "parse error"),
-            Ok(rpc) => answer(rpc, secret, on_forward).await,
+            Ok(rpc) => answer(rpc, secret, on_forward, test, &mut session).await,
         };
         let mut text = reply.to_string();
         text.push('\n');
@@ -149,9 +181,40 @@ async fn connection(
     }
 }
 
-async fn answer(rpc: Rpc, secret: &LaunchSecret, on_forward: &ForwardHandler) -> Value {
+async fn answer(
+    rpc: Rpc,
+    secret: &LaunchSecret,
+    on_forward: &ForwardHandler,
+    test: Option<&TestAccess>,
+    session: &mut bool,
+) -> Value {
+    if rpc.method == "hello" {
+        let token = rpc
+            .params
+            .get("token")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !test.is_some_and(|t| constant_time_eq(&t.token, token)) {
+            return error(rpc.id, UNAUTHORIZED, "unauthorized");
+        }
+        *session = true;
+        return json!({ "jsonrpc": "2.0", "id": rpc.id, "result": { "session": "test", "scopes": ["test"] } });
+    }
     if rpc.method != "launch.forward" {
-        return error(rpc.id, CONTROL_DISABLED, "control is off");
+        let Some(test) = test.filter(|_| *session) else {
+            return error(rpc.id, CONTROL_DISABLED, "control is off");
+        };
+        return match (test.call)(rpc.method, rpc.params).await {
+            Ok(value) => json!({ "jsonrpc": "2.0", "id": rpc.id, "result": value }),
+            Err(e) => {
+                let code = if e.code == mado_types::ErrorCode::Protected {
+                    PROTECTED
+                } else {
+                    INTERNAL
+                };
+                json!({ "jsonrpc": "2.0", "id": rpc.id, "error": { "code": code, "message": e.message_key, "data": e } })
+            }
+        };
     }
     let params: ForwardParams = match serde_json::from_value(rpc.params) {
         Ok(p) => p,
@@ -170,4 +233,12 @@ async fn answer(rpc: Rpc, secret: &LaunchSecret, on_forward: &ForwardHandler) ->
 
 fn error(id: Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+}
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }

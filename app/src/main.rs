@@ -10,6 +10,7 @@ mod dev;
 mod ipc;
 mod lock;
 mod profiles;
+mod update;
 mod windows;
 
 use std::process::ExitCode;
@@ -45,6 +46,8 @@ struct Owner {
     app_db: Arc<Storage>,
     core: Arc<OnceLock<CoreHandle>>,
     core_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// A downloaded update, installed on Relaunch or at quit.
+    staged: update::Staged,
     /// Opened before the UI starts, so a failure is reported and exits
     /// instead of aborting inside Tauri's setup; taken by `start_owner`.
     ready: Mutex<Option<Ready>>,
@@ -106,6 +109,12 @@ fn main() -> ExitCode {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
+    // `--diagnose keychain-write|keychain-read`: proves a build can read the
+    // Keychain item an earlier build wrote, without a prompt (spec 15 §10
+    // check 1). Prints JSON and exits; touches no profile.
+    if std::env::args().nth(1).as_deref() == Some("--diagnose") {
+        return diagnose(std::env::args().nth(2).as_deref());
+    }
     let args = match Args::parse(std::env::args_os().skip(1)) {
         Ok(args) => args,
         Err(e) => {
@@ -118,6 +127,29 @@ fn main() -> ExitCode {
         Err(e) => {
             tracing::error!(error = %e, "Mado could not start");
             eprintln!("mado: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn diagnose(what: Option<&str>) -> ExitCode {
+    const SERVICE: &str = "app.mado.selftest";
+    let result = match what {
+        Some("keychain-write") => mado_platform::keychain::set(SERVICE, "update", VERSION.as_bytes()).map(|()| serde_json::json!({ "wrote": VERSION })),
+        Some("keychain-read") => mado_platform::keychain::get_without_prompt(SERVICE, "update")
+            .map(|v| serde_json::json!({ "read": v.map(|b| String::from_utf8_lossy(&b).into_owned()), "version": VERSION })),
+        _ => {
+            eprintln!("mado: --diagnose keychain-write|keychain-read");
+            return ExitCode::from(2);
+        }
+    };
+    match result {
+        Ok(v) => {
+            println!("{v}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            println!("{}", serde_json::json!({ "error": e.to_string() }));
             ExitCode::FAILURE
         }
     }
@@ -168,6 +200,7 @@ fn claim(
                 app_db: Arc::clone(app_db),
                 core: Arc::new(OnceLock::new()),
                 core_thread: Mutex::new(None),
+                staged: update::Staged::default(),
                 ready: Mutex::new(Some(ready)),
             })));
         }
@@ -322,6 +355,12 @@ fn start_owner(
         settings,
         engine: Box::new(TauriWindows::new(app.clone(), Arc::clone(&owner.core))),
         ui: Box::new(TauriUi { app: app.clone() }),
+        updates: Box::new(update::start(
+            app.clone(),
+            Arc::clone(&owner.core),
+            Arc::clone(&owner.app_db),
+            Arc::clone(&owner.staged),
+        )),
         clock: mado_core::system_clock,
     })?;
     let _ = owner.core.set(handle.clone());
@@ -342,7 +381,12 @@ fn start_owner(
                 .map(|_| ())
         })
     });
-    tauri::async_runtime::spawn(mado_control::serve(endpoint, secret, on_forward));
+    tauri::async_runtime::spawn(mado_control::serve(
+        endpoint,
+        secret,
+        on_forward,
+        test_access(&handle),
+    ));
     write_control_entry(owner)?;
 
     profiles::set_app_state(&owner.app_db, "last_profile_id", &id.to_string()).wait()?;
@@ -356,6 +400,66 @@ fn start_owner(
         }));
     }
     Ok(())
+}
+
+/// End-to-end tests' access to the control endpoint (spec 16 §1): with the
+/// `test-hooks` feature and `MADO_TEST_TOKEN` set, a session that says
+/// `hello` with that token may send commands as a control client and the
+/// `test.*` hooks of spec 16 §3. Release builds never compile this.
+#[cfg(feature = "test-hooks")]
+fn test_access(core: &CoreHandle) -> Option<mado_control::TestAccess> {
+    use mado_core::TestHook;
+    let token = std::env::var("MADO_TEST_TOKEN")
+        .ok()
+        .filter(|t| t.len() >= 16)?;
+    let core = core.clone();
+    let client = mado_types::ClientId::new();
+    let call: mado_control::CallHandler =
+        Arc::new(move |method: String, params: serde_json::Value| {
+            let core = core.clone();
+            Box::pin(async move {
+                let hook = match method.as_str() {
+                    "test.dropNextPatch" => Some(TestHook::DropNextPatch),
+                    "test.fakeAuthSuccess" => Some(TestHook::FakeAuthSuccess),
+                    "test.fakeClock" => params
+                        .get("now")
+                        .and_then(serde_json::Value::as_i64)
+                        .map(TestHook::FakeClock),
+                    _ => None,
+                };
+                if let Some(hook) = hook {
+                    core.send(Input::Internal(Internal::Hook(hook)));
+                    return Ok(serde_json::Value::Null);
+                }
+                let mut body = if params.is_object() {
+                    params
+                } else {
+                    serde_json::json!({})
+                };
+                body["type"] = serde_json::json!(method);
+                let cmd: Command = serde_json::from_value(body).map_err(|e| {
+                    mado_types::MadoError::new(
+                        mado_types::ErrorCode::InvalidInput,
+                        "error.control.badCommand",
+                    )
+                    .arg("reason", e.to_string())
+                })?;
+                core.command(Origin::Control { client }, cmd)
+                    .await
+                    .map_err(|_| {
+                        mado_types::MadoError::new(
+                            mado_types::ErrorCode::Internal,
+                            "error.coreStopped",
+                        )
+                    })?
+            })
+        });
+    Some(mado_control::TestAccess { token, call })
+}
+
+#[cfg(not(feature = "test-hooks"))]
+fn test_access(_core: &CoreHandle) -> Option<mado_control::TestAccess> {
+    None
 }
 
 /// `<root>/Control/<ProfileId>.json`, written atomically (spec 14 §1).
@@ -377,6 +481,9 @@ fn write_control_entry(owner: &Owner) -> std::io::Result<()> {
 /// The quit sequence available in M1 (spec 01 §1.6): stop the core after
 /// its queued writes, record the clean quit, remove the control entry.
 fn shutdown(owner: &Owner) {
+    // An update downloaded but never relaunched into: install it now, so
+    // the next launch runs it.
+    update::install_staged(&owner.staged);
     if let Some(core) = owner.core.get() {
         let (done, rx) = tokio::sync::oneshot::channel();
         if core.send(Input::Internal(Internal::Shutdown { done })) {
@@ -411,6 +518,7 @@ fn run_app(
     let quit_flag = Arc::clone(&quitting);
     let term_flag = Arc::clone(&quitting);
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Shared { core })
         .invoke_handler(handlers())
         .menu(menu)

@@ -199,6 +199,12 @@ pub enum Command {
     /// Returns a report: applied, skipped unknown, skipped protected, invalid.
     #[serde(rename = "settings.import")]
     SettingsImport { path: String },
+    /// Checks the update channel now (spec 15 §5).
+    #[serde(rename = "update.check")]
+    UpdateCheck,
+    /// Installs a ready update and relaunches Mado.
+    #[serde(rename = "update.relaunch")]
+    UpdateRelaunch,
     /// Shows Touch ID (or the password) with `reason` and returns
     /// `{ token }`, valid once for 60 seconds (spec 06 §5).
     #[serde(rename = "app.authenticate")]
@@ -227,6 +233,7 @@ impl Command {
             | Self::SettingsImport { .. } => CommandFamily::Settings,
             Self::WindowReportContentRect { .. } => CommandFamily::Window,
             Self::AppAuthenticate { .. } => CommandFamily::App,
+            Self::UpdateCheck | Self::UpdateRelaunch => CommandFamily::Update,
         }
     }
 
@@ -244,6 +251,8 @@ impl Command {
             Self::SettingsImport { .. } => "settings.import",
             Self::WindowReportContentRect { .. } => "window.reportContentRect",
             Self::AppAuthenticate { .. } => "app.authenticate",
+            Self::UpdateCheck => "update.check",
+            Self::UpdateRelaunch => "update.relaunch",
         }
     }
 

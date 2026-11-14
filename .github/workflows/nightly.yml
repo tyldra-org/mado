@@ -1,0 +1,48 @@
+# A nightly build of main to the nightly channel (spec 15 §7, §9).
+# Versions are <next>-nightly.<yyyymmdd>.<run>, so a manual run on the same
+# day still sorts after the scheduled one.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: v
+        run: |
+          next=$(jq -r .version app/tauri.conf.json)
+          echo "version=$next-nightly.$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: version
+    permissions:
+      contents: write
+    # actionlint does not know GitHub's $/ self-repository syntax yet.
+    uses: ./.github/workflows/package.yml # zizmor: ignore[self-repository]
+    with:
+      version: ${{ needs.version.outputs.version }}
+      channel: nightly
+      rollout: "1"
+      prerelease: true
+    secrets:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

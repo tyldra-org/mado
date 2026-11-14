@@ -18,6 +18,8 @@ mod testing;
 #[cfg(test)]
 mod tests;
 
+#[cfg(any(test, feature = "test-hooks"))]
+pub use core::TestHook;
 pub use core::{CoreConfig, CoreHandle, Input, Internal, Reply, start, system_clock};
 pub use timers::Timer;
-pub use ui::UiSink;
+pub use ui::{NoUpdates, UiSink, Updates};
