@@ -9,6 +9,7 @@
 //! record the patch every UI and overlay webview applies.
 
 mod core;
+pub mod history;
 pub mod navigation;
 pub mod store;
 pub mod tabs;

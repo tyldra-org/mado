@@ -395,6 +395,44 @@ pub enum Command {
         #[serde(default)]
         window_id: Option<WindowId>,
     },
+    // History (spec 12 §2.3).
+    /// Returns `{ days: [{ day, visits }], cursor }`, newest first. `day`
+    /// is `YYYY-MM-DD` in the caller's time zone (`utcOffsetMinutes`, as
+    /// JavaScript's `-getTimezoneOffset()`).
+    #[serde(rename = "history.query", rename_all = "camelCase")]
+    HistoryQuery {
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        host: Option<String>,
+        #[serde(default)]
+        from: Option<i64>,
+        #[serde(default)]
+        to: Option<i64>,
+        #[serde(default = "page")]
+        limit: u32,
+        /// From the previous page's answer.
+        #[serde(default)]
+        cursor: Option<String>,
+        #[serde(default)]
+        utc_offset_minutes: i32,
+    },
+    /// Returns `{ deleted }`.
+    #[serde(rename = "history.delete", rename_all = "camelCase")]
+    HistoryDelete {
+        #[serde(default)]
+        visit_ids: Vec<i64>,
+        #[serde(default)]
+        url_ids: Vec<i64>,
+        #[serde(default)]
+        host: Option<String>,
+        #[serde(default)]
+        range: Option<TimeRange>,
+    },
+    #[serde(rename = "history.exclude", rename_all = "camelCase")]
+    HistoryExclude { host: String },
+    #[serde(rename = "history.export", rename_all = "camelCase")]
+    HistoryExport { path: String },
     /// Pops the closed stack (spec 04 §6).
     #[serde(rename = "session.reopenClosed")]
     SessionReopenClosed,
@@ -472,6 +510,10 @@ impl Command {
             | Self::GroupUndoDelete { .. }
             | Self::GroupSetSaved { .. }
             | Self::GroupMoveToWindow { .. } => CommandFamily::Group,
+            Self::HistoryQuery { .. }
+            | Self::HistoryDelete { .. }
+            | Self::HistoryExclude { .. }
+            | Self::HistoryExport { .. } => CommandFamily::History,
             Self::SessionReopenClosed
             | Self::SessionRecentlyClosed
             | Self::SessionConfirmClose { .. } => CommandFamily::Session,
@@ -535,6 +577,10 @@ impl Command {
             Self::GroupUndoDelete { .. } => "group.undoDelete",
             Self::GroupSetSaved { .. } => "group.setSaved",
             Self::GroupMoveToWindow { .. } => "group.moveToWindow",
+            Self::HistoryQuery { .. } => "history.query",
+            Self::HistoryDelete { .. } => "history.delete",
+            Self::HistoryExclude { .. } => "history.exclude",
+            Self::HistoryExport { .. } => "history.export",
             Self::SessionReopenClosed => "session.reopenClosed",
             Self::SessionRecentlyClosed => "session.recentlyClosed",
             Self::SessionConfirmClose { .. } => "session.confirmClose",
@@ -554,12 +600,26 @@ impl Command {
                 | Self::SettingsSearch { .. }
                 | Self::TabHoverInfo { .. }
                 | Self::SessionRecentlyClosed
+                | Self::HistoryQuery { .. }
         )
     }
 }
 
 fn yes() -> bool {
     true
+}
+
+fn page() -> u32 {
+    100
+}
+
+/// Unix milliseconds, `from` included, `to` not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TimeRange {
+    pub from: i64,
+    pub to: i64,
 }
 
 /// `tab.save` formats.

@@ -3,6 +3,7 @@
 
 mod pages;
 mod session;
+mod visits;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::AssertUnwindSafe;
@@ -68,6 +69,8 @@ pub enum Internal {
     },
     /// The hover-card picture of a tab going to sleep.
     SnapshotTaken { tab: TabId, jpeg: Vec<u8> },
+    /// History recorded the visit of a tab's page.
+    VisitRecorded { tab: TabId, visit: i64 },
     /// A settings file read off the core thread for `settings.import`.
     ImportRead {
         origin: Origin,
@@ -213,8 +216,11 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
-    /// Page text waiting for history indexing (M2-T10).
-    page_text: BTreeMap<TabId, String>,
+    /// Each tab's current navigation, for history (spec 12 §2.1).
+    navs: visits::Navs,
+    /// Transitions the core knows before the engine reports the visit
+    /// (links from other apps, session restore, bookmarks, typed).
+    pending_transition: BTreeMap<TabId, crate::history::Transition>,
     /// The element under the pointer at the last context menu (M2-T07).
     context_targets: BTreeMap<TabId, mado_engine::page::ContextTarget>,
     /// Tabs whose protected video failed (M2-T06 offers Safari).
@@ -316,7 +322,8 @@ impl Core {
             sleeping: BTreeSet::new(),
             heartbeats: BTreeMap::new(),
             unresponsive: BTreeMap::new(),
-            page_text: BTreeMap::new(),
+            navs: BTreeMap::new(),
+            pending_transition: BTreeMap::new(),
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             ui: config.ui,
@@ -498,7 +505,7 @@ impl Core {
                         Some(window) if !request.new_window && external != "newWindow" => {
                             let prefs = self.prefs();
                             for url in &request.urls {
-                                self.model.open_tab(
+                                let tab = self.model.open_tab(
                                     window,
                                     url.clone(),
                                     None,
@@ -507,12 +514,21 @@ impl Core {
                                     now,
                                     prefs,
                                 )?;
+                                self.pending_transition
+                                    .insert(tab, crate::history::Transition::External);
                             }
                             self.outbox
                                 .push(EngineOp::ApplyWindow(window, WindowCommand::Focus));
                         }
                         _ => {
                             let id = self.open_window(Bounds::default(), &request.urls)?;
+                            if !request.urls.is_empty() {
+                                let tabs = self.model.window(id)?.tab_order.clone();
+                                for tab in tabs {
+                                    self.pending_transition
+                                        .insert(tab, crate::history::Transition::External);
+                                }
+                            }
                             self.outbox
                                 .push(EngineOp::ApplyWindow(id, WindowCommand::Focus));
                         }
@@ -617,6 +633,10 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            cmd @ (Command::HistoryQuery { .. }
+            | Command::HistoryDelete { .. }
+            | Command::HistoryExclude { .. }
+            | Command::HistoryExport { .. }) => self.history_command(cmd, reply_to),
             other => self.tab_command(origin, other, rec),
         }
     }
@@ -651,6 +671,7 @@ impl Core {
                 }
             }
             Internal::SleepReady { tab, blob } => self.sleep_ready(tab, blob),
+            Internal::VisitRecorded { tab, visit } => self.visit_recorded(tab, visit),
             Internal::SnapshotTaken { tab, jpeg } => {
                 if let Some(e) = self.model.extras.get_mut(&tab) {
                     e.snapshot = Some(jpeg);
@@ -869,6 +890,7 @@ impl Core {
                     }
                 });
                 self.timers.schedule(Timer::DailyBackup, DAY);
+                self.history_retention();
             }
         }
         self.settle(&model_before, &mut rec);

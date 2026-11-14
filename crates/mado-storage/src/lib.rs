@@ -37,7 +37,7 @@ pub struct Storage {
     path: PathBuf,
     kind: Kind,
     writer: Writer,
-    readers: ReadPool,
+    readers: std::sync::Arc<ReadPool>,
 }
 
 impl Storage {
@@ -48,7 +48,7 @@ impl Storage {
             path: opened.path.clone(),
             kind: opened.kind,
             writer: Writer::start(&opened.path)?,
-            readers: ReadPool::new(&opened.path, 4),
+            readers: std::sync::Arc::new(ReadPool::new(&opened.path, 4)),
         })
     }
 
@@ -66,5 +66,10 @@ impl Storage {
 
     pub fn readers(&self) -> &ReadPool {
         &self.readers
+    }
+
+    /// The read pool, for queries that run off the core thread.
+    pub fn shared_readers(&self) -> std::sync::Arc<ReadPool> {
+        std::sync::Arc::clone(&self.readers)
     }
 }

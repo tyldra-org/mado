@@ -190,6 +190,27 @@ run("WebKit adapter", () => {
     );
   }, 45_000);
 
+  test("history finds a phrase only in a page's body, never on a page with a password field (12 §7 check 3)", async () => {
+    const a = await open("http://pages.mado.test/history/phrase.html");
+    const b = await open("http://pages.mado.test/history/login.html");
+    await tabWhere(a.tab, (t) => t.life === "live");
+    await tabWhere(b.tab, (t) => t.life === "live");
+    type Answer = { days: { day: string; visits: { url: string }[] }[] };
+    const search = (text: string) =>
+      mado.control
+        .call<Answer>("history.query", { text, limit: 10 })
+        .then((r) => r.days.flatMap((d) => d.visits.map((v) => v.url)));
+    const found = await until("the indexed phrase", async () => {
+      const urls = await search("glimmerzebra");
+      return urls.length ? urls : undefined;
+    });
+    expect(found).toEqual(["http://pages.mado.test/history/phrase.html"]);
+    await sleep(4000);
+    expect(await search("shimmerotter")).toEqual([]);
+    const all = await search("");
+    expect(all).toContain("http://pages.mado.test/history/login.html");
+  }, 30_000);
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");
