@@ -1,0 +1,128 @@
+# Builds, signs and publishes one Mado version (spec 15 §2-6). Called by
+# release.yml and nightly.yml; never run on its own.
+name: Package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version to build, without a leading v.
+        type: string
+        required: true
+      channel:
+        description: stable, beta or nightly.
+        type: string
+        required: true
+      rollout:
+        description: The share of installs offered the update, 0 to 1.
+        type: string
+        required: true
+      prerelease:
+        type: boolean
+        required: true
+    secrets:
+      MACOS_CERT_P12:
+        required: true
+      MACOS_CERT_PASSWORD:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [aarch64, x86_64]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-about
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Credits (fails on a licence not in about.toml)
+        run: bun scripts/credits.ts
+      - name: Build the UI and page scripts
+        run: bun run build
+      - name: Build, sign and package
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ inputs.version }}
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: scripts/release/macos.sh "$ARCH" "$VERSION" dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mado-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Creates the release and overwrites the channel file.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mado-*
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          cat dist/SHA256SUMS-* > dist/SHA256SUMS
+          rm dist/SHA256SUMS-*
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Mado $VERSION" --notes "Mado $VERSION. Unsigned by Apple: see Privacy & Security, Open Anyway." "${flags[@]}"
+      - name: Point the channel at it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          ROLLOUT: ${{ inputs.rollout }}
+        run: |
+          cd dist
+          bun ../scripts/release/channel.ts "$VERSION" "$ROLLOUT" false "$CHANNEL.json"
+          gh release view channels --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create channels --repo "$GITHUB_REPOSITORY" --prerelease --title "Update channels" \
+              --notes "The files Mado's updater reads (spec 15 §5). Not a release."
+          gh release upload channels "$CHANNEL.json" --repo "$GITHUB_REPOSITORY" --clobber

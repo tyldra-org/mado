@@ -128,6 +128,10 @@ fn create(app: &AppHandle, id: WindowId, bounds: &Bounds) -> tauri::Result<()> {
     if bounds.width > 0.0 {
         builder = builder.position(bounds.x, bounds.y);
     }
+    let headless = headless();
+    if headless {
+        builder = builder.visible(false).focused(false);
+    }
     let window = builder.build()?;
     let size = window
         .inner_size()?
@@ -144,6 +148,14 @@ fn create(app: &AppHandle, id: WindowId, bounds: &Bounds) -> tauri::Result<()> {
         LogicalSize::new(1.0, 1.0),
     )?;
     overlay.hide()?;
-    window.set_focus()?;
+    if !headless {
+        window.set_focus()?;
+    }
     Ok(())
+}
+
+/// End-to-end runs on a developer's Mac create real windows but keep them
+/// hidden and unfocused (`test-hooks` builds with `MADO_TEST_HEADLESS`).
+fn headless() -> bool {
+    cfg!(feature = "test-hooks") && std::env::var_os("MADO_TEST_HEADLESS").is_some()
 }

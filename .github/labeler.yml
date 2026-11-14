@@ -70,6 +70,8 @@
   - changed-files:
       - any-glob-to-any-file:
           - .github/workflows/**
+          - crates/mado-fixture-server/**
+          - tests/**
           - scripts/**
           - Cargo.toml
           - deny.toml

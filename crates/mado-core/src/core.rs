@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
-use crate::ui::UiSink;
+use crate::ui::{UiSink, Updates};
 
 pub type Reply = oneshot::Sender<Result<Value, MadoError>>;
 
@@ -54,11 +54,29 @@ pub enum Internal {
         result: Result<String, String>,
         reply: Reply,
     },
+    /// What the updater is doing (spec 15 §5).
+    UpdateStatus(mado_types::state::UpdateState),
     /// Stops the loop after the queued writes (spec 01 §1.6).
     Shutdown { done: oneshot::Sender<()> },
     /// A command handler that panics, to prove the core survives one.
     #[cfg(any(test, feature = "test-hooks"))]
     Panic,
+    /// Test-only hooks (spec 16 §3). Compiled only with `test-hooks`.
+    #[cfg(any(test, feature = "test-hooks"))]
+    Hook(TestHook),
+}
+
+/// Spec 16 §3. Fake memory pressure and the fixture proxy configuration act
+/// on tabs and the engine, and arrive with them in M2.
+#[cfg(any(test, feature = "test-hooks"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TestHook {
+    /// The next patch is counted but not sent, so a UI sees a gap.
+    DropNextPatch,
+    /// Every later `now` returns this, in Unix milliseconds.
+    FakeClock(i64),
+    /// `app.authenticate` succeeds without asking the OS.
+    FakeAuthSuccess,
 }
 
 /// How long a notice with Undo stays (spec 06 §3).
@@ -75,6 +93,7 @@ pub struct CoreConfig {
     pub settings: Settings,
     pub engine: Box<dyn WindowEngine>,
     pub ui: Box<dyn UiSink>,
+    pub updates: Box<dyn Updates>,
     /// The time source, Unix milliseconds. Tests pass a fixed clock.
     pub clock: fn() -> i64,
 }
@@ -135,11 +154,22 @@ pub struct Core {
     backups: PathBuf,
     engine: Box<dyn WindowEngine>,
     ui: Box<dyn UiSink>,
+    updates: Box<dyn Updates>,
     clock: fn() -> i64,
     /// Engine commands a handler queued; sent after its patch (01 §2.1 step 6).
     outbox: Vec<(WindowId, WindowCommand)>,
     next_notice: u64,
     inputs: mpsc::UnboundedSender<Input>,
+    #[cfg(any(test, feature = "test-hooks"))]
+    hooks: Hooks,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+#[derive(Debug, Default)]
+struct Hooks {
+    drop_next_patch: bool,
+    clock: Option<i64>,
+    auth_success: bool,
 }
 
 impl std::fmt::Debug for Core {
@@ -193,10 +223,13 @@ impl Core {
             backups: config.backups,
             engine: config.engine,
             ui: config.ui,
+            updates: config.updates,
             clock: config.clock,
             outbox: Vec::new(),
             next_notice: 1,
             inputs,
+            #[cfg(any(test, feature = "test-hooks"))]
+            hooks: Hooks::default(),
         };
         core.mirror_all_settings();
         core.timers.schedule(Timer::DailyBackup, DAY);
@@ -297,10 +330,18 @@ impl Core {
             rev: self.rev,
             ops: rec.take(),
         };
+        #[cfg(any(test, feature = "test-hooks"))]
+        if std::mem::take(&mut self.hooks.drop_next_patch) {
+            return;
+        }
         self.ui.patch(&patch);
     }
 
     fn now(&self) -> i64 {
+        #[cfg(any(test, feature = "test-hooks"))]
+        if let Some(now) = self.hooks.clock {
+            return now;
+        }
         (self.clock)()
     }
 
@@ -363,6 +404,17 @@ impl Core {
                 // The active tab view gets the rect from M2 (EngineCommand::SetFrame).
                 Ok(Value::Null)
             }
+            Command::UpdateCheck => {
+                self.updates.check();
+                Ok(Value::Null)
+            }
+            Command::UpdateRelaunch => {
+                if self.state.update.status != mado_types::state::UpdateStatus::Ready {
+                    return Err(MadoError::new(ErrorCode::NotFound, "error.update.notReady"));
+                }
+                self.updates.relaunch();
+                Ok(Value::Null)
+            }
             Command::AppAuthenticate { reason } => {
                 // Only Mado's own windows may ask; the prompt names Mado.
                 if !origin.is_user() {
@@ -371,11 +423,19 @@ impl Core {
                         "error.auth.notAllowed",
                     ));
                 }
+                #[cfg(any(test, feature = "test-hooks"))]
+                let fake = self.hooks.auth_success;
+                #[cfg(not(any(test, feature = "test-hooks")))]
+                let fake = false;
                 if let Some(reply) = reply_to.take() {
                     let inputs = self.inputs.clone();
                     tokio::task::spawn_blocking(move || {
-                        let result =
-                            mado_platform::auth::authenticate(&reason).map_err(|e| e.to_string());
+                        let result = if fake {
+                            mado_platform::auth::token()
+                        } else {
+                            mado_platform::auth::authenticate(&reason)
+                        }
+                        .map_err(|e| e.to_string());
                         let _ =
                             inputs.send(Input::Internal(Internal::Authenticated { result, reply }));
                     });
@@ -487,6 +547,37 @@ impl Core {
                 });
                 let _ = reply.send(answer);
             }
+            Internal::UpdateStatus(update) => {
+                let ready = update.status == mado_types::state::UpdateStatus::Ready
+                    && self.state.update.status != mado_types::state::UpdateStatus::Ready;
+                let mut tx = self.state.tx(rec);
+                let mut u = tx.update();
+                u.set_status(update.status);
+                u.set_version(update.version.clone());
+                u.set_security(update.security);
+                if ready {
+                    // "Relaunch to update" (spec 15 §5), until the UI has its own button.
+                    let notice = Notice {
+                        id: format!("n{}", self.next_notice),
+                        message_key: "notice.updateReady".into(),
+                        args: BTreeMap::from([(
+                            "version".to_owned(),
+                            json!(update.version.unwrap_or_default()),
+                        )]),
+                        action: Some(NoticeAction {
+                            label_key: "notice.relaunch".into(),
+                            command: Command::UpdateRelaunch,
+                        }),
+                        undo: None,
+                        expires_at: None,
+                    };
+                    self.next_notice += 1;
+                    let mut notices = self.state.notices.clone();
+                    notices.push(notice.clone());
+                    self.state.tx(rec).set_notices(notices);
+                    self.ui.notice(&notice);
+                }
+            }
             Internal::TokenIssued { token } => {
                 let now = self.now();
                 self.tokens.issue(token, now);
@@ -505,6 +596,12 @@ impl Core {
                 let _ = reply.send(answer);
             }
             Internal::Shutdown { .. } => {}
+            #[cfg(any(test, feature = "test-hooks"))]
+            Internal::Hook(hook) => match hook {
+                TestHook::DropNextPatch => self.hooks.drop_next_patch = true,
+                TestHook::FakeClock(now) => self.hooks.clock = Some(now),
+                TestHook::FakeAuthSuccess => self.hooks.auth_success = true,
+            },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {
                 self.state.tx(rec).profile().set_name("half-done".into());

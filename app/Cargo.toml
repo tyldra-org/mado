@@ -12,10 +12,16 @@ publish = false
 name = "mado-app"
 path = "src/main.rs"
 
+[features]
+# Test-only hooks (spec 16 §3) and end-to-end access through the control
+# endpoint. Never in release builds.
+test-hooks = ["mado-core/test-hooks"]
+
 [lints]
 workspace = true
 
 [dependencies]
+getrandom = "0.4.3"
 mado-control = { version = "0.0.0", path = "../crates/mado-control" }
 mado-core = { version = "0.0.0", path = "../crates/mado-core" }
 mado-engine = { version = "0.0.0", path = "../crates/mado-engine" }
@@ -26,13 +32,15 @@ mado-types = { version = "0.0.0", path = "../crates/mado-types" }
 rusqlite = "0.42.0"
 serde_json = "1.0.154"
 tauri = { version = "2.12.5", features = ["unstable"] }
+tauri-plugin-updater = "2.14.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+url = "2.5.8"
 
 [build-dependencies]
-tauri-build = "2.7.4"
+tauri-build = { version = "2.7.4", features = [] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

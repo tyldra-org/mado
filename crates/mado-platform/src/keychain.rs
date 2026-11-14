@@ -18,6 +18,15 @@ pub fn get(service: &str, account: &str) -> Result<Option<Vec<u8>>, PlatformErro
     }
 }
 
+/// Like `get`, but fails instead of showing a Keychain prompt: a build
+/// signed by another identity gets an error, not a dialog.
+pub fn get_without_prompt(service: &str, account: &str) -> Result<Option<Vec<u8>>, PlatformError> {
+    let _no_prompts =
+        security_framework::os::macos::keychain::SecKeychain::disable_user_interaction()
+            .map_err(|e| PlatformError::Failed(e.to_string()))?;
+    get(service, account)
+}
+
 pub fn set(service: &str, account: &str, secret: &[u8]) -> Result<(), PlatformError> {
     set_generic_password(service, account, secret).map_err(|e| PlatformError::Failed(e.to_string()))
 }

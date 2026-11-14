@@ -246,6 +246,87 @@ fn only_a_window_s_own_ui_reports_its_page_area() {
 }
 
 #[test]
+fn test_hooks_drop_a_patch_fake_the_clock_and_authentication() {
+    use crate::TestHook;
+    let core = TestCore::start();
+    core.handle
+        .send(Input::Internal(Internal::Hook(TestHook::DropNextPatch)));
+    for theme in ["dark", "light"] {
+        ask(
+            &core,
+            Origin::Settings,
+            Command::SettingsSet {
+                key: "appearance.theme".into(),
+                value: json!(theme),
+                token: None,
+            },
+        )
+        .expect("set");
+    }
+    let revs: Vec<u64> = core
+        .sent
+        .lock()
+        .expect("lock")
+        .patches
+        .iter()
+        .map(|p| p.rev)
+        .collect();
+    assert_eq!(revs, vec![2], "revision 1 was dropped");
+
+    core.handle
+        .send(Input::Internal(Internal::Hook(TestHook::FakeAuthSuccess)));
+    core.handle
+        .send(Input::Internal(Internal::Hook(TestHook::FakeClock(5_000))));
+    let token = ask(
+        &core,
+        Origin::Settings,
+        Command::AppAuthenticate {
+            reason: "test".into(),
+        },
+    )
+    .expect("faked")["token"]
+        .as_str()
+        .expect("a token")
+        .to_owned();
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "vault.lockAfter".into(),
+            value: json!(60_000),
+            token: Some(token),
+        },
+    )
+    .expect("authorised");
+    let log = ask(&core, Origin::Settings, Command::StateGet).expect("state.get");
+    assert_eq!(
+        log["state"]["settings"]["values"]["vault.lockAfter"],
+        60_000
+    );
+}
+
+#[test]
+fn a_ready_update_shows_a_relaunch_notice_and_relaunch_needs_one() {
+    use mado_types::state::{UpdateState, UpdateStatus};
+    let core = TestCore::start();
+    let err = ask(&core, Origin::Settings, Command::UpdateRelaunch).expect_err("nothing ready");
+    assert_eq!(err.code, ErrorCode::NotFound);
+    core.handle
+        .send(Input::Internal(Internal::UpdateStatus(UpdateState {
+            status: UpdateStatus::Ready,
+            version: Some("0.1.0".into()),
+            security: false,
+        })));
+    let s = ask(&core, Origin::System, Command::StateGet).expect("state.get");
+    assert_eq!(s["state"]["update"]["status"], "ready");
+    assert_eq!(
+        s["state"]["notices"][0]["action"]["command"]["type"],
+        "update.relaunch"
+    );
+    ask(&core, Origin::Settings, Command::UpdateRelaunch).expect("relaunch accepted");
+}
+
+#[test]
 fn a_protected_setting_from_a_control_client_changes_nothing() {
     let core = TestCore::start();
     let before = ask(&core, Origin::System, Command::StateGet).expect("state.get");
