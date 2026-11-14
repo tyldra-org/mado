@@ -1,0 +1,16 @@
+[package]
+name = "mado-engine-fake"
+description = "A deterministic engine for tests: it answers engine commands without a web view."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+mado-engine = { version = "0.0.0", path = "../mado-engine" }
+mado-types = { version = "0.0.0", path = "../mado-types" }
+
+[lints]
+workspace = true

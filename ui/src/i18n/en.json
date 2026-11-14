@@ -1,7 +1,9 @@
 {
   "app.name": "Mado",
   "app.placeholder": "The browser interface arrives in milestone M1.",
+  "error.coreStopped": "Mado is shutting down. Try again after it restarts.",
   "error.internal": "Something went wrong in Mado. Try again.",
+  "error.launch.notAllowed": "Only another Mado launch can open pages this way.",
   "error.settings.authRequired": "Changing {key} needs Touch ID or your password.",
   "error.settings.file": "That file can’t be imported: {reason}.",
   "error.settings.invalidValue": "That value doesn’t work for {key}: {reason}.",
@@ -9,6 +11,8 @@
   "error.settings.protected": "{key} can be changed only in Mado’s settings window.",
   "error.settings.unknownKey": "There is no setting called {key}.",
   "error.settings.unknownSection": "There is no settings section called {section}.",
+  "notice.settingChanged": "{label} changed.",
+  "notice.undo": "Undo",
   "settings.addressBar.show.help": "The site name only, or the full web address.",
   "settings.addressBar.show.keywords": "url address full path",
   "settings.addressBar.show.label": "Address bar shows",

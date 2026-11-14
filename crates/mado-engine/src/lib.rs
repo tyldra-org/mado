@@ -6,4 +6,4 @@
 
 pub mod window;
 
-pub use window::WindowCommand;
+pub use window::{WindowCommand, WindowEngine, WindowEvent};

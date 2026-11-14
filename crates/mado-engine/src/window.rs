@@ -28,6 +28,25 @@ pub enum WindowCommand {
     SetTitle(String),
 }
 
+/// What the main thread reports about windows. M2-T01 folds this into
+/// `EngineEvent`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowEvent {
+    /// `WindowCommand::Create` finished: the window and its UI and overlay
+    /// webviews exist.
+    Created { window: WindowId },
+    /// The user closed the window with its close button.
+    CloseRequested { window: WindowId },
+}
+
+/// The window half of the engine (spec 02 §1 `apply_window`), which M1
+/// needs before tabs exist. M2-T01 makes it part of the `Engine` trait.
+pub trait WindowEngine: Send {
+    /// Carries out `cmd` on the main thread. Results come back as
+    /// `WindowEvent`s through the core's input channel.
+    fn apply_window(&mut self, window: WindowId, cmd: WindowCommand);
+}
+
 /// The webview labels the app gives a window's webviews. The app derives a
 /// command's origin from the calling webview's label (spec 01 §4.1).
 pub fn ui_label(window: WindowId) -> String {

@@ -144,7 +144,7 @@ pub struct SearchHit {
     pub score: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Settings {
     /// Stored (non-default) values.
     values: BTreeMap<&'static str, Value>,
