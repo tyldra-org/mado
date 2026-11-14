@@ -30,7 +30,7 @@ use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::NSView;
 
-pub use convert::safari_version;
+pub use convert::{has_geolocation_delegate, safari_version};
 pub use scheme::{Resolved, SchemeResolver};
 pub use view::{TabView, TabViewInfo, download};
 

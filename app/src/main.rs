@@ -380,6 +380,7 @@ fn start_owner(
                 mado_engine::UserAgent::Safari { version }
             }),
         clean_start,
+        page_scripts: mado_engine::page::bundled(!mado_engine_webkit::has_geolocation_delegate()),
         ui: Box::new(TauriUi { app: app.clone() }),
         updates: Box::new(update::start(
             app.clone(),

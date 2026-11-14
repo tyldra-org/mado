@@ -306,6 +306,50 @@ pub enum Command {
     TabCloseRight { tab_id: TabId },
     #[serde(rename = "tab.reloadAll", rename_all = "camelCase")]
     TabReloadAll { window_id: WindowId },
+    #[serde(rename = "tab.reload", rename_all = "camelCase")]
+    TabReload {
+        tab_id: TabId,
+        #[serde(default)]
+        bypass_cache: bool,
+    },
+    #[serde(rename = "tab.stop", rename_all = "camelCase")]
+    TabStop { tab_id: TabId },
+    #[serde(rename = "tab.back", rename_all = "camelCase")]
+    TabBack { tab_id: TabId },
+    #[serde(rename = "tab.forward", rename_all = "camelCase")]
+    TabForward { tab_id: TabId },
+    /// 1.0 is 100%; 0.25 to 5.
+    #[serde(rename = "tab.zoom", rename_all = "camelCase")]
+    TabZoom { tab_id: TabId, zoom: f64 },
+    /// A new `query` starts a search; the same query moves to the next
+    /// match (`forward`); `close` ends it.
+    #[serde(rename = "tab.find", rename_all = "camelCase")]
+    TabFind {
+        tab_id: TabId,
+        #[serde(default)]
+        query: Option<String>,
+        #[serde(default = "yes")]
+        forward: bool,
+        #[serde(default)]
+        case_sensitive: bool,
+        #[serde(default)]
+        close: bool,
+    },
+    #[serde(rename = "tab.print", rename_all = "camelCase")]
+    TabPrint { tab_id: TabId },
+    /// Saves the page as PDF or a web archive at `path`.
+    #[serde(rename = "tab.save", rename_all = "camelCase")]
+    TabSave {
+        tab_id: TabId,
+        path: String,
+        format: SaveFormat,
+    },
+    /// Answers the "Page unresponsive" prompt (spec 02 §5.3).
+    #[serde(rename = "tab.answerUnresponsive", rename_all = "camelCase")]
+    TabAnswerUnresponsive {
+        prompt_id: crate::ids::PromptId,
+        exit: bool,
+    },
     /// Returns `{ title, url, sleeping, memoryBytes?, snapshot? }` (spec 04 §11).
     #[serde(rename = "tab.hoverInfo", rename_all = "camelCase")]
     TabHoverInfo { tab_id: TabId },
@@ -409,7 +453,16 @@ impl Command {
             | Self::TabCloseOthers { .. }
             | Self::TabCloseRight { .. }
             | Self::TabReloadAll { .. }
-            | Self::TabHoverInfo { .. } => CommandFamily::Tab,
+            | Self::TabHoverInfo { .. }
+            | Self::TabReload { .. }
+            | Self::TabStop { .. }
+            | Self::TabBack { .. }
+            | Self::TabForward { .. }
+            | Self::TabZoom { .. }
+            | Self::TabFind { .. }
+            | Self::TabPrint { .. }
+            | Self::TabSave { .. }
+            | Self::TabAnswerUnresponsive { .. } => CommandFamily::Tab,
             Self::GroupCreate { .. }
             | Self::GroupUpdate { .. }
             | Self::GroupUngroup { .. }
@@ -464,6 +517,15 @@ impl Command {
             Self::TabCloseRight { .. } => "tab.closeRight",
             Self::TabReloadAll { .. } => "tab.reloadAll",
             Self::TabHoverInfo { .. } => "tab.hoverInfo",
+            Self::TabReload { .. } => "tab.reload",
+            Self::TabStop { .. } => "tab.stop",
+            Self::TabBack { .. } => "tab.back",
+            Self::TabForward { .. } => "tab.forward",
+            Self::TabZoom { .. } => "tab.zoom",
+            Self::TabFind { .. } => "tab.find",
+            Self::TabPrint { .. } => "tab.print",
+            Self::TabSave { .. } => "tab.save",
+            Self::TabAnswerUnresponsive { .. } => "tab.answerUnresponsive",
             Self::GroupCreate { .. } => "group.create",
             Self::GroupUpdate { .. } => "group.update",
             Self::GroupUngroup { .. } => "group.ungroup",
@@ -494,6 +556,19 @@ impl Command {
                 | Self::SessionRecentlyClosed
         )
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// `tab.save` formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SaveFormat {
+    Pdf,
+    WebArchive,
 }
 
 /// Where `tab.new` puts the tab (spec 04 §3).

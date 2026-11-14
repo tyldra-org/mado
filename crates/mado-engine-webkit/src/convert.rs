@@ -115,3 +115,12 @@ pub fn safari_version() -> Option<String> {
 pub fn write_file(path: &Path, data: &NSData) -> Result<(), String> {
     std::fs::write(path, data.to_vec()).map_err(|e| e.to_string())
 }
+
+/// macOS 27 and later ask WebKit's delegate about geolocation, so the
+/// page-world shim is not needed (spec 07 §1.1, M0).
+pub fn has_geolocation_delegate() -> bool {
+    objc2_foundation::NSProcessInfo::processInfo()
+        .operatingSystemVersion()
+        .majorVersion
+        >= 27
+}

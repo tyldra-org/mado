@@ -100,6 +100,7 @@ impl TestCore {
             engine,
             user_agent: mado_engine::UserAgent::EngineDefault,
             clean_start,
+            page_scripts: mado_engine::PageScriptSet::default(),
             ui: Box::new(Collect(Arc::clone(&sent))),
             updates: Box::new(crate::NoUpdates),
             clock: || 1_800_000_000_000,

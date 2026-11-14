@@ -553,16 +553,12 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 view.setAllMediaPlaybackSuspended_completionHandler(s, None)
             }
             TabCommand::Find(req) => {
-                let config = objc2_web_kit::WKFindConfiguration::new(mtm);
-                config.setCaseSensitive(req.case_sensitive);
-                config.setBackwards(!req.forward);
-                config.setWraps(true);
-                let block = RcBlock::new(|_r: NonNull<objc2_web_kit::WKFindResult>| {});
-                view.findString_withConfiguration_completionHandler(
-                    &NSString::from_str(&req.query),
-                    Some(&config),
-                    &block,
-                );
+                INFO.with_borrow_mut(|i| {
+                    if let Some(info) = i.get_mut(&tab) {
+                        info.find = Some((req.query.clone(), req.case_sensitive));
+                    }
+                });
+                highlight(&view, mtm, &req.query, req.case_sensitive, !req.forward);
                 post(
                     &view,
                     mtm,
@@ -570,18 +566,33 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                     &serde_json::json!({ "type": "find", "query": req.query, "caseSensitive": req.case_sensitive }),
                 );
             }
-            TabCommand::FindNext { forward } => post(
-                &view,
-                mtm,
-                World::Mado,
-                &serde_json::json!({ "type": "findNext", "forward": forward }),
-            ),
-            TabCommand::FindClear => post(
-                &view,
-                mtm,
-                World::Mado,
-                &serde_json::json!({ "type": "findClear" }),
-            ),
+            TabCommand::FindNext { forward } => {
+                if let Some((query, case)) =
+                    INFO.with_borrow(|i| i.get(&tab).and_then(|t| t.find.clone()))
+                {
+                    highlight(&view, mtm, &query, case, !forward);
+                }
+                post(
+                    &view,
+                    mtm,
+                    World::Mado,
+                    &serde_json::json!({ "type": "findNext", "forward": forward }),
+                );
+            }
+            TabCommand::FindClear => {
+                INFO.with_borrow_mut(|i| {
+                    if let Some(info) = i.get_mut(&tab) {
+                        info.find = None;
+                    }
+                });
+                // The find script also clears the selection WebKit made.
+                post(
+                    &view,
+                    mtm,
+                    World::Mado,
+                    &serde_json::json!({ "type": "findClear" }),
+                );
+            }
             TabCommand::Print => {
                 let op = view.printOperationWithPrintInfo(&NSPrintInfo::sharedPrintInfo());
                 op.setShowsPrintPanel(true);
@@ -722,6 +733,29 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
         }
     }
     Ok(())
+}
+
+/// WebKit's own find highlight, which selects the next match.
+fn highlight(
+    view: &WKWebView,
+    mtm: MainThreadMarker,
+    query: &str,
+    case_sensitive: bool,
+    backwards: bool,
+) {
+    // SAFETY: a find configuration and a find on a live view, main thread.
+    unsafe {
+        let config = objc2_web_kit::WKFindConfiguration::new(mtm);
+        config.setCaseSensitive(case_sensitive);
+        config.setBackwards(backwards);
+        config.setWraps(true);
+        let block = RcBlock::new(|_r: NonNull<objc2_web_kit::WKFindResult>| {});
+        view.findString_withConfiguration_completionHandler(
+            &NSString::from_str(query),
+            Some(&config),
+            &block,
+        );
+    }
 }
 
 /// A message to the page scripts' inbox (`Symbol.for("mado.inbox")` in

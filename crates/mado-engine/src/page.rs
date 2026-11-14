@@ -140,32 +140,119 @@ empty_payloads!(
     Forms,
     FieldFocused,
     CredentialsSubmitted,
-    UnsavedInput,
     FillDone,
     WebauthnCreate,
     WebauthnGet,
     NotificationRequest,
-    NotificationShow,
-    NotificationClose,
-    GeolocationGet,
-    GeolocationWatch,
-    GeolocationClear,
-    ProtocolHandlerRegister,
-    MediaState,
-    DrmFailed,
     ReaderProbe,
     ReaderContent,
     CosmeticClasses,
     PickerResult,
-    Favicons,
-    PageText,
-    ContextTarget,
     StoreInstall,
     AiSnapshot,
     AiText,
     AiActionResult,
     Invoke,
 );
+
+/// `forms`: whether editable fields hold typed text (spec 04 §7, §9).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnsavedInput {
+    pub dirty: bool,
+}
+
+/// `notifications`: `new Notification(title, options)` (spec 07 §1.1).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationShow {
+    pub id: u32,
+    pub title: String,
+    pub body: String,
+    pub tag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationClose {
+    pub id: u32,
+}
+
+/// `geolocation`: one position, or a watch (spec 07 §1.1).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GeolocationGet {
+    pub id: u32,
+    pub high_accuracy: bool,
+}
+
+pub type GeolocationWatch = GeolocationGet;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GeolocationClear {
+    pub id: u32,
+}
+
+/// `protocol-handlers`: `navigator.registerProtocolHandler` (spec 07 §6).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProtocolHandlerRegister {
+    pub scheme: String,
+    pub url: String,
+}
+
+/// `media`: for the media button (spec 05 §11).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaState {
+    pub playing: bool,
+    pub muted: bool,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+}
+
+/// `media`: an encrypted stream got no key (spec 05 §11).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DrmFailed {
+    pub key_system: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Icon {
+    pub url: String,
+    pub sizes: Option<String>,
+    pub rel: String,
+}
+
+/// `status`: the page's icons.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Favicons {
+    pub icons: Vec<Icon>,
+}
+
+/// `status`: the page's text for history search (spec 12 §2.2).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PageText {
+    pub text: String,
+}
+
+/// `context`: the element under the pointer (spec 07 §8).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ContextTarget {
+    pub link: Option<String>,
+    pub link_text: Option<String>,
+    pub image: Option<String>,
+    pub media: Option<String>,
+    pub media_kind: Option<String>,
+    pub selection: Option<String>,
+    pub editable: bool,
+}
 
 /// `status`: the page is alive (spec 02 §5.3).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -230,7 +317,114 @@ pub fn validate(raw: &Value, nonce: &Nonce) -> Result<PageMessage, Dropped> {
     if !nonce.matches(&envelope.nonce) {
         return Err(Dropped::WrongNonce);
     }
-    decode(&envelope.kind, &envelope.script, envelope.payload)
+    let message = decode(&envelope.kind, &envelope.script, envelope.payload)?;
+    within_limits(&message)
+        .then_some(message)
+        .ok_or(Dropped::InvalidPayload)
+}
+
+/// Size limits the scripts keep; anything bigger came from elsewhere.
+fn within_limits(m: &PageMessage) -> bool {
+    let short = |s: &str| s.len() <= 4096;
+    let opt = |s: &Option<String>| s.as_deref().is_none_or(short);
+    match m {
+        PageMessage::HoverLink(h) => opt(&h.url),
+        PageMessage::Favicons(f) => {
+            f.icons.len() <= 16
+                && f.icons
+                    .iter()
+                    .all(|i| short(&i.url) && opt(&i.sizes) && i.rel.len() <= 64)
+        }
+        PageMessage::PageText(p) => p.text.len() <= 200 * 1024 * 4,
+        PageMessage::ContextTarget(c) => {
+            opt(&c.link)
+                && opt(&c.link_text)
+                && opt(&c.image)
+                && opt(&c.media)
+                && opt(&c.selection)
+                && c.media_kind
+                    .as_deref()
+                    .is_none_or(|k| k == "video" || k == "audio")
+        }
+        PageMessage::MediaState(s) => opt(&s.title) && opt(&s.artist),
+        PageMessage::NotificationShow(n) => {
+            n.title.len() <= 1024 && n.body.len() <= 4096 && n.tag.len() <= 1024
+        }
+        PageMessage::ProtocolHandlerRegister(r) => r.scheme.len() <= 64 && r.url.len() <= 2048,
+        PageMessage::DrmFailed(d) => d.key_system.as_deref().is_none_or(|k| k.len() <= 128),
+        _ => true,
+    }
+}
+
+const STATUS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/status.js"
+));
+const CONTEXT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/context.js"
+));
+const FIND: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/find.js"
+));
+const MEDIA: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/media.js"
+));
+const FORMS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/forms.js"
+));
+const RELAY: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/relay.js"
+));
+const NOTIFICATIONS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/notifications.js"
+));
+const GEOLOCATION: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/geolocation.js"
+));
+const PROTOCOL_HANDLERS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/protocol-handlers.js"
+));
+
+/// The page scripts M2 injects in every tab after its `bridge` (spec 02 §5
+/// table). `geolocation_shim`: before macOS 27, where WebKit has no
+/// geolocation permission delegate (spec 07 §1.1).
+pub fn bundled(geolocation_shim: bool) -> crate::PageScriptSet {
+    use crate::{InjectAt::*, PageScript, World::*};
+    let s = |name: &'static str, world, at, main_frame_only, source: &str| PageScript {
+        name,
+        world,
+        at,
+        main_frame_only,
+        source: source.to_owned(),
+    };
+    let mut scripts = vec![
+        s("status", Mado, DocumentStart, true, STATUS),
+        s("context", Mado, DocumentStart, false, CONTEXT),
+        s("find", Mado, DocumentEnd, true, FIND),
+        s("media", Mado, DocumentStart, false, MEDIA),
+        s("forms", Mado, DocumentEnd, false, FORMS),
+        s("relay", Mado, DocumentStart, true, RELAY),
+        s("notifications", Page, DocumentStart, true, NOTIFICATIONS),
+        s(
+            "protocol-handlers",
+            Page,
+            DocumentStart,
+            true,
+            PROTOCOL_HANDLERS,
+        ),
+    ];
+    if geolocation_shim {
+        scripts.push(s("geolocation", Page, DocumentStart, true, GEOLOCATION));
+    }
+    crate::PageScriptSet { scripts }
 }
 
 #[cfg(test)]
@@ -343,5 +537,84 @@ mod tests {
         let b = Nonce::generate().expect("random");
         assert_ne!(a, b);
         assert_eq!(a.as_str().len(), 32);
+    }
+
+    #[test]
+    fn m2_payloads_validate_and_oversize_ones_are_dropped() {
+        let nonce = Nonce::generate().expect("nonce");
+        let msg = |script: &str, kind: &str, payload: serde_json::Value| json!({ "v": 1, "nonce": nonce.as_str(), "script": script, "type": kind, "payload": payload });
+        assert!(matches!(
+            validate(
+                &msg("forms", "unsavedInput", json!({ "dirty": true })),
+                &nonce
+            ),
+            Ok(PageMessage::UnsavedInput(UnsavedInput { dirty: true }))
+        ));
+        assert!(validate(&msg("status", "favicons", json!({ "icons": [{ "url": "https://a/x.png", "sizes": "32x32", "rel": "icon" }] })), &nonce).is_ok());
+        assert!(
+            validate(
+                &msg(
+                    "notifications",
+                    "notificationShow",
+                    json!({ "id": 1, "title": "t", "body": "", "tag": "" })
+                ),
+                &nonce
+            )
+            .is_ok()
+        );
+        assert!(
+            validate(
+                &msg(
+                    "protocol-handlers",
+                    "protocolHandlerRegister",
+                    json!({ "scheme": "web+x", "url": "https://a/?u=%s" })
+                ),
+                &nonce
+            )
+            .is_ok()
+        );
+        let long = "x".repeat(5000);
+        assert_eq!(
+            validate(&msg("status", "hoverLink", json!({ "url": long })), &nonce),
+            Err(Dropped::InvalidPayload)
+        );
+        assert_eq!(
+            validate(
+                &msg("forms", "unsavedInput", json!({ "dirty": "yes" })),
+                &nonce
+            ),
+            Err(Dropped::InvalidPayload)
+        );
+        let many: Vec<_> = (0..17)
+            .map(|i| json!({ "url": format!("https://a/{i}"), "sizes": null, "rel": "icon" }))
+            .collect();
+        assert_eq!(
+            validate(&msg("status", "favicons", json!({ "icons": many })), &nonce),
+            Err(Dropped::InvalidPayload)
+        );
+    }
+
+    #[test]
+    fn the_bundled_scripts_follow_the_table() {
+        let set = bundled(false);
+        let names: Vec<&str> = set.scripts.iter().map(|s| s.name).collect();
+        assert_eq!(
+            names,
+            [
+                "status",
+                "context",
+                "find",
+                "media",
+                "forms",
+                "relay",
+                "notifications",
+                "protocol-handlers"
+            ]
+        );
+        assert!(set.scripts.iter().all(|s| !s.source.is_empty()));
+        assert_eq!(
+            bundled(true).scripts.last().map(|s| s.name),
+            Some("geolocation")
+        );
     }
 }

@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shims</title>
+<p>Uses the WebKit shims: notifications, protocol handlers, geolocation.</p>
+<script>
+  const results = {};
+  const show = () => {
+    document.title = `Shims: ${JSON.stringify(results)}`;
+  };
+  try {
+    navigator.registerProtocolHandler("web+mado", "/handle?u=%s");
+    results.protocol = "registered";
+  } catch (e) {
+    results.protocol = `threw ${e.name}`;
+  }
+  Notification.requestPermission().then((p) => {
+    results.notification = p;
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        results.geo = "position";
+        show();
+      },
+      (e) => {
+        results.geo = e.code;
+        show();
+      },
+    );
+  });
+</script>

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings: every setting of the design, stored per app or profile, with protection, undo, search, export and import, and a settings window.
 - Storage: SQLite databases that refuse a newer schema, back up before migrating and restore from a backup when damaged.
 - Web pages load in tabs through WebKit, each profile with its own website data and proxy, and sites see Mado as Safari.
+- Find in page, mute, link previews in the status bubble, page icons, a prompt for pages that stop responding, and reload, back, forward, zoom, print and save for tabs.
 - Tabs, windows and groups: opening, closing and selecting tabs as Chrome does, pinned tabs, saved groups, ⌘⇧T for closed tabs, groups and windows, sleeping tabs with Memory Saver, startup modes with crash restore, and a warning before quitting with typed text.
 - Nightly builds for Apple silicon Macs, signed with Mado's own certificate, that update themselves on the nightly channel. Intel Macs are not supported.
 

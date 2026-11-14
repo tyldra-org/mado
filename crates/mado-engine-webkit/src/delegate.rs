@@ -53,6 +53,8 @@ pub struct TabInfo {
     pub last_gesture: bool,
     pub nav: u64,
     pub drops: DropCounts,
+    /// The last find query and its case sensitivity, for `FindNext`.
+    pub find: Option<(String, bool)>,
 }
 
 impl TabInfo {
@@ -64,6 +66,7 @@ impl TabInfo {
             last_gesture: false,
             nav: 0,
             drops: DropCounts::default(),
+            find: None,
         }
     }
 }
@@ -868,6 +871,31 @@ define_class!(
                     reply,
                 }),
                 None => handler.call((std::ptr::null_mut(),)),
+            }
+        }
+    }
+
+    impl TabDelegate {
+        /// macOS 27's geolocation permission delegate (M0: called on
+        /// 27.2), not yet in the SDK headers this crate binds.
+        #[unsafe(method(webView:requestGeolocationPermissionForOrigin:initiatedByFrame:decisionHandler:))]
+        fn geolocation(
+            &self,
+            _view: &WKWebView,
+            origin: &WKSecurityOrigin,
+            frame: &WKFrameInfo,
+            handler: &block2::DynBlock<dyn Fn(WKPermissionDecision)>,
+        ) {
+            let tab = self.ivars().tab;
+            let info = frame_info(frame);
+            let request = PermissionRequest {
+                kind: PermissionKind::Location,
+                origin: origin_string(origin),
+                embedder: (!info.is_main_frame).then_some(info.origin),
+            };
+            match park(Pending::Permission(handler.copy()), PermissionDecision::Deny, Answer::Permission) {
+                Some(reply) => send(EngineEvent::PermissionRequested { tab, request, reply }),
+                None => handler.call((WKPermissionDecision::Deny,)),
             }
         }
     }
