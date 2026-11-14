@@ -18,3 +18,9 @@ all = { level = "warn", priority = -1 }
 undocumented_unsafe_blocks = "deny"
 dbg_macro = "deny"
 unwrap_used = "deny"
+
+[dependencies]
+mado-types = { version = "0.0.0", path = "../mado-types" }
+objc2 = "0.6.5"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"
