@@ -24,10 +24,13 @@ out=$(cd "$out" && pwd)
 
 work=$(mktemp -d)
 keychain="$work/release.keychain-db"
-searched=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
+# The user's keychain search list, one path per line, to put back exactly.
+searched=$(security list-keychains -d user | sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//')
+nl='
+'
 cleanup() {
-  # shellcheck disable=SC2086 # one path per word, as listed
-  security list-keychains -d user -s $searched 2>/dev/null || true
+  # shellcheck disable=SC2086 # split on newlines only: one path per line
+  (IFS=$nl; set -f; security list-keychains -d user -s $searched) 2>/dev/null || true
   security delete-keychain "$keychain" 2>/dev/null || true
   rm -rf "$work"
 }
@@ -41,8 +44,7 @@ app="$root/target/$target/release/bundle/macos/Mado.app"
 [ -d "$app" ] || { echo "macos.sh: no bundle at $app" >&2; exit 1; }
 
 # 2. Import the identity into a throwaway keychain and sign with the
-# explicit designated requirement, so Keychain items stay readable across
-# updates.
+# explicit designated requirement (15 §3).
 keychain_password=$(openssl rand -hex 16)
 printf '%s' "$MACOS_CERT_P12" | base64 --decode >"$work/identity"
 security create-keychain -p "$keychain_password" "$keychain"
@@ -51,8 +53,8 @@ security unlock-keychain -p "$keychain_password" "$keychain"
 security import "$work/identity" -f pkcs12 -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
 # codesign finds the identity only in a keychain on the search list.
-# shellcheck disable=SC2086 # one path per word, as listed
-security list-keychains -d user -s "$keychain" $searched
+# shellcheck disable=SC2086 # split on newlines only: one path per line
+(IFS=$nl; set -f; security list-keychains -d user -s "$keychain" $searched)
 found=$(security find-certificate -a -Z "$keychain" | awk '/^SHA-1 hash:/ { print tolower($3) }')
 case " $found " in
   *" $sha1 "*) ;;
