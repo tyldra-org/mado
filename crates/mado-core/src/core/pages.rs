@@ -90,10 +90,7 @@ impl Core {
                     t.favicon = url;
                 }
             }
-            PageMessage::PageText(p) if frame.is_main_frame => {
-                // History indexes it (M2-T10); kept per tab until then.
-                self.page_text.insert(tab, p.text);
-            }
+            PageMessage::PageText(p) if frame.is_main_frame => self.page_text(tab, p.text),
             PageMessage::ContextTarget(c) => {
                 self.context_targets.insert(tab, c);
             }
@@ -204,15 +201,14 @@ impl Core {
     pub(super) fn new_document(&mut self, tab: TabId, rec: &mut PatchRecorder) {
         self.heartbeats.remove(&tab);
         self.responsive(tab, rec);
-        self.page_text.remove(&tab);
         self.context_targets.remove(&tab);
         self.drm_failed.remove(&tab);
     }
 
     pub(super) fn forget_tab(&mut self, tab: TabId) {
+        self.tab_gone(tab);
         self.heartbeats.remove(&tab);
         self.unresponsive.remove(&tab);
-        self.page_text.remove(&tab);
         self.context_targets.remove(&tab);
         self.drm_failed.remove(&tab);
     }

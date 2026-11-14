@@ -1301,6 +1301,16 @@ impl Core {
         for id in gone {
             self.forget_tab(id);
         }
+        // A view made from a saved session reloads its page: history records
+        // that visit as a restore (spec 12 §2.1).
+        for op in &first {
+            if let EngineOp::CreateTab(spec) = op
+                && matches!(spec.initial, TabInitial::Restore(_))
+            {
+                self.pending_transition
+                    .insert(spec.tab, crate::history::Transition::Restore);
+            }
+        }
         (first, last)
     }
 
@@ -1355,8 +1365,15 @@ impl Core {
                 }
             }
             EngineEvent::NavigationStarted {
-                tab, is_main_frame, ..
+                tab,
+                is_main_frame,
+                kind,
+                user_gesture,
+                ..
             } => {
+                if is_main_frame {
+                    self.nav_started(tab, kind, user_gesture);
+                }
                 if is_main_frame && let Some(t) = self.model.tabs.get_mut(&tab) {
                     t.life = TabLife::Loading;
                     t.progress = 0.1;
@@ -1377,6 +1394,15 @@ impl Core {
                     }
                 }
                 if !is_same_document {
+                    let url = self
+                        .model
+                        .tabs
+                        .get(&tab)
+                        .map(|t| t.url.clone())
+                        .unwrap_or_default();
+                    self.nav_committed(tab, &url);
+                }
+                if !is_same_document {
                     self.new_document(tab, rec);
                 }
                 self.save_session(tab);
@@ -1394,6 +1420,7 @@ impl Core {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
                     t.title = title.chars().take(1024).collect();
                 }
+                self.title_changed(tab);
             }
             EngineEvent::UrlChanged { tab, url } => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {

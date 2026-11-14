@@ -55,6 +55,9 @@ pub struct TabInfo {
     pub drops: DropCounts,
     /// The last find query and its case sensitivity, for `FindNext`.
     pub find: Option<(String, bool)>,
+    /// The kind of the main-frame navigation decided last, for
+    /// `NavigationStarted`.
+    pub started_kind: Option<NavKind>,
 }
 
 impl TabInfo {
@@ -67,6 +70,7 @@ impl TabInfo {
             nav: 0,
             drops: DropCounts::default(),
             find: None,
+            started_kind: None,
         }
     }
 }
@@ -406,6 +410,13 @@ define_class!(
                 WKNavigationType::Reload => NavKind::Reload,
                 _ => NavKind::Other,
             });
+            if main {
+                INFO.with_borrow_mut(|i| {
+                    if let Some(info) = i.get_mut(&tab) {
+                        info.started_kind = Some(kind);
+                    }
+                });
+            }
             let request = NavRequest {
                 url,
                 source_url: (!initiated_by_mado && !source.is_empty()).then_some(source),
@@ -501,10 +512,10 @@ define_class!(
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
         fn did_start(&self, view: &WKWebView, _nav: Option<&WKNavigation>) {
             let tab = self.ivars().tab;
-            let (nav_id, gesture) = INFO.with_borrow_mut(|i| {
-                i.get_mut(&tab).map_or((0, false), |t| {
+            let (nav_id, gesture, kind) = INFO.with_borrow_mut(|i| {
+                i.get_mut(&tab).map_or((0, false, NavKind::Other), |t| {
                     t.nav += 1;
-                    (t.nav, t.last_gesture)
+                    (t.nav, t.last_gesture, t.started_kind.take().unwrap_or(NavKind::Other))
                 })
             });
             // SAFETY: URL of a live view on the main thread.
@@ -515,7 +526,7 @@ define_class!(
                 nav_id,
                 is_main_frame: true,
                 user_gesture: gesture,
-                kind: NavKind::Other,
+                kind,
             });
         }
 
