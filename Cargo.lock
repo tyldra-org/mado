@@ -1967,7 +1967,7 @@ dependencies = [
 name = "mado-engine"
 version = "0.0.0"
 dependencies = [
- "getrandom",
+ "getrandom 0.4.3",
  "mado-types",
  "serde",
  "serde_json",

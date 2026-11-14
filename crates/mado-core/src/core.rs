@@ -339,6 +339,25 @@ impl Core {
                     "error.launch.notAllowed",
                 )),
             },
+            Command::WindowReportContentRect {
+                window_id, rect, ..
+            } => {
+                // Only the window's own UI reports its page area.
+                if !matches!(origin, Origin::Ui { window } if *window == window_id) {
+                    return Err(MadoError::new(
+                        ErrorCode::PermissionDenied,
+                        "error.window.notYours",
+                    ));
+                }
+                let mut tx = self.state.tx(rec);
+                let mut window = tx
+                    .windows()
+                    .get(&window_id)
+                    .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.window.notFound"))?;
+                window.set_content_rect(Some(rect));
+                // The active tab view gets the rect from M2 (EngineCommand::SetFrame).
+                Ok(Value::Null)
+            }
             Command::SettingsGet { keys } => Ok(self.settings.get_many(keys.as_deref())?),
             Command::SettingsSearch { query } => Ok(json!(self.settings.search(&query))),
             Command::SettingsSet { key, value, token } => {

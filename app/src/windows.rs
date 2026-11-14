@@ -133,7 +133,7 @@ fn create(app: &AppHandle, id: WindowId, bounds: &Bounds) -> tauri::Result<()> {
         .inner_size()?
         .to_logical::<f64>(window.scale_factor()?);
     window.add_child(
-        WebviewBuilder::new(ui_label(id), WebviewUrl::App("index.html".into())).auto_resize(),
+        WebviewBuilder::new(ui_label(id), WebviewUrl::App("window.html".into())).auto_resize(),
         LogicalPosition::new(0.0, 0.0),
         size,
     )?;
