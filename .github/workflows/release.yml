@@ -1,14 +1,14 @@
 # Ships Mado (spec 15 §7, §9). A tag v1.2.3 goes to stable and v1.2.3-beta.N
-# to beta; the daily schedule and manual runs build main to nightly
-# (scripts/release/plan.ts decides). Every run tests end to end, builds and
-# signs for Apple silicon, then publishes (scripts/release/publish.ts).
+# to beta; a manual run builds main to nightly (scripts/release/plan.ts
+# decides). There is no scheduled nightly for now: add
+# `schedule: [{cron: "30 3 * * *"}]` to bring it back. Every run tests end to
+# end, builds and signs for Apple silicon, then publishes
+# (scripts/release/publish.ts).
 name: Release
 
 on:
   push:
     tags: ["v*"]
-  schedule:
-    - cron: "30 3 * * *"
   workflow_dispatch:
 
 permissions:
