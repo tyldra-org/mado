@@ -148,6 +148,16 @@ pub struct LaunchRequest {
     pub source: LaunchSource,
 }
 
+/// `settings.reset`: one key, one section, or everything (spec 06 §3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", untagged)]
+#[ts(export)]
+pub enum ResetTarget {
+    Key { key: String },
+    Section { section: String },
+    All { all: bool },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type")]
 #[ts(export)]
@@ -158,6 +168,37 @@ pub enum Command {
     /// Accepted only from the control endpoint with the launch secret.
     #[serde(rename = "launch.forward")]
     LaunchForward(LaunchRequest),
+    /// Returns `{ [key]: value }` for `keys`, or every setting.
+    #[serde(rename = "settings.get")]
+    SettingsGet {
+        #[serde(default)]
+        keys: Option<Vec<String>>,
+    },
+    /// `token` is the one-time token from `app.authenticate`, for the
+    /// settings that need OS authentication (spec 06 §5).
+    #[serde(rename = "settings.set", rename_all = "camelCase")]
+    SettingsSet {
+        key: String,
+        #[ts(type = "unknown")]
+        value: Value,
+        #[serde(default)]
+        token: Option<String>,
+    },
+    #[serde(rename = "settings.reset")]
+    SettingsReset(ResetTarget),
+    #[serde(rename = "settings.undo", rename_all = "camelCase")]
+    SettingsUndo {
+        #[serde(default)]
+        log_id: Option<i64>,
+    },
+    /// Returns `[{ key, section, score }]`, best first.
+    #[serde(rename = "settings.search")]
+    SettingsSearch { query: String },
+    #[serde(rename = "settings.export")]
+    SettingsExport { path: String },
+    /// Returns a report: applied, skipped unknown, skipped protected, invalid.
+    #[serde(rename = "settings.import")]
+    SettingsImport { path: String },
 }
 
 impl Command {
@@ -165,6 +206,13 @@ impl Command {
         match self {
             Self::StateGet => CommandFamily::State,
             Self::LaunchForward(_) => CommandFamily::Launch,
+            Self::SettingsGet { .. }
+            | Self::SettingsSet { .. }
+            | Self::SettingsReset(_)
+            | Self::SettingsUndo { .. }
+            | Self::SettingsSearch { .. }
+            | Self::SettingsExport { .. }
+            | Self::SettingsImport { .. } => CommandFamily::Settings,
         }
     }
 
@@ -173,13 +221,23 @@ impl Command {
         match self {
             Self::StateGet => "state.get",
             Self::LaunchForward(_) => "launch.forward",
+            Self::SettingsGet { .. } => "settings.get",
+            Self::SettingsSet { .. } => "settings.set",
+            Self::SettingsReset(_) => "settings.reset",
+            Self::SettingsUndo { .. } => "settings.undo",
+            Self::SettingsSearch { .. } => "settings.search",
+            Self::SettingsExport { .. } => "settings.export",
+            Self::SettingsImport { .. } => "settings.import",
         }
     }
 
     /// Queries return data and never change state, so they may run on the
     /// read pool (spec 01 §4.3).
     pub fn is_query(&self) -> bool {
-        matches!(self, Self::StateGet)
+        matches!(
+            self,
+            Self::StateGet | Self::SettingsGet { .. } | Self::SettingsSearch { .. }
+        )
     }
 }
 
@@ -265,7 +323,28 @@ mod tests {
                 private: false,
                 source: LaunchSource::Dock,
             }),
+            Command::SettingsGet { keys: None },
+            Command::SettingsSet {
+                key: "a.b".into(),
+                value: Value::Bool(true),
+                token: None,
+            },
+            Command::SettingsReset(ResetTarget::All { all: true }),
+            Command::SettingsUndo { log_id: None },
+            Command::SettingsSearch { query: "x".into() },
+            Command::SettingsExport {
+                path: "/tmp/x".into(),
+            },
+            Command::SettingsImport {
+                path: "/tmp/x".into(),
+            },
         ] {
+            let json = serde_json::to_value(&cmd).expect("serialises");
+            assert_eq!(json["type"], cmd.name());
+            assert_eq!(
+                serde_json::from_value::<Command>(json).expect("parses"),
+                cmd
+            );
             assert!(
                 cmd.name()
                     .starts_with(&format!("{}.", cmd.family().prefix()))

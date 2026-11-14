@@ -10,3 +10,14 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+mado-types = { version = "0.0.0", path = "../mado-types" }
+rusqlite = "0.42.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+
+[dev-dependencies]
+mado-storage = { version = "0.0.0", path = "../mado-storage" }
+tempfile = "3.27.0"

@@ -365,6 +365,15 @@ version = "0.0.0"
 [[package]]
 name = "mado-settings"
 version = "0.0.0"
+dependencies = [
+ "mado-storage",
+ "mado-types",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "mado-storage"
