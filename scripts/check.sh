@@ -87,7 +87,7 @@ half_command() {
     lint:ts) printf '%s' 'bun run lint' ;;
     build:rust) printf 'cargo build %s --locked' "$CARGO_PACKAGES" ;;
     build:ts) printf '%s' 'bun run build' ;;
-    test:rust) rust_test_default ;;
+    test:rust) printf '%s && scripts/check-generated.sh' "$(rust_test_default)" ;;
     test:ts) ts_test_default ;;
   esac
 }

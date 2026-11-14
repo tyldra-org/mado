@@ -54,6 +54,9 @@ const RUST_GLOBAL = [
 /** Rust code lives in these workspace member roots. */
 const RUST_DIRS = /^(app|crates)\//;
 
+/** mado-types writes these; a hand edit must meet its drift check. */
+const GENERATED = /^ui\/src\/generated\//;
+
 const TS = [
   /^(ui|inject|tests)\//,
   /^scripts\/.+\.ts$/,
@@ -141,7 +144,11 @@ export function classify(files: readonly string[]): Areas {
   return {
     full: false,
     rust: files.some(
-      (f) => RUST_DIRS.test(f) || any(f, RUST_GLOBAL) || f === "scripts/check-deps.ts",
+      (f) =>
+        RUST_DIRS.test(f) ||
+        GENERATED.test(f) ||
+        any(f, RUST_GLOBAL) ||
+        f === "scripts/check-deps.ts",
     ),
     ts: files.some((f) => any(f, TS)),
     tsGlobal: files.some((f) => any(f, TS_GLOBAL)),
@@ -167,6 +174,10 @@ export function affectedCrates(
   const byDir = [...crates].sort((a, b) => b.dir.length - a.dir.length);
   const touched = new Set<string>();
   for (const file of files) {
+    if (GENERATED.test(file)) {
+      touched.add("mado-types");
+      continue;
+    }
     const owner = byDir.find((c) => c.dir === "" || file.startsWith(`${c.dir}/`));
     if (owner) touched.add(owner.name);
   }

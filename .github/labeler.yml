@@ -13,6 +13,7 @@
       - any-glob-to-any-file:
           - crates/mado-core/**
           - crates/mado-types/**
+          - crates/mado-types-derive/**
           - crates/mado-storage/**
           - crates/mado-settings/**
 

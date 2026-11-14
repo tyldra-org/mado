@@ -16,8 +16,12 @@ export function findViolations(graph: Graph): string[] {
       if (ADAPTERS.includes(dep) && crate !== "mado-app") {
         violations.push(`${crate} -> ${dep}: only mado-app may depend on an engine adapter`);
       }
-      if (crate === "mado-types") {
-        violations.push(`mado-types -> ${dep}: mado-types depends on no workspace crate`);
+      // mado-types-derive is mado-types' own proc-macro (the Patchable derive).
+      if (crate === "mado-types" && dep !== "mado-types-derive") {
+        violations.push(`mado-types -> ${dep}: mado-types depends only on mado-types-derive`);
+      }
+      if (crate === "mado-types-derive") {
+        violations.push(`mado-types-derive -> ${dep}: the derive depends on no workspace crate`);
       }
       if ((crate === "mado-cli" || crate === "mado-engine") && dep !== "mado-types") {
         violations.push(`${crate} -> ${dep}: ${crate} may depend only on mado-types`);

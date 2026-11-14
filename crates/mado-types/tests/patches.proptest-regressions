@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 42e7ecd05a5c559e72755a9753ae71b381312d670deb71ae2a95d92a711a2591 # shrinks to edits = [NewWindow, NewWindow, NewWindow, SetProgress { tab: 436556373, progress: 0.6591613375130342 }, NewTab { window: 13157719458231272175, title: " " }, Download { bytes: 14720585820875571179 }, Feature { key: 2, on: true }, ProfileName("s /~ "), ProfileName("uq~~c")]
