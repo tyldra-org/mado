@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dev-platform",
+  "description": "The platform test page of development builds (M1-T10). Release builds do not register the command.",
+  "local": true,
+  "webviews": ["dev-platform"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "allow-mado-dev-platform"]
+}

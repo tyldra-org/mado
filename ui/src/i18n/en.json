@@ -1,6 +1,8 @@
 {
   "app.name": "Mado",
   "app.placeholder": "The browser interface arrives in milestone M1.",
+  "error.auth.failed": "Touch ID or your password didn’t work: {reason}.",
+  "error.auth.notAllowed": "Only Mado can ask for Touch ID.",
   "error.coreStopped": "Mado is shutting down. Try again after it restarts.",
   "error.internal": "Something went wrong in Mado. Try again.",
   "error.invoke.notAllowed": "This page can’t talk to Mado.",

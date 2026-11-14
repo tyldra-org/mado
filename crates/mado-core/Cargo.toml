@@ -17,6 +17,7 @@ workspace = true
 
 [dependencies]
 mado-engine = { version = "0.0.0", path = "../mado-engine" }
+mado-platform = { version = "0.0.0", path = "../mado-platform" }
 mado-settings = { version = "0.0.0", path = "../mado-settings" }
 mado-storage = { version = "0.0.0", path = "../mado-storage" }
 mado-types = { version = "0.0.0", path = "../mado-types" }

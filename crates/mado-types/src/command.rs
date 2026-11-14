@@ -199,6 +199,10 @@ pub enum Command {
     /// Returns a report: applied, skipped unknown, skipped protected, invalid.
     #[serde(rename = "settings.import")]
     SettingsImport { path: String },
+    /// Shows Touch ID (or the password) with `reason` and returns
+    /// `{ token }`, valid once for 60 seconds (spec 06 §5).
+    #[serde(rename = "app.authenticate")]
+    AppAuthenticate { reason: String },
     /// The page area of a window in the UI's CSS pixels, reported whenever
     /// it moves or resizes (spec 01 §5.2).
     #[serde(rename = "window.reportContentRect", rename_all = "camelCase")]
@@ -222,6 +226,7 @@ impl Command {
             | Self::SettingsExport { .. }
             | Self::SettingsImport { .. } => CommandFamily::Settings,
             Self::WindowReportContentRect { .. } => CommandFamily::Window,
+            Self::AppAuthenticate { .. } => CommandFamily::App,
         }
     }
 
@@ -238,6 +243,7 @@ impl Command {
             Self::SettingsExport { .. } => "settings.export",
             Self::SettingsImport { .. } => "settings.import",
             Self::WindowReportContentRect { .. } => "window.reportContentRect",
+            Self::AppAuthenticate { .. } => "app.authenticate",
         }
     }
 
