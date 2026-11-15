@@ -3,6 +3,7 @@
 
 mod dl;
 mod marks;
+mod nav;
 mod pages;
 mod session;
 mod visits;
@@ -77,6 +78,8 @@ pub enum Internal {
     VisitRecorded { tab: TabId, visit: i64 },
     /// A bookmark change was written.
     BookmarksChanged,
+    /// Remote search suggestions merged with the local rows (spec 05 §2).
+    RemoteSuggestions { window: WindowId, payload: Value },
     /// The safety check of a completed download (spec 08 §4).
     DownloadVerdict {
         id: mado_types::DownloadId,
@@ -235,6 +238,10 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// The profile's search engines (spec 05 §3).
+    engines: Vec<nav::EngineRow>,
+    /// Searches waiting for their visit, for `search_terms`.
+    pending_search: BTreeMap<TabId, (String, String)>,
     /// The URL and `addressBar.show` mode each tab's `displayUrl` was
     /// computed for (spec 05 §4).
     displayed: BTreeMap<TabId, (String, bool)>,
@@ -338,6 +345,16 @@ impl Core {
                     Vec::new()
                 })
         };
+        let engines = nav::merged_engines(
+            config
+                .profile_db
+                .readers()
+                .read(nav::load_engines)
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "the search engines could not be read");
+                    Vec::new()
+                }),
+        );
         let page_scripts = config.page_scripts;
         let mut core = Self {
             state: State {
@@ -369,6 +386,8 @@ impl Core {
             navs: BTreeMap::new(),
             deleted_bookmarks: BTreeMap::new(),
             displayed: BTreeMap::new(),
+            engines,
+            pending_search: BTreeMap::new(),
             dls: BTreeMap::new(),
             dl_by_engine: BTreeMap::new(),
             page_downloads: BTreeMap::new(),
@@ -728,6 +747,11 @@ impl Core {
             | Command::DownloadRemove { .. }
             | Command::DownloadOpenSource { .. }
             | Command::DownloadClearList) => self.download_command(cmd, rec),
+            cmd @ (Command::NavOpen { .. }
+            | Command::NavSuggest { .. }
+            | Command::NavRemoveSuggestion { .. }
+            | Command::NavSearchEngines
+            | Command::NavSetSearchEngineActive { .. }) => self.nav_command(cmd, rec, reply_to),
             cmd @ (Command::BookmarkTree { .. }
             | Command::BookmarkSearch { .. }
             | Command::BookmarkAdd { .. }
@@ -785,6 +809,7 @@ impl Core {
             Internal::VisitRecorded { tab, visit } => self.visit_recorded(tab, visit),
             Internal::BookmarksChanged => self.bookmarks_changed(rec),
             Internal::DownloadVerdict { id, danger } => self.download_verdict(id, danger, rec),
+            Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::BookmarksDeleted(nodes) => self.bookmarks_deleted(nodes, rec),
             Internal::OpenUrls {
                 urls,

@@ -148,6 +148,31 @@ pub struct LaunchRequest {
     pub source: LaunchSource,
 }
 
+/// Where `nav.open` opens (spec 05 §1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum NavDisposition {
+    CurrentTab,
+    NewForegroundTab,
+    NewBackgroundTab,
+    NewWindow,
+}
+
+/// How the input reached `nav.open` (spec 05 §1); `typed` and
+/// `suggestion` record the visit as typed (spec 12 §2.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum NavSource {
+    Typed,
+    Suggestion,
+    Paste,
+    Bookmark,
+    External,
+    Agent,
+}
+
 /// `settings.reset`: one key, one section, or everything (spec 06 §3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", untagged)]
@@ -505,6 +530,47 @@ pub enum Command {
     /// Returns `{ imported }`, the number of links.
     #[serde(rename = "bookmark.import", rename_all = "camelCase")]
     BookmarkImport { path: String },
+    // Navigation (spec 05).
+    /// Opens what was typed or chosen. Returns `{ tabId }` when a page
+    /// opens, `{ needsEngine: true }` for a search before an engine is
+    /// picked, `{ scope, query }` for `@tabs`, `@bookmarks` and
+    /// `@history`, and `{ result }` for a calculation.
+    #[serde(rename = "nav.open", rename_all = "camelCase")]
+    NavOpen {
+        window_id: WindowId,
+        #[serde(default)]
+        tab_id: Option<TabId>,
+        input: String,
+        disposition: NavDisposition,
+        source: NavSource,
+        /// ⌘Enter: a bare word becomes `www.<word>.com`.
+        #[serde(default)]
+        ctrl_enter: bool,
+    },
+    /// Returns `{ requestId, rows, inline }` from local providers within
+    /// 30 ms. Remote search suggestions follow as the `mado://suggest`
+    /// event. `deleted`: the last keystroke deleted text, so nothing
+    /// completes inline.
+    #[serde(rename = "nav.suggest", rename_all = "camelCase")]
+    NavSuggest {
+        window_id: WindowId,
+        input: String,
+        #[serde(default)]
+        cursor: u32,
+        #[serde(default)]
+        deleted: bool,
+        request_id: u32,
+    },
+    /// Shift+Delete on a history row: hidden from suggestions and deleted
+    /// from history.
+    #[serde(rename = "nav.removeSuggestion", rename_all = "camelCase")]
+    NavRemoveSuggestion { url: String },
+    /// Returns every search engine with `active` and `isDefault`.
+    #[serde(rename = "nav.searchEngines")]
+    NavSearchEngines,
+    /// Turns an engine (an OpenSearch one, say) on or off.
+    #[serde(rename = "nav.setSearchEngineActive", rename_all = "camelCase")]
+    NavSetSearchEngineActive { id: String, active: bool },
     // History (spec 12 §2.3).
     /// Returns `{ days: [{ day, visits }], cursor }`, newest first. `day`
     /// is `YYYY-MM-DD` in the caller's time zone (`utcOffsetMinutes`, as
@@ -647,6 +713,11 @@ impl Command {
             | Self::BookmarkAddAllTabs { .. }
             | Self::BookmarkExport { .. }
             | Self::BookmarkImport { .. } => CommandFamily::Bookmark,
+            Self::NavOpen { .. }
+            | Self::NavSuggest { .. }
+            | Self::NavRemoveSuggestion { .. }
+            | Self::NavSearchEngines
+            | Self::NavSetSearchEngineActive { .. } => CommandFamily::Nav,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
             | Self::HistoryExclude { .. }
@@ -741,6 +812,11 @@ impl Command {
             Self::BookmarkAddAllTabs { .. } => "bookmark.addAllTabs",
             Self::BookmarkExport { .. } => "bookmark.export",
             Self::BookmarkImport { .. } => "bookmark.import",
+            Self::NavOpen { .. } => "nav.open",
+            Self::NavSuggest { .. } => "nav.suggest",
+            Self::NavRemoveSuggestion { .. } => "nav.removeSuggestion",
+            Self::NavSearchEngines => "nav.searchEngines",
+            Self::NavSetSearchEngineActive { .. } => "nav.setSearchEngineActive",
             Self::HistoryQuery { .. } => "history.query",
             Self::HistoryDelete { .. } => "history.delete",
             Self::HistoryExclude { .. } => "history.exclude",
@@ -765,6 +841,8 @@ impl Command {
                 | Self::TabHoverInfo { .. }
                 | Self::SessionRecentlyClosed
                 | Self::HistoryQuery { .. }
+                | Self::NavSuggest { .. }
+                | Self::NavSearchEngines
                 | Self::BookmarkTree { .. }
                 | Self::BookmarkSearch { .. }
                 | Self::BookmarkRecent { .. }
