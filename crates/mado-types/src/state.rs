@@ -429,6 +429,14 @@ pub enum PromptState {
         tabs: Vec<UnsavedTab>,
     },
     Unresponsive(UnresponsivePrompt),
+    /// The page's protected video does not play in WebKit here (spec 05
+    /// §11). Answered with `nav.openExternally`.
+    #[serde(rename_all = "camelCase")]
+    OpenInSafari {
+        id: PromptId,
+        tab_id: TabId,
+        host: String,
+    },
 }
 
 /// A tab whose page stopped answering (spec 02 §5.3). Answered with

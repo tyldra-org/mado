@@ -460,6 +460,72 @@ pub fn drop_popup(tab: TabId) {
     crate::with(|a| a.destroy_tab(tab));
 }
 
+/// Clicks a point of a tab's page, given in CSS pixels from its top left,
+/// as a person would: AppKit mouse events with `modifiers`, delivered to
+/// the view under the point. For end-to-end tests (spec 16 §3); never moves
+/// the pointer.
+pub fn synthesize_click(
+    tab: TabId,
+    x: f64,
+    y: f64,
+    modifiers: mado_engine::tab::Modifiers,
+) -> Result<(), EngineError> {
+    use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+    let view = crate::with(|a| a.tabs.get(&tab).map(|t| t.view.clone()))
+        .flatten()
+        .ok_or_else(|| EngineError::Failed("no view for that tab".into()))?;
+    let window = view
+        .window()
+        .ok_or_else(|| EngineError::Failed("the tab is not in a window".into()))?;
+    let bounds = view.bounds();
+    let local = objc2_foundation::NSPoint::new(
+        x,
+        if view.isFlipped() {
+            y
+        } else {
+            bounds.size.height - y
+        },
+    );
+    let in_window = view.convertPoint_toView(local, None);
+    // SAFETY: walking a live view tree on the main thread.
+    let superview = unsafe { view.superview() };
+    let target = view
+        .hitTest(view.convertPoint_toView(local, superview.as_deref()))
+        .ok_or_else(|| EngineError::Failed("nothing at that point".into()))?;
+    let mut flags = NSEventModifierFlags::empty();
+    for (on, flag) in [
+        (modifiers.command, NSEventModifierFlags::Command),
+        (modifiers.shift, NSEventModifierFlags::Shift),
+        (modifiers.option, NSEventModifierFlags::Option),
+        (modifiers.control, NSEventModifierFlags::Control),
+    ] {
+        if on {
+            flags |= flag;
+        }
+    }
+    let time = objc2_foundation::NSProcessInfo::processInfo().systemUptime();
+    for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
+        let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+            kind,
+            in_window,
+            flags,
+            time,
+            window.windowNumber(),
+            None,
+            0,
+            1,
+            1.0,
+        )
+        .ok_or_else(|| EngineError::Failed("AppKit refused the mouse event".into()))?;
+        if kind == NSEventType::LeftMouseDown {
+            target.mouseDown(&event);
+        } else {
+            target.mouseUp(&event);
+        }
+    }
+    Ok(())
+}
+
 /// A view on the profile's data store, for resuming a download (WebKit
 /// resumes through a web view): a tab's, or one kept outside any window.
 pub fn resume_view() -> Option<Retained<WKWebView>> {

@@ -15,6 +15,8 @@ use crate::{CoreConfig, CoreHandle, Input, UiSink};
 pub struct Sent {
     pub patches: Vec<Patch>,
     pub notices: Vec<Notice>,
+    /// Pages handed to Safari.
+    pub safari: Vec<String>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -33,6 +35,13 @@ impl UiSink for Collect {
             .unwrap_or_else(|e| e.into_inner())
             .notices
             .push(notice.clone());
+    }
+    fn open_in_safari(&mut self, url: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .safari
+            .push(url.to_owned());
     }
 }
 

@@ -2,6 +2,7 @@
 import type { BookmarkSortKey } from "./BookmarkSortKey";
 import type { Bounds } from "./Bounds";
 import type { DownloadId } from "./DownloadId";
+import type { ExternalAnswer } from "./ExternalAnswer";
 import type { GroupColor } from "./GroupColor";
 import type { GroupId } from "./GroupId";
 import type { LaunchRequest } from "./LaunchRequest";
@@ -23,7 +24,7 @@ export type Command = { "type": "state.get" } | { "type": "launch.forward" } & L
 /**
  * ⌘Enter: a bare word becomes `www.<word>.com`.
  */
-ctrlEnter: boolean, } | { "type": "nav.suggest", windowId: WindowId, input: string, cursor: number, deleted: boolean, requestId: number, } | { "type": "nav.removeSuggestion", url: string, } | { "type": "nav.searchEngines" } | { "type": "nav.setSearchEngineActive", id: string, active: boolean, } | { "type": "history.query", text: string | null, host: string | null, from: number | null, to: number | null, limit: number, 
+ctrlEnter: boolean, } | { "type": "nav.suggest", windowId: WindowId, input: string, cursor: number, deleted: boolean, requestId: number, } | { "type": "nav.removeSuggestion", url: string, } | { "type": "nav.openExternally", tabId: TabId, answer: ExternalAnswer, } | { "type": "nav.searchEngines" } | { "type": "nav.setSearchEngineActive", id: string, active: boolean, } | { "type": "history.query", text: string | null, host: string | null, from: number | null, to: number | null, limit: number, 
 /**
  * From the previous page's answer.
  */

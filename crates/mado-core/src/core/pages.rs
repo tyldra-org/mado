@@ -118,10 +118,11 @@ impl Core {
                 }
             }
             PageMessage::DrmFailed(_) => {
-                // The "open in Safari" prompt and site rule come with the
-                // address bar (M2-T06).
-                self.drm_failed.insert(tab);
+                if self.drm_failed.insert(tab) {
+                    self.drm_failed_prompt(tab, rec);
+                }
             }
+            PageMessage::OpenSearch(o) => self.open_search_seen(tab, o.href),
             PageMessage::UnsavedInput(u) => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
                     t.has_unsaved_input = u.dirty;
@@ -199,6 +200,7 @@ impl Core {
 
     /// A new document starts without a heartbeat and with no prompt.
     pub(super) fn new_document(&mut self, tab: TabId, rec: &mut PatchRecorder) {
+        self.clear_safari_prompt(tab, rec);
         self.page_downloads.remove(&tab);
         self.heartbeats.remove(&tab);
         self.responsive(tab, rec);
@@ -208,6 +210,10 @@ impl Core {
 
     pub(super) fn forget_tab(&mut self, tab: TabId) {
         self.page_downloads.remove(&tab);
+        self.popup_opened.remove(&tab);
+        self.error_pages.remove(&tab);
+        self.error_commits.remove(&tab);
+        self.upgrades.remove(&tab);
         self.tab_gone(tab);
         self.heartbeats.remove(&tab);
         self.unresponsive.remove(&tab);

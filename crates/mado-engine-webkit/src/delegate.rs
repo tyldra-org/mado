@@ -337,7 +337,13 @@ fn modifiers(action: &WKNavigationAction) -> Modifiers {
         shift: flags.contains(NSEventModifierFlags::Shift),
         option: flags.contains(NSEventModifierFlags::Option),
         control: flags.contains(NSEventModifierFlags::Control),
-        button: u8::try_from(button.max(0)).unwrap_or(0),
+        // WebKit reports the button as a pressed-buttons mask (1 left,
+        // 2 right, 4 middle), not NSEvent's button number.
+        button: match button {
+            4 => 1,
+            2 => 2,
+            _ => 0,
+        },
     }
 }
 

@@ -413,7 +413,7 @@ fn start_owner(
         endpoint,
         secret,
         on_forward,
-        test_access(&handle),
+        test_access(&handle, app),
     ));
     write_control_entry(owner)?;
 
@@ -449,8 +449,9 @@ fn start_owner(
 /// `hello` with that token may send commands as a control client and the
 /// `test.*` hooks of spec 16 §3. Release builds never compile this.
 #[cfg(feature = "test-hooks")]
-fn test_access(core: &CoreHandle) -> Option<mado_control::TestAccess> {
+fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control::TestAccess> {
     use mado_core::TestHook;
+    let app = app.clone();
     let token = std::env::var("MADO_TEST_TOKEN")
         .ok()
         .filter(|t| t.len() >= 16)?;
@@ -459,7 +460,11 @@ fn test_access(core: &CoreHandle) -> Option<mado_control::TestAccess> {
     let call: mado_control::CallHandler =
         Arc::new(move |method: String, params: serde_json::Value| {
             let core = core.clone();
+            let app = app.clone();
             Box::pin(async move {
+                if method == "test.click" {
+                    return test_click(&app, &params).await;
+                }
                 let hook = match method.as_str() {
                     "test.dropNextPatch" => Some(TestHook::DropNextPatch),
                     "test.fakeAuthSuccess" => Some(TestHook::FakeAuthSuccess),
@@ -499,8 +504,45 @@ fn test_access(core: &CoreHandle) -> Option<mado_control::TestAccess> {
     Some(mado_control::TestAccess { token, call })
 }
 
+/// `test.click { tabId, x, y, command?, shift?, option? }`: a real AppKit
+/// click on a tab's page (spec 16 §3).
+#[cfg(feature = "test-hooks")]
+async fn test_click(
+    app: &tauri::AppHandle,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, mado_types::MadoError> {
+    let bad = |reason: &str| {
+        mado_types::MadoError::new(
+            mado_types::ErrorCode::InvalidInput,
+            "error.control.badCommand",
+        )
+        .arg("reason", reason.to_owned())
+    };
+    let tab: mado_types::TabId =
+        serde_json::from_value(params["tabId"].clone()).map_err(|e| bad(&e.to_string()))?;
+    let x = params["x"].as_f64().ok_or_else(|| bad("x"))?;
+    let y = params["y"].as_f64().ok_or_else(|| bad("y"))?;
+    let flag = |k: &str| params[k].as_bool().unwrap_or(false);
+    let modifiers = mado_engine::tab::Modifiers {
+        command: flag("command"),
+        shift: flag("shift"),
+        option: flag("option"),
+        control: false,
+        button: 0,
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(mado_engine_webkit::synthesize_click(tab, x, y, modifiers));
+    })
+    .map_err(|e| bad(&e.to_string()))?;
+    rx.await
+        .map_err(|_| bad("the main thread dropped the click"))?
+        .map_err(|e| bad(&e.to_string()))?;
+    Ok(serde_json::Value::Null)
+}
+
 #[cfg(not(feature = "test-hooks"))]
-fn test_access(_core: &CoreHandle) -> Option<mado_control::TestAccess> {
+fn test_access(_core: &CoreHandle, _app: &tauri::AppHandle) -> Option<mado_control::TestAccess> {
     None
 }
 

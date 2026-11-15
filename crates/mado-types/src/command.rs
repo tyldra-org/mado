@@ -173,6 +173,19 @@ pub enum NavSource {
     Agent,
 }
 
+/// The answer to "This site needs Safari to play" (spec 05 §11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ExternalAnswer {
+    /// Open this page in Safari.
+    Once,
+    /// Open it, and open this site in Safari from now on.
+    Always,
+    /// Stay in Mado.
+    Dismiss,
+}
+
 /// `settings.reset`: one key, one section, or everything (spec 06 §3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", untagged)]
@@ -565,6 +578,12 @@ pub enum Command {
     /// from history.
     #[serde(rename = "nav.removeSuggestion", rename_all = "camelCase")]
     NavRemoveSuggestion { url: String },
+    /// Answers the `openInSafari` prompt of `tabId`.
+    #[serde(rename = "nav.openExternally", rename_all = "camelCase")]
+    NavOpenExternally {
+        tab_id: TabId,
+        answer: ExternalAnswer,
+    },
     /// Returns every search engine with `active` and `isDefault`.
     #[serde(rename = "nav.searchEngines")]
     NavSearchEngines,
@@ -717,6 +736,7 @@ impl Command {
             | Self::NavSuggest { .. }
             | Self::NavRemoveSuggestion { .. }
             | Self::NavSearchEngines
+            | Self::NavOpenExternally { .. }
             | Self::NavSetSearchEngineActive { .. } => CommandFamily::Nav,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
@@ -816,6 +836,7 @@ impl Command {
             Self::NavSuggest { .. } => "nav.suggest",
             Self::NavRemoveSuggestion { .. } => "nav.removeSuggestion",
             Self::NavSearchEngines => "nav.searchEngines",
+            Self::NavOpenExternally { .. } => "nav.openExternally",
             Self::NavSetSearchEngineActive { .. } => "nav.setSearchEngineActive",
             Self::HistoryQuery { .. } => "history.query",
             Self::HistoryDelete { .. } => "history.delete",

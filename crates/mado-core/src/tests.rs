@@ -1523,3 +1523,216 @@ fn a_captive_portal_turns_the_error_into_sign_in() {
             && state_of(&core).tabs.len() == before + 1
     });
 }
+
+/// 05 §7 on the fake engine: ⌘-click opens a background tab after the
+/// opener, ⌘⇧ a foreground one, ⇧ a new window, ⌥ downloads; the page
+/// stays. A cross-site move without a gesture right after a pop-up is
+/// blocked (tab-under).
+#[test]
+fn link_modifiers_choose_where_a_link_opens() {
+    use mado_engine::NavDecision;
+    use mado_engine::tab::Modifiers;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://a.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://a.example/"
+    });
+    let tabs_in = |w: WindowId| state_of(&core).windows[&w].tab_order.clone();
+    let before = tabs_in(w).len();
+    let click = |url: &str, m: Modifiers| core.page.page_clicks(tab, url, m);
+    click(
+        "https://b.example/",
+        Modifiers {
+            command: true,
+            ..Modifiers::default()
+        },
+    );
+    eventually("a background tab", || tabs_in(w).len() == before + 1);
+    let st = state_of(&core);
+    assert_eq!(st.windows[&w].active_tab_id, Some(tab), "background");
+    let pos = tabs_in(w).iter().position(|t| *t == tab).expect("opener");
+    assert_eq!(
+        st.tabs[&tabs_in(w)[pos + 1]].url,
+        "https://b.example/",
+        "after the opener"
+    );
+    click(
+        "https://c.example/",
+        Modifiers {
+            command: true,
+            shift: true,
+            ..Modifiers::default()
+        },
+    );
+    eventually("a foreground tab", || {
+        let st = state_of(&core);
+        st.windows[&w]
+            .active_tab_id
+            .is_some_and(|a| st.tabs[&a].url == "https://c.example/")
+    });
+    let windows = state_of(&core).windows.len();
+    click(
+        "https://d.example/",
+        Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        },
+    );
+    eventually("a new window", || {
+        state_of(&core).windows.len() == windows + 1
+    });
+    click(
+        "https://e.example/file.zip",
+        Modifiers {
+            option: true,
+            ..Modifiers::default()
+        },
+    );
+    eventually("a download", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .decisions
+            .iter()
+            .any(|(_, u, d)| u == "https://e.example/file.zip" && *d == NavDecision::Download)
+    });
+    assert_eq!(
+        state_of(&core).tabs[&tab].url,
+        "https://a.example/",
+        "the page stays"
+    );
+}
+
+/// 05 §7, tab-under: right after it opens a pop-up, the opener cannot move
+/// to another site without a gesture of its own; its own site is fine.
+#[test]
+fn a_tab_under_after_a_popup_is_blocked() {
+    use mado_engine::tab::{PopupFeatures, PopupRequest};
+    use mado_engine::{NavDecision, Reply};
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://news.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://news.example/"
+    });
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (reply, _expiry) = Reply::new(mado_engine::tab::PopupDecision::Block, move |d| {
+        let _ = tx.send(d);
+    });
+    core.page
+        .send(mado_engine::EngineEvent::NewWindowRequested {
+            tab,
+            request: PopupRequest {
+                opener: tab,
+                tab: mado_types::TabId::new(),
+                url: "https://ads.example/".into(),
+                features: PopupFeatures::default(),
+                user_gesture: true,
+                modifiers: mado_engine::tab::Modifiers::default(),
+            },
+            reply,
+        });
+    let decision = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("a decision");
+    assert_ne!(decision, mado_engine::tab::PopupDecision::Block);
+    core.page
+        .page_navigates(tab, "https://other.example/", false);
+    core.page
+        .page_navigates(tab, "https://news.example/next", false);
+    eventually("the same-site move", || {
+        state_of(&core).tabs[&tab].url == "https://news.example/next"
+    });
+    let decided = core
+        .engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .decisions
+        .clone();
+    assert!(
+        decided
+            .iter()
+            .any(|(_, u, d)| u == "https://other.example/" && *d == NavDecision::Cancel)
+    );
+}
+
+/// 05 §11 and §9: a DRM failure asks to open the page in Safari; "Always"
+/// sends it there and makes the site open in Safari from then on.
+#[test]
+fn a_drm_failure_offers_safari_and_always_remembers_the_site() {
+    use mado_engine::page::{DrmFailed, PageMessage};
+    use mado_types::command::ExternalAnswer;
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://tv.example/watch");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://tv.example/watch"
+    });
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Mado,
+        frame: mado_engine::event::FrameInfo {
+            is_main_frame: true,
+            origin: "https://tv.example".into(),
+            url: "https://tv.example/watch".into(),
+        },
+        message: PageMessage::DrmFailed(DrmFailed { key_system: None }),
+    });
+    eventually("the prompt", || {
+        state_of(&core).prompts.values().any(|p| {
+            matches!(p, PromptState::OpenInSafari { tab_id, host, .. } if *tab_id == tab && host == "tv.example")
+        })
+    });
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::NavOpenExternally {
+            tab_id: tab,
+            answer: ExternalAnswer::Always,
+        },
+    )
+    .expect("answer");
+    assert!(state_of(&core).prompts.is_empty());
+    let safari = || {
+        core.sent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .safari
+            .clone()
+    };
+    assert_eq!(safari(), vec!["https://tv.example/watch".to_owned()]);
+    // From now on the site opens in Safari, Mado's own navigations included.
+    let _ = new_tab(&core, w, "https://www.tv.example/show");
+    eventually("Safari again", || safari().len() == 2);
+}
+
+/// 05 §3: a discovered OpenSearch engine is added turned off.
+#[test]
+fn a_discovered_engine_is_added_inactive() {
+    let core = TestCore::start();
+    core.handle.send(Input::Internal(Internal::EngineDiscovered(
+        mado_navigation::engines::Engine {
+            id: "opensearch:docs.example".into(),
+            name: "Docs".into(),
+            keyword: Some("docs.example".into()),
+            search_url: "https://docs.example/s?q={searchTerms}".into(),
+            suggest_url: None,
+        },
+    )));
+    let engines = ask(&core, Origin::System, Command::NavSearchEngines).expect("engines");
+    let found = engines
+        .as_array()
+        .and_then(|l| {
+            l.iter()
+                .find(|e| e["id"] == "opensearch:docs.example")
+                .cloned()
+        })
+        .expect("the engine");
+    assert_eq!(found["active"], false);
+    assert_eq!(found["source"], "opensearch");
+}

@@ -11,6 +11,8 @@ pub trait UiSink: Send {
     /// Remote search suggestions for one window's address bar, as the
     /// `mado://suggest` event (spec 05 §2).
     fn suggest(&mut self, _window: mado_types::WindowId, _payload: &serde_json::Value) {}
+    /// Opens a web page in Safari (site engine rules, spec 05 §9, §11).
+    fn open_in_safari(&mut self, _url: &str) {}
     /// The core decided to quit (spec 04 §9): the app exits, running the
     /// shutdown that writes the clean-quit marker.
     fn quit(&mut self) {}

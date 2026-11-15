@@ -92,6 +92,15 @@ impl UiSink for TauriUi {
         }
     }
 
+    fn open_in_safari(&mut self, url: &str) {
+        let url = url.to_owned();
+        std::thread::spawn(move || {
+            if let Err(e) = mado_platform::files::open_in_safari(&url) {
+                tracing::warn!(error = %e, "Safari did not open");
+            }
+        });
+    }
+
     fn suggest(&mut self, window: WindowId, payload: &serde_json::Value) {
         let label = format!("ui-{window}");
         if let Err(e) = self
