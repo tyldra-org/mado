@@ -35,8 +35,8 @@ Mado is an open-source web browser for macOS, written in Rust. It works like Chr
 
 ## Platforms
 
-| Platform                        | Engine             | Minimum    |
-| ------------------------------- | ------------------ | ---------- |
+| Platform              | Engine             | Minimum    |
+| --------------------- | ------------------ | ---------- |
 | macOS (Apple silicon) | WebKit (WKWebView) | macOS 15.4 |
 
 ## How it works
@@ -49,20 +49,20 @@ A Rust core owns every piece of browser state: tabs, history, settings, password
 | ------------------------- | ------- | ----------------------------------------------------------- |
 | M0 Prototype              |         | Answers open engine questions on real WebKit (macOS)        |
 | M1 Foundation             |         | Core, storage, settings, app shell, release pipeline        |
-| M2 Browsing core          | v0.1    | A browser you can use every day                             |
-| M3 Extensions and blocker | v0.2    | Chrome Web Store extensions and the built-in blocker        |
-| M4 Passwords              | v0.3    | Mado Passwords, autofill, passkeys, 1Password and Bitwarden |
-| M5 AI and control         | v0.4    | Chat, agents, CLI, MCP                                      |
-| M6 Design pass            | v0.5    | The final look across every screen                          |
+| M2 Browsing core          |         | A browser you can use every day                             |
+| M3 Extensions and blocker |         | Chrome Web Store extensions and the built-in blocker        |
+| M4 Passwords              |         | Mado Passwords, autofill, passkeys, 1Password and Bitwarden |
+| M5 AI and control         |         | Chat, agents, CLI, MCP                                      |
+| M6 Design pass            | v0.5    | The final look across every screen, and the first release   |
 | M7 1.0                    | v1.0    | Performance, accessibility and distribution on macOS        |
 
-No milestone is complete yet. Until the design pass in M6, screens are plain functional placeholders.
+M0, M1 and M2 are done. Until the design pass in M6, screens are plain functional placeholders, so there is no release before it.
 
 ## FAQ
 
 ### Can I download Mado yet?
 
-Not yet. Mado is pre-alpha, and v0.1 is the first build meant for everyday browsing (see [Roadmap](#roadmap)). Watch this repository's releases to hear when it is out.
+Not yet. Mado is pre-alpha, and the first release comes with the design pass in M6 (see [Roadmap](#roadmap)). Watch this repository's releases to hear when it is out.
 
 ### Which browser engine does Mado use?
 
