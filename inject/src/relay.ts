@@ -1,5 +1,5 @@
 // Carries requests from the page-world shims (`notifications`,
-// `geolocation`, `protocol-handlers`) to the core, and answers back, as DOM
+// `geolocation`, `protocol-handlers`, `apple-pay`) to the core, and answers back, as DOM
 // events. A page can send the same events itself; they only ask for what
 // the page could ask for through the real API. Mado world, document start,
 // main frame.
@@ -14,6 +14,7 @@ const SCRIPTS: Record<string, string> = {
   geolocationWatch: "geolocation",
   geolocationClear: "geolocation",
   protocolHandlerRegister: "protocol-handlers",
+  applePayProbe: "apple-pay",
 };
 
 document.addEventListener("mado:request", (e) => {

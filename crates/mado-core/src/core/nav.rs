@@ -372,7 +372,12 @@ impl Core {
     }
 
     /// A DRM failure shows "This site needs Safari to play", once per page.
-    pub(super) fn drm_failed_prompt(&mut self, tab: TabId, rec: &mut PatchRecorder) {
+    pub(super) fn safari_prompt(
+        &mut self,
+        tab: TabId,
+        reason: mado_types::state::SafariReason,
+        rec: &mut PatchRecorder,
+    ) {
         let Some(url) = self.model.tabs.get(&tab).map(|t| t.url.clone()) else {
             return;
         };
@@ -391,6 +396,7 @@ impl Core {
                 id,
                 tab_id: tab,
                 host,
+                reason,
             },
         );
         self.state.tx(rec).set_prompts(prompts);

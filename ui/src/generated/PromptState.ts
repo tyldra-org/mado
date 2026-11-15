@@ -2,6 +2,7 @@
 import type { ClientIdentity } from "./ClientIdentity";
 import type { DialogKind } from "./DialogKind";
 import type { PromptId } from "./PromptId";
+import type { SafariReason } from "./SafariReason";
 import type { TabId } from "./TabId";
 import type { UnresponsivePrompt } from "./UnresponsivePrompt";
 import type { UnsavedTab } from "./UnsavedTab";
@@ -21,4 +22,4 @@ windowId: WindowId | null, tabs: Array<UnsavedTab>, } | { "type": "unresponsive"
 /**
  * A `data:image/png` URL of the app's icon.
  */
-appIcon: string | null, createdAt: number, armedAt: number, } | { "type": "protocolHandler", id: PromptId, tabId: TabId, origin: string, scheme: string, createdAt: number, armedAt: number, } | { "type": "dialog", id: PromptId, tabId: TabId, origin: string, kind: DialogKind, message: string, defaultText: string | null, offerSuppress: boolean, } | { "type": "auth", id: PromptId, tabId: TabId, host: string, port: number, realm: string | null, isProxy: boolean, } | { "type": "clientCert", id: PromptId, tabId: TabId, host: string, identities: Array<ClientIdentity>, } | { "type": "insecureForm", id: PromptId, tabId: TabId, url: string, } | { "type": "openInSafari", id: PromptId, tabId: TabId, host: string, };
+appIcon: string | null, createdAt: number, armedAt: number, } | { "type": "protocolHandler", id: PromptId, tabId: TabId, origin: string, scheme: string, createdAt: number, armedAt: number, } | { "type": "dialog", id: PromptId, tabId: TabId, origin: string, kind: DialogKind, message: string, defaultText: string | null, offerSuppress: boolean, } | { "type": "auth", id: PromptId, tabId: TabId, host: string, port: number, realm: string | null, isProxy: boolean, } | { "type": "clientCert", id: PromptId, tabId: TabId, host: string, identities: Array<ClientIdentity>, } | { "type": "insecureForm", id: PromptId, tabId: TabId, url: string, } | { "type": "openInSafari", id: PromptId, tabId: TabId, host: string, reason: SafariReason, };

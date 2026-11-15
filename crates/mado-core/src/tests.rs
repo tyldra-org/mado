@@ -2451,3 +2451,32 @@ fn context_menu_items_open_and_copy() {
         ]
     );
 }
+
+/// 07 §9: a checkout asking for Apple Pay gets the Safari offer, once.
+#[test]
+fn an_apple_pay_checkout_is_offered_safari() {
+    use mado_engine::page::{ApplePayProbe, PageMessage};
+    use mado_types::state::{PromptState, SafariReason};
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://shop.example/checkout");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://shop.example/checkout"
+    });
+    for _ in 0..2 {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Page,
+            frame: frame(true, "https://shop.example"),
+            message: PageMessage::ApplePayProbe(ApplePayProbe {}),
+        });
+    }
+    eventually("the offer", || {
+        state_of(&core).prompts.values().any(|p| {
+            matches!(p, PromptState::OpenInSafari { reason: SafariReason::ApplePay, host, .. } if host == "shop.example")
+        })
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(state_of(&core).prompts.len(), 1, "offered once");
+}

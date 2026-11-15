@@ -26,7 +26,12 @@
 
 {#if prompt}
   <div role="alertdialog" aria-labelledby="safari-title">
-    <h2 id="safari-title">{t("prompt.openInSafari.title", { host: prompt.host })}</h2>
+    <h2 id="safari-title">
+      {t(
+        prompt.reason === "applePay" ? "prompt.openInSafari.applePay" : "prompt.openInSafari.title",
+        { host: prompt.host },
+      )}
+    </h2>
     <button type="button" onclick={() => answer("once")}>{t("prompt.openInSafari.open")}</button>
     <button type="button" onclick={() => answer("always")}>{t("prompt.openInSafari.always")}</button
     >

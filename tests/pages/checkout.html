@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checkout</title>
+  </head>
+  <body>
+    <!-- 07 §9: a checkout asks whether Apple Pay works. -->
+    <script>
+      const can = window.ApplePaySession ? ApplePaySession.canMakePayments() : "absent";
+      document.title = "Checkout: " + String(can);
+    </script>
+  </body>
+</html>
