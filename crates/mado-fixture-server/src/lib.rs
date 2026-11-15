@@ -270,7 +270,11 @@ async fn handle(State(pages): State<Pages>, request: Request) -> Response {
         let failing = futures_util::stream::once(async {
             Err::<axum::body::Bytes, std::io::Error>(std::io::Error::other("reset by the fixture"))
         });
-        return ([(header::CONTENT_TYPE, "text/html")], Body::from_stream(failing)).into_response();
+        return (
+            [(header::CONTENT_TYPE, "text/html")],
+            Body::from_stream(failing),
+        )
+            .into_response();
     }
     // Redirects to itself forever.
     if path == "/__loop" {

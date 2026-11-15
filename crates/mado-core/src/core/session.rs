@@ -1401,8 +1401,14 @@ impl Core {
                 ..
             } => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
-                    t.security.level = security_of(&url, None);
-                    t.url = url;
+                    // An error page's simulated load can report no URL or
+                    // about:blank: the tab keeps the URL that failed.
+                    if !self.error_pages.contains_key(&tab)
+                        || !matches!(url.as_str(), "" | "about:blank")
+                    {
+                        t.security.level = security_of(&url, None);
+                        t.url = url;
+                    }
                     if !is_same_document {
                         t.has_unsaved_input = false;
                     }
@@ -1436,7 +1442,10 @@ impl Core {
                 }
                 self.title_changed(tab);
             }
-            EngineEvent::UrlChanged { tab, url } => {
+            EngineEvent::UrlChanged { tab, url }
+                if !(url.is_empty()
+                    || (url == "about:blank" && self.error_pages.contains_key(&tab))) =>
+            {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
                     t.url = url;
                 }

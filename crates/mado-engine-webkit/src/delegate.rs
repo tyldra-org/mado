@@ -1080,9 +1080,14 @@ fn observed(tab: TabId, key: &str, view: &WKWebView) {
                 tab,
                 title: view.title().map(|t| t.to_string()).unwrap_or_default(),
             },
-            "URL" => EngineEvent::UrlChanged {
-                tab,
-                url: convert::url_string(view.URL()),
+            // WebKit clears URL for a moment between loads (a failed load
+            // replaced by its error page): a page never has no URL.
+            "URL" => match view.URL() {
+                Some(url) => EngineEvent::UrlChanged {
+                    tab,
+                    url: convert::url_string(Some(url)),
+                },
+                None => return,
             },
             "estimatedProgress" => EngineEvent::ProgressChanged {
                 tab,

@@ -712,7 +712,10 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 // loadHTMLString would show about:blank.
                 if let Some(u) = objc2_foundation::NSURL::URLWithString(&NSString::from_str(&url)) {
                     let request = objc2_foundation::NSURLRequest::requestWithURL(&u);
-                    view.loadSimulatedRequest_responseHTMLString(&request, &NSString::from_str(&html));
+                    view.loadSimulatedRequest_responseHTMLString(
+                        &request,
+                        &NSString::from_str(&html),
+                    );
                 }
             }
             TabCommand::ShowSource => {
