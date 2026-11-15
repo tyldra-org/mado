@@ -2397,3 +2397,57 @@ fn sign_in_certificates_and_insecure_forms_ask() {
         NavDecision::Allow
     );
 }
+
+/// 07 §8: the context menu items the core runs.
+#[test]
+fn context_menu_items_open_and_copy() {
+    use mado_engine::event::{ContextAction, ContextData};
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://news.example/story");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://news.example/story"
+    });
+    let context = ContextData {
+        page_url: "https://news.example/story".into(),
+        link_url: Some("https://other.example/a?utm_source=x&id=1".into()),
+        link_text: Some("Other [site]".into()),
+        selection: Some("big news".into()),
+        ..ContextData::default()
+    };
+    let choose = |action| {
+        core.page.send(mado_engine::EngineEvent::ContextMenuChosen {
+            tab,
+            context: context.clone(),
+            action,
+        });
+    };
+    choose(ContextAction::OpenLinkInNewTab);
+    eventually("a background tab", || {
+        let st = state_of(&core);
+        st.tabs
+            .values()
+            .any(|t| t.url == "https://other.example/a?utm_source=x&id=1")
+            && st.windows[&w].active_tab_id == Some(tab)
+    });
+    choose(ContextAction::CopyCleanLink);
+    choose(ContextAction::CopyLinkAsMarkdown);
+    choose(ContextAction::CopyLinkToHighlight);
+    let copied = || {
+        core.sent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .copied
+            .clone()
+    };
+    eventually("three copies", || copied().len() == 3);
+    assert_eq!(
+        copied(),
+        vec![
+            "https://other.example/a?id=1".to_owned(),
+            "[Other site](https://other.example/a?utm_source=x&id=1)".to_owned(),
+            "https://news.example/story#:~:text=big%20news".to_owned(),
+        ]
+    );
+}

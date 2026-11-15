@@ -104,6 +104,7 @@ impl Adapter {
             unsafe { WKWebsiteDataStore::dataStoreForIdentifier(&uuid, mtm) }
         };
         delegate::set_context(config.events, config.runner);
+        crate::menu::set_labels(config.labels);
         HOST.with_borrow_mut(|h| *h = Some(config.host));
         Self {
             mtm,
@@ -296,10 +297,7 @@ impl Adapter {
         let frame = spec
             .frame
             .map_or_else(|| content.bounds(), |r| convert::frame_in(&content, r));
-        // SAFETY: a new web view with the configuration above.
-        let view = unsafe {
-            WKWebView::initWithFrame_configuration(WKWebView::alloc(self.mtm), frame, &config)
-        };
+        let view = crate::menu::MadoWebView::create(self.mtm, spec.tab, frame, &config);
         // SAFETY: plain view setup on the main thread.
         unsafe {
             view.setHidden(!spec.visible);
@@ -319,6 +317,7 @@ impl Adapter {
     }
 
     pub fn destroy_tab(&mut self, tab: TabId) {
+        crate::menu::forget(tab);
         let Some(t) = self.tabs.remove(&tab) else {
             return;
         };
@@ -441,13 +440,7 @@ pub fn create_popup(
             javascript,
         );
         // SAFETY: a new view with WebKit's configuration, as it requires.
-        let view = unsafe {
-            WKWebView::initWithFrame_configuration(
-                WKWebView::alloc(a.mtm),
-                content.bounds(),
-                config,
-            )
-        };
+        let view = crate::menu::MadoWebView::create(a.mtm, tab, content.bounds(), config);
         view.setHidden(true);
         insert(&content, &view);
         a.attach(tab, window, view.clone(), delegate, controller);

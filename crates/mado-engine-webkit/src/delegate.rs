@@ -992,6 +992,9 @@ define_class!(
                 }
             });
             if let Some(message) = checked {
+                if let mado_engine::page::PageMessage::ContextTarget(c) = &message {
+                    crate::menu::remember_target(tab, c);
+                }
                 send(EngineEvent::PageMessage {
                     tab,
                     world: World::Mado,

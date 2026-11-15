@@ -432,11 +432,12 @@ pub enum EngineEvent {
         id: EngineDownloadId,
         result: Result<PathBuf, DownloadError>,
     },
-    /// Default: `None` (the menu closes with nothing chosen).
-    ContextMenu {
+    /// The user chose a context menu item the core runs (spec 07 §8);
+    /// the adapter runs the rest itself.
+    ContextMenuChosen {
         tab: TabId,
         context: ContextData,
-        reply: Reply<Option<ContextAction>>,
+        action: ContextAction,
     },
     /// A message the adapter validated with `page::validate` against the
     /// tab's current nonce (spec 02 §5.2); the frame comes from the engine.
@@ -500,7 +501,7 @@ impl EngineEvent {
             Self::DownloadStarted { .. } => "downloadStarted",
             Self::DownloadProgress { .. } => "downloadProgress",
             Self::DownloadFinished { .. } => "downloadFinished",
-            Self::ContextMenu { .. } => "contextMenu",
+            Self::ContextMenuChosen { .. } => "contextMenuChosen",
             Self::PageMessage { .. } => "pageMessage",
             Self::ProcessGone { .. } => "processGone",
             Self::Unresponsive { .. } => "unresponsive",

@@ -154,6 +154,10 @@ pub fn install_webkit(
             runner,
             resolver,
             inspectable,
+            labels: {
+                let strings = mado_settings::Strings::english();
+                std::sync::Arc::new(move |key: &str| strings.get(key).to_owned())
+            },
         },
     );
     Ok(())

@@ -14,6 +14,7 @@
 mod convert;
 mod delegate;
 mod download;
+mod menu;
 mod scheme;
 mod timeouts;
 mod view;
@@ -32,6 +33,7 @@ use objc2::rc::Retained;
 use objc2_app_kit::NSView;
 
 pub use convert::{has_geolocation_delegate, safari_version};
+pub use menu::Labels;
 pub use scheme::{Resolved, SchemeResolver};
 pub use view::{TabView, TabViewInfo, synthesize_click};
 
@@ -66,6 +68,8 @@ pub struct Config {
     pub resolver: SchemeResolver,
     /// `developer.inspectPages`.
     pub inspectable: bool,
+    /// `en.json` labels for the context menu.
+    pub labels: menu::Labels,
 }
 
 impl std::fmt::Debug for Config {
