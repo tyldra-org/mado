@@ -86,6 +86,14 @@ run("downloads", () => {
     expect(stopped?.state).toBe("failed");
     expect(stopped?.error).toBe("interrupted");
     await mado.control.call("download.resume", { downloadId: stopped?.id });
+    // An http download is held as insecure once written (08 §4): Keep it.
+    await until(
+      "the held file",
+      async () =>
+        (await downloads()).find((d) => d.filename === "big.bin" && d.state === "blocked"),
+      40_000,
+    );
+    await mado.control.call("download.keep", { downloadId: stopped?.id });
     await until(
       "the finished file",
       async () =>

@@ -136,5 +136,5 @@ pub fn download(
     id: mado_engine::event::EngineDownloadId,
     cmd: mado_engine::event::DownloadCommand,
 ) {
-    download::command(id, cmd, view::any_view());
+    download::command(id, cmd, view::resume_view());
 }

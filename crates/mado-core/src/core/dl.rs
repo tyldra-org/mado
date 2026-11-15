@@ -111,13 +111,18 @@ pub fn load(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<(DownloadState,
                 },
                 started_at: r.get(11)?,
             },
-            Dl {
-                temp: path,
-                url: r.get(1)?,
-                tab_url: r.get(2)?,
-                mime: r.get(4)?,
-                resume,
-                ..Dl::default()
+            {
+                let url: String = r.get(1)?;
+                let tab_url: Option<String> = r.get(2)?;
+                Dl {
+                    temp: path,
+                    insecure: rules::insecure(&url, tab_url.as_deref()),
+                    url,
+                    tab_url,
+                    mime: r.get(4)?,
+                    resume,
+                    ..Dl::default()
+                }
             },
         ))
     })?;

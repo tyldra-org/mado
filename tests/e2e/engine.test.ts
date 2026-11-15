@@ -214,25 +214,38 @@ run("WebKit adapter", () => {
     expect(all).toContain("http://pages.mado.test/history/login.html");
   }, 30_000);
 
-  test("a .dmg from a new site waits for Keep, then has the quarantine mark (08 §12 check 3)", async () => {
+  // The fixture server is http here (the app does not trust its test CA), so
+  // the .dmg is held as an insecure download rather than a dangerous type;
+  // both wait for Keep (08 §4). The dangerous-type rule is a core test.
+  test("an http .dmg waits for Keep, then has the quarantine mark (08 §12 check 3)", async () => {
     const folder = await mkdtemp(join(tmpdir(), "mado-dl-"));
     await mado.control.call("settings.set", { key: "downloads.folder", value: folder });
     await open("http://dl.mado.test/__download?name=Setup.dmg&bytes=2048");
-    type D = { id: string; state: string; filename: string };
+    type D = {
+      id: string;
+      state: string;
+      filename: string;
+      danger: string | null;
+      received: number;
+    };
     const downloads = async () =>
       Object.values(
         (await mado.control.call<{ state: { downloads: Record<string, D> } }>("state.get")).state
           .downloads,
       );
     const held = await until("the held download", async () =>
-      (await downloads()).find((d) => d.filename === "Setup.dmg" && d.state === "dangerous"),
+      (await downloads()).find((d) => d.filename === "Setup.dmg" && d.state === "blocked"),
     );
+    expect(held).toMatchObject({ danger: "insecure", received: 2048 });
     await mado.control.call("download.keep", { downloadId: held.id });
+    await until("the kept download", async () =>
+      (await downloads()).find((d) => d.id === held.id && d.state === "complete"),
+    );
     const file = join(folder, "Setup.dmg");
     expect((await readFile(file)).length).toBe(2048);
     const xattr = spawn(["/usr/bin/xattr", "-p", "com.apple.quarantine", file], { stdout: "pipe" });
     expect(await new Response(xattr.stdout).text()).toStartWith("0081;");
-  });
+  }, 30_000);
 
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");

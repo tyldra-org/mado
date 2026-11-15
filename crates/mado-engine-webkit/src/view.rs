@@ -59,6 +59,9 @@ pub struct Adapter {
     scheme: Retained<SchemeHandler>,
     inspectable: bool,
     tabs: BTreeMap<TabId, Tab>,
+    /// A view outside any window, for resuming downloads when no tab has a
+    /// view (after a relaunch, every tab may be asleep or Mado-rendered).
+    resumer: Option<Retained<WKWebView>>,
 }
 
 impl std::fmt::Debug for Adapter {
@@ -109,6 +112,7 @@ impl Adapter {
             scheme: SchemeHandler::new(mtm, config.resolver),
             inspectable: config.inspectable,
             tabs: BTreeMap::new(),
+            resumer: None,
         }
     }
 
@@ -456,10 +460,29 @@ pub fn drop_popup(tab: TabId) {
     crate::with(|a| a.destroy_tab(tab));
 }
 
-/// Any live tab view, for resuming a download (WebKit resumes through a
-/// web view).
-pub fn any_view() -> Option<Retained<WKWebView>> {
-    crate::with(|a| a.tabs.values().next().map(|t| t.view.clone())).flatten()
+/// A view on the profile's data store, for resuming a download (WebKit
+/// resumes through a web view): a tab's, or one kept outside any window.
+pub fn resume_view() -> Option<Retained<WKWebView>> {
+    crate::with(|a| {
+        if let Some(t) = a.tabs.values().next() {
+            return t.view.clone();
+        }
+        a.resumer
+            .get_or_insert_with(|| {
+                // SAFETY: a plain configuration on the main thread, with the
+                // profile's store (and so its proxy and cookies).
+                unsafe {
+                    let config = WKWebViewConfiguration::new(a.mtm);
+                    config.setWebsiteDataStore(&a.store);
+                    WKWebView::initWithFrame_configuration(
+                        WKWebView::alloc(a.mtm),
+                        objc2_foundation::NSRect::ZERO,
+                        &config,
+                    )
+                }
+            })
+            .clone()
+    })
 }
 
 fn failed(e: Option<&NSError>) -> EngineError {
