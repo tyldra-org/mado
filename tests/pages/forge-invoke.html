@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Forge pending</title>
+<script>
+  // A web page tries the internal pages' channel (01 §4.4): it must get no
+  // answer, and the core must not run the command.
+  document.addEventListener("mado:invoke-reply", () => { document.title = "Forge: replied"; });
+  const command = {
+    type: "nav.open", windowId: "01a1d7aa-0000-7000-8000-000000000001", tabId: null,
+    input: "http://pwned.mado.test/", disposition: "currentTab", source: "typed", ctrlEnter: false,
+  };
+  document.dispatchEvent(new CustomEvent("mado:invoke", { detail: JSON.stringify({ id: 1, command }) }));
+  setTimeout(() => { if (document.title === "Forge pending") document.title = "Forge: no reply"; }, 1500);
+</script>

@@ -170,6 +170,7 @@ fn origin_name(origin: &Origin) -> String {
         Origin::Settings => "settings".into(),
         Origin::Control { client } => format!("control:{client}"),
         Origin::Agent { task } => format!("agent:{task}"),
+        Origin::InternalPage { tab, .. } => format!("internalPage:{tab}"),
         Origin::System => "system".into(),
     }
 }

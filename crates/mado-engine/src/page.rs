@@ -144,16 +144,22 @@ empty_payloads!(
     WebauthnCreate,
     WebauthnGet,
     NotificationRequest,
-    ReaderProbe,
-    ReaderContent,
     CosmeticClasses,
     PickerResult,
     StoreInstall,
     AiSnapshot,
     AiText,
     AiActionResult,
-    Invoke,
 );
+
+/// `internal`: a `mado://` page sends a command (spec 01 §4.4). The core
+/// checks the sending frame and the page's allow-list before parsing it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Invoke {
+    pub id: u64,
+    pub command: Value,
+}
 
 /// `forms`: whether editable fields hold typed text (spec 04 §7, §9).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -307,8 +313,6 @@ messages! {
     MediaState(MediaState) = "mediaState" from ["media"],
     DrmFailed(DrmFailed) = "drmFailed" from ["media"],
     FindResult(FindResult) = "findResult" from ["find"],
-    ReaderProbe(ReaderProbe) = "readerProbe" from ["reader"],
-    ReaderContent(ReaderContent) = "readerContent" from ["reader"],
     CosmeticClasses(CosmeticClasses) = "cosmeticClasses" from ["cosmetic"],
     PickerResult(PickerResult) = "pickerResult" from ["cosmetic"],
     HoverLink(HoverLink) = "hoverLink" from ["status"],
@@ -368,6 +372,7 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::ProtocolHandlerRegister(r) => r.scheme.len() <= 64 && r.url.len() <= 2048,
         PageMessage::DrmFailed(d) => d.key_system.as_deref().is_none_or(|k| k.len() <= 128),
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
+        PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
         _ => true,
     }
 }
@@ -436,6 +441,10 @@ pub fn reader_extract() -> String {
     format!("// reader-extract\n{READER}\n{READER_RESULT}")
 }
 
+const INTERNAL: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/internal.js"
+));
 const GPC: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/gpc.js"
@@ -471,6 +480,7 @@ pub fn bundled(geolocation_shim: bool) -> crate::PageScriptSet {
         s("media", Mado, DocumentStart, false, MEDIA),
         s("forms", Mado, DocumentEnd, false, FORMS),
         s("relay", Mado, DocumentStart, true, RELAY),
+        s("internal", Mado, DocumentStart, true, INTERNAL),
         s("notifications", Page, DocumentStart, true, NOTIFICATIONS),
         s(
             "protocol-handlers",
@@ -667,6 +677,7 @@ mod tests {
                 "media",
                 "forms",
                 "relay",
+                "internal",
                 "notifications",
                 "protocol-handlers",
                 "apple-pay"

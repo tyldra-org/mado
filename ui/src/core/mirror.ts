@@ -17,9 +17,14 @@ export class Mirror {
   /** How many times the copy was fetched whole; spec 01 §6 check 6 counts it. */
   fetches = 0;
 
+  /**
+   * `skipsRevisions`: an internal page receives only the patches that touch
+   * the fields it reads, so a later revision is not a gap.
+   */
   constructor(
     private readonly fetchState: FetchState,
     private readonly onChange: (state: State) => void,
+    private readonly skipsRevisions = false,
   ) {}
 
   /** Fetches the document; call once at start and after a UI reload. */
@@ -47,7 +52,7 @@ export class Mirror {
       return;
     }
     if (patch.rev <= this.rev) return;
-    if (patch.rev !== this.rev + 1) {
+    if (patch.rev !== this.rev + 1 && !this.skipsRevisions) {
       this.#queued.push(patch);
       void this.sync();
       return;

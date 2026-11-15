@@ -1,4 +1,5 @@
-// Writes app/resources/credits.json: every bundled Rust crate, JavaScript
+// Writes ui/public/credits.json, which the UI build copies into the bundle
+// for mado://credits (spec 01 §4.4): every bundled Rust crate, JavaScript
 // package and data file with its licence, for mado://credits (spec 15 §8).
 // Fails when a licence is not on the allow-list in about.toml.
 //
@@ -124,10 +125,7 @@ if (import.meta.main) {
   const credits = [...(await rust()), ...(await javascript(ok)), ...VENDORED, ...DATA].sort(
     (a, b) => a.name.localeCompare(b.name),
   );
-  await mkdir(join(root, "app/resources"), { recursive: true });
-  await writeFile(
-    join(root, "app/resources/credits.json"),
-    `${JSON.stringify(credits, null, 2)}\n`,
-  );
+  await mkdir(join(root, "ui/public"), { recursive: true });
+  await writeFile(join(root, "ui/public/credits.json"), `${JSON.stringify(credits, null, 2)}\n`);
   console.log(`credits: ${credits.length} packages`);
 }

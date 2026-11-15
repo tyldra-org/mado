@@ -28,6 +28,20 @@ describe("Mirror", () => {
     expect(mirror.fetches).toBe(1);
   });
 
+  test("an internal page's mirror takes a later revision without fetching (01 §4.4)", async () => {
+    const mirror = new Mirror(
+      async () => ({ rev: 1, state: doc(1, "a") }),
+      () => {},
+      true,
+    );
+    await mirror.sync();
+    mirror.receive(rename(7, "g"));
+    mirror.receive(rename(5, "older"));
+    expect(mirror.state?.profile.name).toBe("g");
+    expect(mirror.rev).toBe(7);
+    expect(mirror.fetches).toBe(1);
+  });
+
   test("one dropped patch causes exactly one state.get (spec 01 §6 check 6)", async () => {
     let core = doc(1, "a");
     const mirror = new Mirror(

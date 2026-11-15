@@ -3107,6 +3107,173 @@ fn an_import_without_full_disk_access_says_so() {
     );
 }
 
+/// 01 §4.4: a `mado://` page's main frame may send what its allow-list
+/// names and gets the answer; anything else, or the same message from a
+/// web page or a subframe, is refused. Pages that read state get only
+/// their fields, in `state.get` and in patches.
+#[test]
+fn internal_pages_invoke_through_their_allow_lists() {
+    use mado_engine::event::FrameInfo;
+    use mado_engine::page::{Invoke, PageMessage};
+    use mado_types::state::{UpdateState, UpdateStatus};
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "mado://history");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "mado://history"
+    });
+    let posted = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .filter(|(t, _)| *t == tab)
+            .map(|(_, m)| m.clone())
+            .collect::<Vec<_>>()
+    };
+    let send = |url: &str, main: bool, id: u64, command: Value| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame: FrameInfo {
+                is_main_frame: main,
+                origin: url.split('/').take(3).collect::<Vec<_>>().join("/"),
+                url: url.into(),
+            },
+            message: PageMessage::Invoke(Invoke { id, command }),
+        });
+    };
+    let reply = |id: u64| {
+        eventually("a reply", || {
+            posted()
+                .iter()
+                .any(|m| m["type"] == "invokeReply" && m["id"] == id)
+        });
+        posted()
+            .into_iter()
+            .find(|m| m["type"] == "invokeReply" && m["id"] == id)
+            .expect("reply")
+    };
+    send(
+        "mado://history",
+        true,
+        1,
+        json!({ "type": "history.query", "text": null, "host": null, "from": null, "to": null, "limit": 10, "cursor": null, "utcOffsetMinutes": 0 }),
+    );
+    let r = reply(1);
+    assert_eq!(r["ok"], true, "{r}");
+    send(
+        "mado://history",
+        true,
+        2,
+        json!({ "type": "settings.set", "key": "privacy.gpc", "value": false, "token": null }),
+    );
+    let r = reply(2);
+    assert_eq!(
+        (r["ok"].clone(), r["error"]["code"].clone()),
+        (json!(false), json!("protected")),
+        "{r}"
+    );
+    // The same from a web page or a subframe gets no answer at all.
+    send(
+        "https://evil.example/",
+        true,
+        3,
+        json!({ "type": "history.query" }),
+    );
+    send(
+        "mado://history",
+        false,
+        4,
+        json!({ "type": "history.query" }),
+    );
+    send("mado://history", true, 5, json!({ "type": "state.get" }));
+    let r = reply(5);
+    assert_eq!(
+        r["value"]["state"],
+        json!({}),
+        "the history page reads no state: {r}"
+    );
+    assert_eq!(r["value"]["tabId"], json!(tab));
+    // nav.open acts from the page's own tab, whatever it names.
+    send(
+        "mado://history",
+        true,
+        6,
+        json!({ "type": "nav.open", "windowId": "01a1d7aa-0000-7000-8000-00000000dead", "tabId": null, "input": "https://example.org/", "disposition": "currentTab", "source": "typed", "ctrlEnter": false }),
+    );
+    assert_eq!(reply(6)["ok"], true);
+    eventually("navigated", || {
+        state_of(&core).tabs[&tab].url == "https://example.org/"
+    });
+    assert!(!posted().iter().any(|m| m["id"] == 3 || m["id"] == 4));
+    // The About page: state.get has only `update`, and patches follow it.
+    let about = new_tab(&core, w, "mado://about");
+    eventually("loaded", || {
+        state_of(&core).tabs[&about].url == "mado://about"
+    });
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab: about,
+        world: mado_engine::tab::World::Mado,
+        frame: FrameInfo {
+            is_main_frame: true,
+            origin: "mado://about".into(),
+            url: "mado://about".into(),
+        },
+        message: PageMessage::Invoke(Invoke {
+            id: 9,
+            command: json!({ "type": "state.get" }),
+        }),
+    });
+    let about_posted = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .filter(|(t, _)| *t == about)
+            .map(|(_, m)| m.clone())
+            .collect::<Vec<_>>()
+    };
+    eventually("the snapshot", || {
+        about_posted().iter().any(|m| m["id"] == 9)
+    });
+    let snap = about_posted()
+        .into_iter()
+        .find(|m| m["id"] == 9)
+        .expect("snapshot");
+    let keys: Vec<String> = snap["value"]["state"]
+        .as_object()
+        .expect("state")
+        .keys()
+        .cloned()
+        .collect();
+    assert_eq!(keys, ["update"]);
+    core.handle
+        .send(Input::Internal(Internal::UpdateStatus(UpdateState {
+            status: UpdateStatus::Ready,
+            version: Some("0.1.0".into()),
+            security: false,
+        })));
+    eventually("a filtered patch", || {
+        about_posted().iter().any(|m| {
+            m["type"] == "patch"
+                && m["ops"].as_array().is_some_and(|ops| {
+                    !ops.is_empty()
+                        && ops
+                            .iter()
+                            .all(|o| o["path"].as_str().is_some_and(|p| p.starts_with("/update")))
+                })
+        })
+    });
+    assert!(
+        !posted().iter().any(|m| m["type"] == "patch"),
+        "the history page reads no state"
+    );
+}
+
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and
 /// Global Privacy Control reach the engine at start and when they change.
 #[test]
