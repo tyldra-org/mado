@@ -1,6 +1,7 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
+mod applinks;
 mod dl;
 mod errors;
 mod marks;
@@ -87,6 +88,8 @@ pub enum Internal {
     },
     /// Loads `url` again in `tab` (after clearing a site's cookies).
     Reload { tab: TabId, url: String },
+    /// The app for an app link was looked up (spec 07 §6).
+    AppLinkResolved(applinks::Resolved),
     /// macOS answered its own permission prompt (spec 07 §4).
     OsAnswered { token: u64, granted: bool },
     /// A shim's permission request was decided (spec 07 §1.1).
@@ -287,6 +290,14 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// App links (spec 07 §6): launches per tab, remembered sites and
+    /// schemes, default web handlers, and the URL or template each prompt
+    /// is about.
+    launches: mado_permissions::LaunchLimiter<TabId>,
+    app_link_rules: std::collections::BTreeSet<(String, String)>,
+    protocol_handlers: BTreeMap<String, String>,
+    app_link_urls: BTreeMap<PromptId, String>,
+    handler_templates: BTreeMap<PromptId, String>,
     /// Site settings (spec 07).
     sites: mado_permissions::Store,
     dismissals: mado_permissions::Dismissals,
@@ -443,6 +454,11 @@ impl Core {
                     Vec::new()
                 }),
         );
+        let links = config
+            .profile_db
+            .readers()
+            .read(applinks::load)
+            .unwrap_or_default();
         let sites = mado_permissions::Store::new(
             config
                 .profile_db
@@ -494,6 +510,11 @@ impl Core {
             popup_opened: BTreeMap::new(),
             engine_rules,
             sites,
+            launches: mado_permissions::LaunchLimiter::new(),
+            app_link_rules: links.0.into_iter().collect(),
+            protocol_handlers: links.1,
+            app_link_urls: BTreeMap::new(),
+            handler_templates: BTreeMap::new(),
             dismissals: mado_permissions::Dismissals::default(),
             pending_perms: BTreeMap::new(),
             perm_queue: BTreeMap::new(),
@@ -951,6 +972,7 @@ impl Core {
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
             Internal::EngineDiscovered(engine) => self.engine_discovered(engine),
             Internal::OsAnswered { token, granted } => self.os_answered(token, granted),
+            Internal::AppLinkResolved(r) => self.app_link_resolved(r, rec),
             Internal::ShimDecided { tab, then, granted } => self.shim_decided(tab, then, granted),
             Internal::NotificationClicked { id } => self.notification_clicked(&id),
             Internal::DownloadAllowed { token, granted } => {

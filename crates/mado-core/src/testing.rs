@@ -17,6 +17,8 @@ pub struct Sent {
     pub notices: Vec<Notice>,
     /// Pages handed to Safari.
     pub safari: Vec<String>,
+    /// Links handed to other apps.
+    pub launched: Vec<String>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -35,6 +37,13 @@ impl UiSink for Collect {
             .unwrap_or_else(|e| e.into_inner())
             .notices
             .push(notice.clone());
+    }
+    fn launch_app_link(&mut self, url: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .launched
+            .push(url.to_owned());
     }
     fn open_in_safari(&mut self, url: &str) {
         self.0

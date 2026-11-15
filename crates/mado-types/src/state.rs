@@ -441,6 +441,31 @@ pub enum PromptState {
         created_at: i64,
         armed_at: i64,
     },
+    /// A link would open another app (spec 07 §6). `prompt.respond`:
+    /// `allowThisTime` opens it, `allowWhileVisiting` also remembers the
+    /// site and scheme, `never` cancels.
+    #[serde(rename_all = "camelCase")]
+    AppLink {
+        id: PromptId,
+        tab_id: TabId,
+        origin: String,
+        scheme: String,
+        app_name: String,
+        /// A `data:image/png` URL of the app's icon.
+        app_icon: Option<String>,
+        created_at: i64,
+        armed_at: i64,
+    },
+    /// `navigator.registerProtocolHandler` (spec 07 §6): allow or block.
+    #[serde(rename_all = "camelCase")]
+    ProtocolHandler {
+        id: PromptId,
+        tab_id: TabId,
+        origin: String,
+        scheme: String,
+        created_at: i64,
+        armed_at: i64,
+    },
     /// The page's protected video does not play in WebKit here (spec 05
     /// §11). Answered with `nav.openExternally`.
     #[serde(rename_all = "camelCase")]
