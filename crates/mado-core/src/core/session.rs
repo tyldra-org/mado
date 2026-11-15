@@ -60,6 +60,10 @@ fn host_of(url: &str) -> String {
 }
 
 fn security_of(url: &str, engine: Option<&EngineSecurity>) -> SecurityLevel {
+    // `user:pass@` is never shown, so the icon warns instead (05 §4).
+    if url::Url::parse(url).is_ok_and(|u| !u.username().is_empty() || u.password().is_some()) {
+        return SecurityLevel::NotSecure;
+    }
     match url
         .split_once(':')
         .map(|(s, _)| s.to_ascii_lowercase())
@@ -602,7 +606,6 @@ impl Core {
             .get_mut(&tab)
             .ok_or_else(|| not_found("error.tab.notFound"))?;
         if t.life == TabLife::Sleeping {
-            t.display_url.text.clone_from(&url);
             t.url = url;
             if let Some(e) = self.model.extras.get_mut(&tab) {
                 e.session = None;
@@ -1399,7 +1402,6 @@ impl Core {
             } => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
                     t.security.level = security_of(&url, None);
-                    t.display_url.text.clone_from(&url);
                     t.url = url;
                     if !is_same_document {
                         t.has_unsaved_input = false;
@@ -1436,7 +1438,6 @@ impl Core {
             }
             EngineEvent::UrlChanged { tab, url } => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
-                    t.display_url.text.clone_from(&url);
                     t.url = url;
                 }
             }
@@ -1626,5 +1627,22 @@ fn snapshot(tab: &TabState, extra: &crate::tabs::TabExtra) -> TabSnapshot {
             .map(|b| base64::engine::general_purpose::STANDARD.encode(&b.0)),
         scroll: extra.scroll,
         pinned_home_url: extra.pinned_home_url.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_url_with_userinfo_warns() {
+        assert_eq!(
+            security_of("https://user:pw@bank.example/", None),
+            SecurityLevel::NotSecure
+        );
+        assert_eq!(
+            security_of("https://bank.example/", None),
+            SecurityLevel::Secure
+        );
     }
 }

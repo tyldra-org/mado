@@ -235,6 +235,9 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// The URL and `addressBar.show` mode each tab's `displayUrl` was
+    /// computed for (spec 05 §4).
+    displayed: BTreeMap<TabId, (String, bool)>,
     /// Downloads beyond the document (spec 12 §4).
     dls: BTreeMap<mado_types::DownloadId, dl::Dl>,
     dl_by_engine: BTreeMap<mado_engine::event::EngineDownloadId, mado_types::DownloadId>,
@@ -365,6 +368,7 @@ impl Core {
             unresponsive: BTreeMap::new(),
             navs: BTreeMap::new(),
             deleted_bookmarks: BTreeMap::new(),
+            displayed: BTreeMap::new(),
             dls: BTreeMap::new(),
             dl_by_engine: BTreeMap::new(),
             page_downloads: BTreeMap::new(),
@@ -480,10 +484,38 @@ impl Core {
             rec.take();
             Err(MadoError::internal())
         });
+        self.refresh_display_urls();
         self.settle(&model_before, &mut rec);
         // A handler that answers later took the reply.
         if let Some(reply) = reply {
             let _ = reply.send(result);
+        }
+    }
+
+    /// Recomputes `displayUrl` for tabs whose URL or display mode changed:
+    /// the registrable domain, and IDN as Unicode only when it passes the
+    /// spoof checks (spec 05 §4).
+    fn refresh_display_urls(&mut self) {
+        let full = self.settings.value(lookup_def("addressBar.show")) == "fullUrl";
+        let top = mado_navigation::TopDomains::bundled();
+        self.displayed
+            .retain(|t, _| self.model.tabs.contains_key(t));
+        for (id, tab) in &mut self.model.tabs {
+            if self
+                .displayed
+                .get(id)
+                .is_some_and(|(url, f)| *url == tab.url && *f == full)
+            {
+                continue;
+            }
+            let d = mado_navigation::display(&tab.url, full, top);
+            tab.display_url = mado_types::state::DisplayUrl {
+                text: d.text,
+                emphasis_start: d.emphasis.0,
+                emphasis_end: d.emphasis.1,
+                punycode: d.punycode,
+            };
+            self.displayed.insert(*id, (tab.url.clone(), full));
         }
     }
 

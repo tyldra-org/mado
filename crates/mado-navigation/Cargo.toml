@@ -12,9 +12,14 @@ publish = false
 workspace = true
 
 [dependencies]
+idna = "1.1.0"
 jiff = "0.2.44"
 psl = "2.1.254"
+regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
+unicode-normalization = "0.1.26"
+unicode-properties = "0.1.5"
+unicode-script = "0.5.9"
 url = "2.5.8"
 
 [dev-dependencies]
