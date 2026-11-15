@@ -69,12 +69,14 @@ jobs:
         run: bun run build
       - name: Build the app with test hooks and the fixture server
         run: cargo build -p mado-app --features test-hooks --locked && cargo build -p mado-fixture-server --locked
-      - name: End-to-end tests
+      # The end-to-end suite behind the recording proxy: it fails on a failing
+      # test or on any host outside tests/network-allowlist.json (spec 08 §11).
+      - name: End-to-end tests and network audit
         env:
           MADO_E2E_BIN: target/debug/mado-app
           MADO_FIXTURE_BIN: target/debug/mado-fixture-server
           MADO_TEST_HEADLESS: "1"
-        run: bun test tests/e2e
+        run: bun scripts/network-audit.ts
 
   build:
     name: Build and sign

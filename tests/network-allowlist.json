@@ -1,0 +1,25 @@
+{
+  "_comment": "Hosts Mado may contact by itself (mado-docs/spec/08-safety-privacy.md section 11). The network audit (scripts/network-audit.ts) fails on any other host. Patterns: an exact host, or *.suffix for the suffix and its subdomains. Bundled search engines' hosts are added from crates/mado-navigation/src/engines.rs.",
+  "hosts": [
+    {
+      "pattern": "*.mado.test",
+      "why": "Fixture pages: what the tests themselves open"
+    },
+    {
+      "pattern": "github.com",
+      "why": "Update check: the channel listing and release downloads (15 §5)"
+    },
+    {
+      "pattern": "objects.githubusercontent.com",
+      "why": "Update check: GitHub release downloads redirect here"
+    },
+    {
+      "pattern": "release-assets.githubusercontent.com",
+      "why": "Update check: GitHub release downloads redirect here"
+    },
+    {
+      "pattern": "captive.apple.com",
+      "why": "Captive portal probe after a failed load (05 §8)"
+    }
+  ]
+}

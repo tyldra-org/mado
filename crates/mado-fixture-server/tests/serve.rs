@@ -56,6 +56,46 @@ async fn https(server: &FixtureServer, host: &str, path: &str) -> Result<String,
     Ok(read_all(&mut tls).await)
 }
 
+/// 08 §11: every host a client asks for is recorded, served or not.
+#[tokio::test]
+async fn hosts_are_recorded_for_the_network_audit() {
+    let dir = tempfile::tempdir().expect("dir");
+    let log = dir.path().join("hosts.txt");
+    mado_fixture_server::record_hosts_to(&log).expect("record");
+    let server = FixtureServer::start(&pages()).await.expect("start");
+    let mut tcp = TcpStream::connect(server.proxy).await.expect("connect");
+    tcp.write_all(b"GET http://pages.mado.test/index.html HTTP/1.1\r\nHost: pages.mado.test\r\nConnection: close\r\n\r\n")
+        .await
+        .expect("write");
+    let _ = read_all(&mut tcp).await;
+    let mut tcp = TcpStream::connect(server.proxy).await.expect("connect");
+    tcp.write_all(b"CONNECT Tracker.Example:443 HTTP/1.1\r\nHost: tracker.example:443\r\n\r\n")
+        .await
+        .expect("write");
+    let mut reply = [0u8; 39];
+    tcp.read_exact(&mut reply).await.expect("established");
+    drop(tcp);
+    let hosts = std::fs::read_to_string(&log).expect("log");
+    let hosts: Vec<&str> = hosts.lines().collect();
+    assert!(hosts.contains(&"pages.mado.test"), "{hosts:?}");
+    assert!(hosts.contains(&"tracker.example"), "{hosts:?}");
+}
+
+/// The captive portal probe sees a network without a portal.
+#[tokio::test]
+async fn the_captive_probe_succeeds() {
+    let server = FixtureServer::start(&pages()).await.expect("start");
+    let mut tcp = TcpStream::connect(server.proxy).await.expect("connect");
+    tcp.write_all(b"GET http://captive.apple.com/hotspot-detect.html HTTP/1.1\r\nHost: captive.apple.com\r\nConnection: close\r\n\r\n")
+        .await
+        .expect("write");
+    let reply = read_all(&mut tcp).await;
+    assert!(
+        reply.starts_with("HTTP/1.1 200") && reply.contains("<BODY>Success</BODY>"),
+        "{reply}"
+    );
+}
+
 #[tokio::test]
 async fn plain_http_through_the_proxy() {
     let server = FixtureServer::start(&pages()).await.expect("starts");

@@ -26,4 +26,5 @@ tower = "0.5.3"
 
 [dev-dependencies]
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+tempfile = "3.27.0"
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }

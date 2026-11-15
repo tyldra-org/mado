@@ -52,23 +52,25 @@ run("profiles", () => {
     }));
     workControl = await mado.connect(work);
     await asUser(mado, "profile.linkRules.set", {
-      rules: [{ pattern: "*.acme.com", profileId: work }],
+      rules: [{ pattern: "*.acme.mado.test", profileId: work }],
     });
     const list = await mado.control.call<{ id: string; running: boolean }[]>("profile.list");
     expect(list.find((p) => p.id === work)?.running).toBe(true);
     // A link from another app: a launch with the URL, as macOS's open does.
-    expect(await mado.run("https://docs.acme.com/handbook")).toBe(0);
+    expect(await mado.run("https://docs.acme.mado.test/handbook")).toBe(0);
     const control = workControl;
     await until("the link in Work", async () => {
       const s = await control.call<{ state: { tabs: Record<string, Tab> } }>("state.get");
       return Object.values(s.state.tabs).some((t) =>
-        t.url.startsWith("https://docs.acme.com/handbook"),
+        t.url.startsWith("https://docs.acme.mado.test/handbook"),
       )
         ? true
         : undefined;
     });
     const mine = await mado.control.call<{ state: { tabs: Record<string, Tab> } }>("state.get");
-    expect(Object.values(mine.state.tabs).some((t) => t.url.includes("acme.com"))).toBe(false);
+    expect(Object.values(mine.state.tabs).some((t) => t.url.includes("acme.mado.test"))).toBe(
+      false,
+    );
   }, 60_000);
 
   test("deleting a profile quits it and removes its folder and website data (12 §7 check 2)", async () => {

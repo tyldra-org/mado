@@ -1,6 +1,7 @@
 //! `mado-fixture-server [--pages <dir>] [--ca-out <file>]`: starts the
 //! fixture server, writes the test CA's PEM to `--ca-out` and prints
-//! `proxy=<host:port>`, then runs until killed.
+//! `proxy=<host:port>`, then runs until killed. With `MADO_NETWORK_RECORD`
+//! set, every host a client asks for is appended to that file (spec 08 §11).
 
 use std::path::PathBuf;
 
@@ -18,6 +19,12 @@ async fn main() -> std::process::ExitCode {
                 return std::process::ExitCode::from(2);
             }
         }
+    }
+    if let Some(path) = std::env::var_os("MADO_NETWORK_RECORD")
+        && let Err(e) = mado_fixture_server::record_hosts_to(std::path::Path::new(&path))
+    {
+        eprintln!("mado-fixture-server: MADO_NETWORK_RECORD: {e}");
+        return std::process::ExitCode::FAILURE;
     }
     let server = match mado_fixture_server::FixtureServer::start(&pages).await {
         Ok(s) => s,

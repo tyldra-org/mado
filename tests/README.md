@@ -10,7 +10,11 @@ Unit tests live next to the code they test.
 
 ## End-to-end tests
 
-`bun run test:e2e` builds the app with the `test-hooks` feature and runs `tests/e2e`. Each test starts its own Mado in a temporary data folder (`MADO_DATA_DIR`), `--hidden`, with any window it opens kept hidden and unfocused (`MADO_TEST_HEADLESS`), and talks to it through the control endpoint with a random test token (`MADO_TEST_TOKEN`). Without `MADO_E2E_BIN`, `bun test` skips them. CI runs them in `.github/workflows/build.yml`.
+`bun run test:e2e` builds the app with the `test-hooks` feature and runs `tests/e2e`. Each test starts its own Mado in a temporary data folder (`MADO_DATA_DIR`), `--hidden`, with any window it opens kept hidden and unfocused (`MADO_TEST_HEADLESS`), and talks to it through the control endpoint with a random test token (`MADO_TEST_TOKEN`). Without `MADO_E2E_BIN`, `bun test` skips them. Fixture pages use `*.mado.test` hosts only, so no test reaches a real site.
+
+## Network audit
+
+`bun run test:audit` runs the same suite with all of Mado's traffic, its own and its pages', sent through a recording fixture proxy (`MADO_AUDIT_PROXY`, `MADO_NETWORK_RECORD`), and fails on any host outside `network-allowlist.json` or the bundled search engines (spec 08 §11). The release workflow runs it before every release.
 
 ## Fixture server
 
