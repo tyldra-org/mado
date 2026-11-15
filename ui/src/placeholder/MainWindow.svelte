@@ -8,6 +8,7 @@
   import AddressBar from "./AddressBar.svelte";
   import AppLinkPrompt from "./AppLinkPrompt.svelte";
   import BookmarksBar from "./BookmarksBar.svelte";
+  import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
   import Notices from "./Notices.svelte";
   import PermissionPrompt from "./PermissionPrompt.svelte";
@@ -67,6 +68,7 @@
     <SafariPrompt {store} {windowId} />
     <PermissionPrompt {store} {windowId} />
     <AppLinkPrompt {store} {windowId} />
+    <DialogSheet {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}></main>
   <Notices {store} />

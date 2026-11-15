@@ -138,3 +138,9 @@ pub fn download(
 ) {
     download::command(id, cmd, view::resume_view());
 }
+
+/// Before the app exits: answers questions still open (dialogs, prompts,
+/// sign-in) with their safe defaults, as WebKit requires. Main thread.
+pub fn shutdown() {
+    delegate::answer_all_pending();
+}

@@ -140,11 +140,14 @@ fn runner() -> Option<MainRunner> {
 }
 
 /// Parks `pending` and returns a reply that answers it on the main thread,
-/// or with `default` after the timeout.
+/// or with `default` after the timeout. A question the user answers
+/// (`waits_for_user`: prompts, dialogs, sign-in) has no timeout: it waits
+/// as long as the user does, and a dropped reply still answers `default`.
 fn park<T: Send + 'static>(
     pending: Pending,
     default: T,
     wrap: fn(T) -> Answer,
+    waits_for_user: bool,
 ) -> Option<Reply<T>> {
     let runner = runner()?;
     let id = NEXT.get();
@@ -154,7 +157,11 @@ fn park<T: Send + 'static>(
         let answer = wrap(value);
         runner(Box::new(move || answer_on_main(id, answer)));
     });
-    timeouts::arm(expiry);
+    if waits_for_user {
+        drop(expiry);
+    } else {
+        timeouts::arm(expiry);
+    }
     Some(reply)
 }
 
@@ -244,13 +251,26 @@ fn answer_pending(pending: Pending, answer: Answer) {
                 NSURLSessionAuthChallengeDisposition::UseCredential,
                 std::ptr::null_mut(),
             )),
-            // Choosing a keychain identity arrives with the client
-            // certificate sheet (M2-T07); until then WebKit decides.
-            ClientCertResponse::Identity(_) => {
-                handler.call((
-                    NSURLSessionAuthChallengeDisposition::PerformDefaultHandling,
-                    std::ptr::null_mut(),
-                ));
+            // The identity the user chose in the sheet (07 §7).
+            ClientCertResponse::Identity(id) => {
+                use core_foundation::base::TCFType;
+                let credential: Option<Retained<NSURLCredential>> =
+                    mado_platform::keychain::identity(&id).and_then(|identity| {
+                        let raw = identity.as_concrete_TypeRef().cast::<AnyObject>();
+                        // SAFETY: a live SecIdentityRef; NSURLCredential retains it.
+                        unsafe {
+                            msg_send![
+                                objc2::class!(NSURLCredential),
+                                credentialWithIdentity: raw,
+                                certificates: std::ptr::null::<AnyObject>(),
+                                persistence: 1_usize
+                            ]
+                        }
+                    });
+                let ptr = credential
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |c| Retained::as_ptr(c).cast_mut());
+                handler.call((NSURLSessionAuthChallengeDisposition::UseCredential, ptr));
             }
         },
         (Pending::Files(handler), Answer::Files(paths)) => {
@@ -278,6 +298,16 @@ fn answer_pending(pending: Pending, answer: Answer) {
             // type. Fall back to the safe default for the pending kind.
             answer_default(other);
         }
+    }
+}
+
+/// Answers every parked question with its safe default. WebKit requires
+/// each completion handler to be called; questions waiting for the user
+/// have no timeout, so quitting must answer them. Main thread.
+pub fn answer_all_pending() {
+    let all = PENDING.with_borrow_mut(std::mem::take);
+    for pending in all.into_values() {
+        answer_default(pending);
     }
 }
 
@@ -457,7 +487,12 @@ define_class!(
                 answer_pending(pending, Answer::Nav(NavDecision::Download));
                 return;
             }
-            match park(pending, NavDecision::Cancel, Answer::Nav) {
+            // An https page posting to http waits for "Send anyway" (07 §7).
+            let insecure_form = main
+                && request.url.starts_with("http:")
+                && current.starts_with("https:")
+                && matches!(&request.phase, NavPhase::Action { method, .. } if method == "POST");
+            match park(pending, NavDecision::Cancel, Answer::Nav, insecure_form) {
                 Some(reply) => send(EngineEvent::DecidePolicy {
                     tab,
                     request,
@@ -514,6 +549,7 @@ define_class!(
                 Pending::Response(handler.copy()),
                 NavDecision::Cancel,
                 Answer::Nav,
+                false,
             ) {
                 Some(reply) => send(EngineEvent::DecidePolicy {
                     tab,
@@ -639,6 +675,7 @@ define_class!(
                         Pending::Auth(handler.copy()),
                         ClientCertResponse::Cancel,
                         Answer::ClientCert,
+                        true,
                     ) {
                         Some(reply) => send(EngineEvent::ClientCertificateRequested {
                             tab,
@@ -673,6 +710,7 @@ define_class!(
                 Pending::Auth(handler.copy()),
                 AuthResponse::Cancel,
                 Answer::Auth,
+                true,
             ) {
                 Some(reply) => send(EngineEvent::AuthRequested {
                     tab,
@@ -758,7 +796,7 @@ define_class!(
                 .then(|| crate::view::create_popup(opener, tab, configuration))
                 .flatten()
                 .and_then(|view| {
-                    match park(Pending::Popup(tab), PopupDecision::Block, Answer::Popup) {
+                    match park(Pending::Popup(tab), PopupDecision::Block, Answer::Popup, false) {
                         Some(reply) => {
                             send(EngineEvent::TabCreated { tab });
                             send(EngineEvent::NewWindowRequested {
@@ -863,6 +901,7 @@ define_class!(
                 Pending::Permission(handler.copy()),
                 PermissionDecision::Deny,
                 Answer::Permission,
+                true,
             ) {
                 Some(reply) => send(EngineEvent::PermissionRequested {
                     tab,
@@ -890,7 +929,7 @@ define_class!(
                     accept: Vec::new(),
                 }
             };
-            match park(Pending::Files(handler.copy()), Vec::new(), Answer::Files) {
+            match park(Pending::Files(handler.copy()), Vec::new(), Answer::Files, true) {
                 Some(reply) => send(EngineEvent::FileChooser {
                     tab,
                     request,
@@ -919,7 +958,7 @@ define_class!(
                 origin: origin_string(origin),
                 embedder: (!info.is_main_frame).then_some(info.origin),
             };
-            match park(Pending::Permission(handler.copy()), PermissionDecision::Deny, Answer::Permission) {
+            match park(Pending::Permission(handler.copy()), PermissionDecision::Deny, Answer::Permission, true) {
                 Some(reply) => send(EngineEvent::PermissionRequested { tab, request, reply }),
                 None => handler.call((WKPermissionDecision::Deny,)),
             }
@@ -1001,7 +1040,7 @@ fn dialog(tab: TabId, kind: DialogKind, message: &NSString, frame: &WKFrameInfo,
         message: message.to_string(),
         frame: frame_info(frame),
     };
-    match park(pending, DialogResponse::Dismiss, Answer::Dialog) {
+    match park(pending, DialogResponse::Dismiss, Answer::Dialog, true) {
         Some(reply) => send(EngineEvent::DialogRequested { tab, dialog, reply }),
         None => tracing::error!("a dialog arrived before the adapter was ready"),
     }
@@ -1024,6 +1063,7 @@ pub(crate) fn park_download(
         Pending::Download(id, handler),
         mado_engine::event::DownloadDestination::Cancel,
         Answer::Download,
+        false,
     )
 }
 

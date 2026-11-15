@@ -319,6 +319,25 @@ run("WebKit adapter", () => {
     await mado.control.call("prompt.dismiss", { id: found.id });
   }, 30_000);
 
+  test("a cross-origin frame's alert shows nothing; the page's own asks (07 §10 check 5)", async () => {
+    const { tab } = await open("http://pages.mado.test/dialogs/top.html");
+    type P = { type: string; id: string; tabId: string; message?: string };
+    const dialogs = async () =>
+      Object.values(
+        ((await mado.control.call("state.get")) as { state: { prompts: Record<string, P> } }).state
+          .prompts,
+      ).filter((p) => p.type === "dialog" && p.tabId === tab);
+    const shown = await until("the page's alert", async () => {
+      const d = await dialogs();
+      return d.length ? d : undefined;
+    });
+    // Only the page's own: the frame's alert was answered unseen, so the
+    // page heard from the frame.
+    expect(shown.map((d) => d.message)).toEqual(["From the page"]);
+    await mado.control.call("prompt.answerDialog", { id: shown[0]?.id, accept: true });
+    await tabWhere(tab, (t) => t.title === "Dialogs: top answered");
+  }, 30_000);
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");

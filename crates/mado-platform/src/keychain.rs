@@ -59,3 +59,59 @@ mod tests {
         assert_eq!(get(&service, "a").expect("reads"), None);
     }
 }
+
+/// A certificate with its private key, for TLS client authentication
+/// (spec 07 §7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientIdentity {
+    /// Stable for the certificate: an FNV-1a digest of its DER.
+    pub id: String,
+    /// The certificate's subject, as Keychain Access shows it.
+    pub label: String,
+}
+
+fn digest(der: &[u8]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in der {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}{:08x}", der.len())
+}
+
+fn all_identities() -> Vec<security_framework::identity::SecIdentity> {
+    use security_framework::item::{ItemClass, ItemSearchOptions, Limit, Reference, SearchResult};
+    ItemSearchOptions::new()
+        .class(ItemClass::identity())
+        .load_refs(true)
+        .limit(Limit::All)
+        .search()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| match r {
+            SearchResult::Ref(Reference::Identity(i)) => Some(i),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The identities in the user's keychains. Never prompts.
+pub fn identities() -> Vec<ClientIdentity> {
+    all_identities()
+        .into_iter()
+        .filter_map(|i| {
+            let cert = i.certificate().ok()?;
+            Some(ClientIdentity {
+                id: digest(&cert.to_der()),
+                label: cert.subject_summary(),
+            })
+        })
+        .collect()
+}
+
+/// The identity with `id`, for the TLS handshake.
+pub fn identity(id: &str) -> Option<security_framework::identity::SecIdentity> {
+    all_identities()
+        .into_iter()
+        .find(|i| i.certificate().is_ok_and(|c| digest(&c.to_der()) == id))
+}

@@ -145,6 +145,12 @@ impl TestCore {
                         icon_png: Some(vec![137, 80, 78, 71]),
                     })
                 },
+                identities: || {
+                    vec![mado_platform::keychain::ClientIdentity {
+                        id: "cert-1".into(),
+                        label: "Ada Lovelace".into(),
+                    }]
+                },
             },
             user_agent: mado_engine::UserAgent::EngineDefault,
             clean_start,
