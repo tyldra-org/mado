@@ -22,6 +22,8 @@ pub enum Timer {
     UpgradeTimeout(mado_types::TabId),
     /// Quit even if downloads did not pause in time.
     QuitNow,
+    /// Quit even if clearing on quit is not done (spec 08 §7).
+    ClearOnExitLimit,
     /// Deleted bookmarks' Undo ran out.
     ForgetDeletedBookmarks(u64),
     /// A deleted group's Undo ran out.

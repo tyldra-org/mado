@@ -574,7 +574,16 @@
     "key": "privacy.clearOnExit",
     "keywords": "settings.privacy.clearOnExit.keywords",
     "label": "settings.privacy.clearOnExit.label",
-    "options": null,
+    "options": [
+      "history",
+      "downloadsList",
+      "cookies",
+      "cache",
+      "siteSettings",
+      "formHistory",
+      "blockerStats",
+      "aiChats"
+    ],
     "protected": false,
     "renderer": "list",
     "restart": "none",

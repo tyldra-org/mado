@@ -104,6 +104,10 @@ impl Engine for TauriWindows {
         mado_engine_webkit::allow_certificate(host);
     }
 
+    fn set_privacy(&mut self, privacy: mado_engine::PrivacyConfig) {
+        mado_engine_webkit::set_privacy(privacy);
+    }
+
     fn download(
         &mut self,
         id: mado_engine::event::EngineDownloadId,

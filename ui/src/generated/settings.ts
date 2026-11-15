@@ -137,7 +137,7 @@ export interface SettingValues {
   "privacy.trackingPrevention": "off" | "balanced" | "strict";
   "privacy.gpc": boolean;
   "privacy.webrtcHideIp": boolean;
-  "privacy.clearOnExit": Array<"cookies" | "cache" | "history" | "downloads" | "siteData">;
+  "privacy.clearOnExit": Array<"history" | "downloadsList" | "cookies" | "cache" | "siteSettings" | "formHistory" | "blockerStats" | "aiChats">;
   "privacy.lockPrivateWindows": boolean;
   "history.retention": number;
   "history.indexPageText": boolean;

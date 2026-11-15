@@ -97,6 +97,30 @@ pub struct ClearDataRequest {
     pub hosts: Option<Vec<String>>,
 }
 
+/// What the profile's safety and privacy settings ask of every tab view
+/// (spec 08 §1, §8). Global Privacy Control is a page script, not here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivacyConfig {
+    /// `safety.dangerousSiteWarnings`: the engine's own phishing and
+    /// malware warning.
+    pub dangerous_site_warnings: bool,
+    /// `privacy.trackingPrevention` `strict`: no cookies for third-party
+    /// requests.
+    pub block_third_party_cookies: bool,
+    /// `privacy.webrtcHideIp`: WebRTC offers no local network addresses.
+    pub hide_local_ip: bool,
+}
+
+impl Default for PrivacyConfig {
+    fn default() -> Self {
+        Self {
+            dangerous_site_warnings: true,
+            block_third_party_cookies: false,
+            hide_local_ip: true,
+        }
+    }
+}
+
 /// The profile's proxy (settings `proxy.*`, spec 02 §4.1).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ProxyConfig {
@@ -144,6 +168,8 @@ pub trait Engine {
     /// Accepts `host`'s certificate for this session, after the user chose
     /// Proceed on its interstitial (spec 08 §3). Never persisted.
     fn allow_certificate(&mut self, host: String);
+    /// Applies to every tab view, open ones included.
+    fn set_privacy(&mut self, privacy: PrivacyConfig);
 }
 
 /// One call on the engine, queued from the core for the main thread.
@@ -157,6 +183,7 @@ pub enum EngineOp {
     SetProxy(ProxyConfig),
     Download(event::EngineDownloadId, event::DownloadCommand),
     AllowCertificate(String),
+    SetPrivacy(PrivacyConfig),
 }
 
 impl std::fmt::Debug for EngineOp {
@@ -170,6 +197,7 @@ impl std::fmt::Debug for EngineOp {
             Self::ClearData(req, _) => write!(f, "ClearData({:?})", req.kinds),
             Self::SetProxy(_) => f.write_str("SetProxy"),
             Self::AllowCertificate(_) => write!(f, "AllowCertificate"),
+            Self::SetPrivacy(p) => write!(f, "SetPrivacy({p:?})"),
             Self::Download(id, cmd) => write!(
                 f,
                 "Download({id:?}, {})",
@@ -212,6 +240,7 @@ impl EngineOp {
             Self::SetProxy(proxy) => engine.set_proxy(proxy),
             Self::Download(id, cmd) => engine.download(id, cmd),
             Self::AllowCertificate(host) => engine.allow_certificate(host),
+            Self::SetPrivacy(privacy) => engine.set_privacy(privacy),
         }
     }
 }

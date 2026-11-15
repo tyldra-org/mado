@@ -121,6 +121,29 @@ pub fn recompute(conn: &Connection, url_id: i64, now: i64) -> rusqlite::Result<f
     Ok(score)
 }
 
+/// After visits were deleted by time (spec 08 §7): each URL that lost
+/// visits gets its counts, last visit and frecency from those left.
+pub fn recount(conn: &Connection, now: i64) -> rusqlite::Result<()> {
+    let changed: Vec<i64> = conn
+        .prepare(
+            "SELECT id FROM urls WHERE visit_count != (SELECT COUNT(*) FROM visits WHERE url_id = urls.id)",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for id in changed {
+        conn.execute(
+            "UPDATE urls SET
+               visit_count = (SELECT COUNT(*) FROM visits WHERE url_id = ?1),
+               typed_count = MIN(typed_count, (SELECT COUNT(*) FROM visits WHERE url_id = ?1 AND transition = ?2)),
+               last_visit_at = (SELECT MAX(visited_at) FROM visits WHERE url_id = ?1)
+             WHERE id = ?1",
+            params![id, Transition::Typed.as_str()],
+        )?;
+        recompute(conn, id, now)?;
+    }
+    Ok(())
+}
+
 /// A recorded visit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Recorded {

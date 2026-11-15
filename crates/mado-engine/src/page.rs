@@ -413,6 +413,22 @@ const PROTOCOL_HANDLERS: &str = include_str!(concat!(
     "/../../app/resources/inject/protocol-handlers.js"
 ));
 
+const GPC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/gpc.js"
+));
+
+/// `gpc`, added to the bundled set while `privacy.gpc` is on (spec 08 §8).
+pub fn gpc() -> crate::PageScript {
+    crate::PageScript {
+        name: "gpc",
+        world: crate::World::Page,
+        at: crate::InjectAt::DocumentStart,
+        main_frame_only: false,
+        source: GPC.to_owned(),
+    }
+}
+
 /// The page scripts M2 injects in every tab after its `bridge` (spec 02 §5
 /// table). `geolocation_shim`: before macOS 27, where WebKit has no
 /// geolocation permission delegate (spec 07 §1.1).
@@ -634,6 +650,7 @@ mod tests {
             ]
         );
         assert!(set.scripts.iter().all(|s| !s.source.is_empty()));
+        assert!(gpc().source.contains("globalPrivacyControl"));
         assert_eq!(
             bundled(true).scripts.last().map(|s| s.name),
             Some("geolocation")

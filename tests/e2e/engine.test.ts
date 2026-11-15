@@ -376,4 +376,46 @@ run("WebKit adapter", () => {
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");
     expect(t.url).toBe("http://pages.mado.test/applink.html");
   });
+
+  test("Global Privacy Control follows privacy.gpc (08 §8)", async () => {
+    const on = await open("http://pages.mado.test/privacy/gpc.html");
+    await tabWhere(on.tab, (t) => t.title === "GPC: true");
+    await mado.control.call("settings.set", { key: "privacy.gpc", value: false });
+    const off = await open("http://pages.mado.test/privacy/gpc.html");
+    await tabWhere(off.tab, (t) => t.title === "GPC: undefined");
+    await mado.control.call("settings.set", { key: "privacy.gpc", value: true });
+  });
+
+  test("strict tracking prevention compiles its cookie rule and pages still load (08 §8)", async () => {
+    await mado.control.call("settings.set", { key: "privacy.trackingPrevention", value: "strict" });
+    const { tab } = await open("http://pages.mado.test/nav/a.html");
+    await tabWhere(tab, (t) => t.title === "Page B" && t.life === "live");
+    await mado.control.call("settings.set", {
+      key: "privacy.trackingPrevention",
+      value: "balanced",
+    });
+  });
+
+  test("WebRTC shows no local IP address unless privacy.webrtcHideIp is off (08 §8)", async () => {
+    const url = "http://pages.mado.test/privacy/webrtc.html";
+    const hidden = await open(url);
+    await tabWhere(hidden.tab, (t) => t.title === "ICE: hidden");
+    await mado.control.call("settings.set", { key: "privacy.webrtcHideIp", value: false });
+    const shown = await open(url);
+    await tabWhere(shown.tab, (t) => t.title === "ICE: ip");
+    await mado.control.call("settings.set", { key: "privacy.webrtcHideIp", value: true });
+  });
+
+  test("data.clear removes site data from WebKit's store (08 §7)", async () => {
+    const url = "http://pages.mado.test/privacy/storage.html";
+    const first = await open(url);
+    await tabWhere(first.tab, (t) => t.title === "Stored: null");
+    const second = await open(url);
+    await tabWhere(second.tab, (t) => t.title === "Stored: 1");
+    await mado.control.call("test.asUser", {
+      command: { type: "data.clear", range: "all", types: ["cookies"] },
+    });
+    const third = await open(url);
+    await tabWhere(third.tab, (t) => t.title === "Stored: null");
+  });
 });

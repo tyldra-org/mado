@@ -2,6 +2,7 @@
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
 mod applinks;
+mod clear;
 mod dialogs;
 mod dl;
 mod errors;
@@ -138,6 +139,8 @@ pub enum Internal {
     },
     /// What the updater is doing (spec 15 §5).
     UpdateStatus(mado_types::state::UpdateState),
+    /// Clearing on quit is done (spec 08 §7).
+    ClearedOnExit,
     /// Stops the loop after the queued writes (spec 01 §1.6).
     Shutdown { done: oneshot::Sender<()> },
     /// Marks a tab as holding typed text, as the `forms` page script will
@@ -383,6 +386,10 @@ pub struct Core {
     context_targets: BTreeMap<TabId, mado_engine::page::ContextTarget>,
     /// Tabs whose protected video failed (M2-T06 offers Safari).
     drm_failed: BTreeSet<TabId>,
+    /// `privacy.clearOnExit` is clearing before the app quits.
+    clearing_on_exit: bool,
+    /// The bundled page scripts; `gpc` joins them while `privacy.gpc` is on.
+    page_scripts: mado_engine::PageScriptSet,
     ui: Box<dyn UiSink>,
     updates: Box<dyn Updates>,
     clock: fn() -> i64,
@@ -567,6 +574,8 @@ impl Core {
             pending_transition: BTreeMap::new(),
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
+            clearing_on_exit: false,
+            page_scripts,
             ui: config.ui,
             updates: config.updates,
             clock: config.clock,
@@ -584,7 +593,8 @@ impl Core {
         // The proxy and page scripts apply to every tab view, so before the
         // first one.
         core.engine.send(EngineOp::SetProxy(core.proxy()));
-        core.engine.send(EngineOp::SetPageScripts(page_scripts));
+        core.engine.send(EngineOp::SetPrivacy(core.privacy()));
+        core.engine.send(EngineOp::SetPageScripts(core.scripts()));
         core.timers
             .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
         core.timers.schedule(Timer::DailyBackup, DAY);
@@ -944,6 +954,9 @@ impl Core {
             | Command::PermissionReset { .. }
             | Command::SiteStopCapture { .. }) => self.prompt_command(origin, cmd, rec, reply_to),
             Command::PermissionUndoRevoke { token } => self.undo_revoke(token),
+            cmd @ (Command::DataClear { .. } | Command::SiteClearData { .. }) => {
+                self.data_command(origin, cmd, rec, reply_to)
+            }
             cmd @ (Command::PromptAnswerDialog { .. }
             | Command::PromptAnswerAuth { .. }
             | Command::PromptAnswerClientCert { .. }) => self.sheet_command(cmd, rec),
@@ -1008,6 +1021,7 @@ impl Core {
                 }
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
+            Internal::ClearedOnExit => self.cleared_on_exit(),
             Internal::Terminate => self.terminate(),
             #[cfg(test)]
             Internal::TestUnsavedInput { tab } => {
@@ -1221,6 +1235,19 @@ impl Core {
         if out.changes.iter().any(|c| c.key.starts_with("proxy.")) {
             self.outbox.push(EngineOp::SetProxy(self.proxy()));
         }
+        if out.changes.iter().any(|c| {
+            matches!(
+                c.key,
+                "safety.dangerousSiteWarnings"
+                    | "privacy.trackingPrevention"
+                    | "privacy.webrtcHideIp"
+            )
+        }) {
+            self.outbox.push(EngineOp::SetPrivacy(self.privacy()));
+        }
+        if out.changes.iter().any(|c| c.key == "privacy.gpc") {
+            self.outbox.push(EngineOp::SetPageScripts(self.scripts()));
+        }
         if let Some(log_id) = out.undo_notice
             && let Some(change) = out.changes.first()
         {
@@ -1298,9 +1325,10 @@ impl Core {
             Timer::QuitNow => {
                 if self.quit_after_downloads {
                     self.quit_after_downloads = false;
-                    self.ui.quit();
+                    self.quit_now();
                 }
             }
+            Timer::ClearOnExitLimit => self.cleared_on_exit(),
             Timer::ForgetDeletedBookmarks(token) => {
                 self.deleted_bookmarks.remove(&token);
             }
@@ -1364,6 +1392,31 @@ impl Core {
             &s("proxy.socks5"),
             bypass,
         )
+    }
+
+    /// The engine's side of `safety.dangerousSiteWarnings` and
+    /// `privacy.trackingPrevention` (spec 08 §1, §8). WebKit's tracking
+    /// prevention is always on; `off` and `balanced` both leave it as is.
+    fn privacy(&self) -> mado_engine::PrivacyConfig {
+        mado_engine::PrivacyConfig {
+            dangerous_site_warnings: self
+                .settings
+                .get::<mado_settings::SafetyDangerousSiteWarnings>(),
+            block_third_party_cookies: self
+                .settings
+                .get::<mado_settings::PrivacyTrackingPrevention>()
+                == "strict",
+            hide_local_ip: self.settings.get::<mado_settings::PrivacyWebrtcHideIp>(),
+        }
+    }
+
+    /// The bundled page scripts, with `gpc` while `privacy.gpc` is on.
+    fn scripts(&self) -> mado_engine::PageScriptSet {
+        let mut set = self.page_scripts.clone();
+        if self.settings.get::<mado_settings::PrivacyGpc>() {
+            set.scripts.push(mado_engine::page::gpc());
+        }
+        set
     }
 
     /// Lets queued writes finish; the app then checkpoints and releases the

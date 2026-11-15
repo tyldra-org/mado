@@ -749,6 +749,16 @@ pub enum Command {
     },
     #[serde(rename = "site.stopCapture", rename_all = "camelCase")]
     SiteStopCapture { tab_id: TabId, kind: CaptureKind },
+    /// Clears browsing data of `types` from the last `range` (spec 08 §7).
+    /// Only from Mado's own windows. Answers once everything is gone.
+    #[serde(rename = "data.clear", rename_all = "camelCase")]
+    DataClear {
+        range: ClearRange,
+        types: Vec<DataType>,
+    },
+    /// Removes the cookies and storage of `origin`'s site (spec 08 §7).
+    #[serde(rename = "site.clearData", rename_all = "camelCase")]
+    SiteClearData { origin: String },
     /// Undoes an automatic revoke (the notice's Undo).
     #[serde(rename = "permission.undoRevoke", rename_all = "camelCase")]
     PermissionUndoRevoke { token: u64 },
@@ -936,7 +946,8 @@ impl Command {
             | Self::ProfileExport { .. }
             | Self::ProfileImport { .. }
             | Self::ProfileLinkRulesSet { .. } => CommandFamily::Profile,
-            Self::SiteStopCapture { .. } => CommandFamily::Site,
+            Self::SiteStopCapture { .. } | Self::SiteClearData { .. } => CommandFamily::Site,
+            Self::DataClear { .. } => CommandFamily::Data,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
             | Self::HistoryExclude { .. }
@@ -1045,6 +1056,8 @@ impl Command {
             Self::PermissionSet { .. } => "permission.set",
             Self::PermissionReset { .. } => "permission.reset",
             Self::SiteStopCapture { .. } => "site.stopCapture",
+            Self::SiteClearData { .. } => "site.clearData",
+            Self::DataClear { .. } => "data.clear",
             Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
             Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",
             Self::ProfileList => "profile.list",
@@ -1132,6 +1145,48 @@ pub enum OpenDisposition {
 pub struct TimeRange {
     pub from: i64,
     pub to: i64,
+}
+
+/// How far back `data.clear` reaches (spec 08 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ClearRange {
+    Hour,
+    Day,
+    Week,
+    Month,
+    All,
+}
+
+impl ClearRange {
+    /// The span in milliseconds; `None` for all time.
+    pub fn millis(self) -> Option<i64> {
+        const HOUR: i64 = 3_600_000;
+        match self {
+            Self::Hour => Some(HOUR),
+            Self::Day => Some(24 * HOUR),
+            Self::Week => Some(7 * 24 * HOUR),
+            Self::Month => Some(30 * 24 * HOUR),
+            Self::All => None,
+        }
+    }
+}
+
+/// What `data.clear` and `privacy.clearOnExit` clear (spec 08 §7).
+/// Passwords are never among them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum DataType {
+    History,
+    DownloadsList,
+    Cookies,
+    Cache,
+    SiteSettings,
+    FormHistory,
+    BlockerStats,
+    AiChats,
 }
 
 /// `tab.save` formats.

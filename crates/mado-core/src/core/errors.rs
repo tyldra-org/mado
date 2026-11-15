@@ -17,7 +17,7 @@ use crate::timers::Timer;
 /// An HTTPS attempt that has not committed by now falls back (05 §5).
 pub const UPGRADE_WAIT: Duration = Duration::from_secs(3);
 /// `httpAllowed` lasts this long.
-const HTTP_ALLOWED_MS: i64 = 30 * 86_400_000;
+pub(super) const HTTP_ALLOWED_MS: i64 = 30 * 86_400_000;
 /// Apple's probe answers this body when no portal is in the way.
 const PROBE_SUCCESS: &str = "Success";
 

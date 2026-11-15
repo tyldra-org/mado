@@ -53,13 +53,23 @@
     await load();
   }
 
+  let cleared = $state(false);
+  async function clearData() {
+    if (!origin) return;
+    await store.client.call({ type: "site.clearData", origin }).catch(() => {});
+    cleared = true;
+  }
+
   const capturing = $derived(
     (["camera", "microphone", "screen", "location"] as const).filter((k) => tab?.capture?.[k]),
   );
 </script>
 
 {#if origin}
-  <button type="button" aria-expanded={open} onclick={() => ((open = !open), open && load())}
+  <button
+    type="button"
+    aria-expanded={open}
+    onclick={() => ((open = !open), (cleared = false), open && load())}
     >{t("siteInfo.button")}</button
   >
 {/if}
@@ -98,5 +108,7 @@
       {/each}
     </ul>
     {#if rows.length}<button type="button" onclick={reset}>{t("siteInfo.reset")}</button>{/if}
+    <button type="button" onclick={clearData}>{t("siteInfo.clearData")}</button>
+    {#if cleared}<p role="status">{t("siteInfo.dataCleared")}</p>{/if}
   </div>
 {/if}

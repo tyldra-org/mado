@@ -8,6 +8,7 @@ import type { Transport } from "../core/transport";
 import type { Request } from "../generated/Request";
 import type { Response } from "../generated/Response";
 import type { State } from "../generated/State";
+import ClearData from "./ClearData.svelte";
 import MainWindow from "./MainWindow.svelte";
 
 const W = "01a1d7aa-0000-7000-8000-000000000001";
@@ -144,5 +145,32 @@ describe("site information", () => {
     expect(sent(seen, "permission.reset")).toEqual([
       { type: "permission.reset", origin: "https://alpha.example", key: null },
     ]);
+    await fireEvent.click(screen.getByRole("button", { name: "Clear cookies and site data" }));
+    await new Promise((r) => setTimeout(r, 0));
+    await tick();
+    expect(sent(seen, "site.clearData")).toEqual([
+      { type: "site.clearData", origin: "https://alpha.example" },
+    ]);
+    expect(screen.getByRole("status").textContent).toContain("cookies and data are cleared");
+  });
+});
+
+describe("clear browsing data (08 §7)", () => {
+  test("sends the chosen range and types", async () => {
+    const { store, seen } = setup();
+    await store.start();
+    render(ClearData, { client: store.client });
+    await fireEvent.change(screen.getByRole("combobox", { name: "Time range" }), {
+      target: { value: "week" },
+    });
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Site settings" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Cached images and files" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await new Promise((r) => setTimeout(r, 0));
+    await tick();
+    expect(sent(seen, "data.clear")).toEqual([
+      { type: "data.clear", range: "week", types: ["history", "cookies", "siteSettings"] },
+    ]);
+    expect(screen.getByRole("status").textContent).toBe("Cleared.");
   });
 });
