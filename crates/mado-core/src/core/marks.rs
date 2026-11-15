@@ -24,11 +24,17 @@ impl Core {
     /// Runs a bookmark change on the writer; the reply gets its result and
     /// every view hears `bookmarksRev` go up.
     fn change(&self, job: Job, reply: Option<Reply>) {
+        self.on_writer(job, reply, true);
+    }
+
+    /// Runs `job` on the writer. Only a change bumps `bookmarksRev`: views
+    /// reload the tree when it goes up, so a read that bumped it would loop.
+    fn on_writer(&self, job: Job, reply: Option<Reply>, notify: bool) {
         let pending = self.profile_db.writer().write(job);
         let inputs = self.inputs.clone();
         tokio::task::spawn_local(async move {
             let result = pending.await.map_err(failed);
-            if result.is_ok() {
+            if notify && result.is_ok() {
                 let _ = inputs.send(super::Input::Internal(Internal::BookmarksChanged));
             }
             if let Some(reply) = reply {
@@ -66,12 +72,14 @@ impl Core {
         match cmd {
             Command::BookmarkTree { parent_id } => {
                 // Roots are created on first use, so the tree is a write
-                // the first time; the writer serves it.
-                self.change(
+                // the first time; the writer serves it. Creating the empty
+                // roots changes nothing a view shows, so the rev stays.
+                self.on_writer(
                     Box::new(move |c| {
                         bookmarks::tree(c, parent_id.as_deref(), now).map(|t| json!(t))
                     }),
                     reply,
+                    false,
                 );
             }
             Command::BookmarkSearch { query } => self.read(
