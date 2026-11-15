@@ -64,6 +64,16 @@ pub fn open(path: &Path) -> Result<(), PlatformError> {
     run(Command::new("/usr/bin/open").arg("--").arg(path))
 }
 
+/// Opens a web page in Safari (site engine rules, spec 05 §9 and §11).
+pub fn open_in_safari(url: &str) -> Result<(), PlatformError> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(PlatformError::Failed(
+            "only web pages open in Safari".into(),
+        ));
+    }
+    run(Command::new("/usr/bin/open").args(["-b", "com.apple.Safari", "--", url]))
+}
+
 /// Shows a file in Finder.
 pub fn reveal(path: &Path) -> Result<(), PlatformError> {
     run(Command::new("/usr/bin/open").arg("-R").arg("--").arg(path))
@@ -91,6 +101,15 @@ pub fn copy_file(path: &Path) -> Result<(), PlatformError> {
     let ok: bool = unsafe { objc2::msg_send![&*board, writeObjects: &*list] };
     ok.then_some(())
         .ok_or_else(|| PlatformError::Failed("the pasteboard refused the file".into()))
+}
+
+/// The general pasteboard's change count and its text, for the copied-link
+/// suggestion (spec 05 §2). Reads only; any thread.
+pub fn pasteboard_text() -> (isize, Option<String>) {
+    let board = NSPasteboard::generalPasteboard();
+    // SAFETY: the string type constant is AppKit's.
+    let text = board.stringForType(unsafe { objc2_app_kit::NSPasteboardTypeString });
+    (board.changeCount(), text.map(|t| t.to_string()))
 }
 
 /// Puts text on the pasteboard. Call on the main thread.

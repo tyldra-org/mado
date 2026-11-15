@@ -202,6 +202,14 @@ pub struct ProtocolHandlerRegister {
     pub url: String,
 }
 
+/// `forms`: a search form was submitted on a page that links an OpenSearch
+/// description (spec 05 §3, discovery).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenSearch {
+    pub href: String,
+}
+
 /// `media`: for the media button (spec 05 §11).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -279,6 +287,7 @@ messages! {
     FieldFocused(FieldFocused) = "fieldFocused" from ["forms"],
     CredentialsSubmitted(CredentialsSubmitted) = "credentialsSubmitted" from ["forms"],
     UnsavedInput(UnsavedInput) = "unsavedInput" from ["forms"],
+    OpenSearch(OpenSearch) = "openSearch" from ["forms"],
     FillDone(FillDone) = "fillDone" from ["forms"],
     WebauthnCreate(WebauthnCreate) = "webauthnCreate" from ["webauthn"],
     WebauthnGet(WebauthnGet) = "webauthnGet" from ["webauthn"],
@@ -352,6 +361,7 @@ fn within_limits(m: &PageMessage) -> bool {
         }
         PageMessage::ProtocolHandlerRegister(r) => r.scheme.len() <= 64 && r.url.len() <= 2048,
         PageMessage::DrmFailed(d) => d.key_system.as_deref().is_none_or(|k| k.len() <= 128),
+        PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         _ => true,
     }
 }

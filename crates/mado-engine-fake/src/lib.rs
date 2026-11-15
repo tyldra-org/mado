@@ -124,6 +124,32 @@ impl FakeControl {
         self.navigate(tab, url, source, false, user_gesture, NavKind::Link);
     }
 
+    /// A link clicked with `modifiers` (spec 05 §7). The core decides; an
+    /// allowed navigation commits in this tab.
+    pub fn page_clicks(&self, tab: TabId, url: &str, modifiers: Modifiers) {
+        let source = lock(&self.state)
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.url().map(str::to_owned));
+        let request = NavRequest {
+            url: url.to_owned(),
+            source_url: source,
+            is_main_frame: true,
+            user_gesture: true,
+            initiated_by_mado: false,
+            kind: NavKind::Link,
+            phase: NavPhase::Action {
+                modifiers,
+                method: "GET".into(),
+            },
+        };
+        self.decide(tab, request, move |control, decision, url| {
+            if decision == NavDecision::Allow {
+                control.commit(tab, &url, NavKind::Link, true);
+            }
+        });
+    }
+
     /// The page asks for a decision on a subframe navigation; nothing commits.
     pub fn subframe_navigates(&self, tab: TabId, url: &str) {
         let source = lock(&self.state)

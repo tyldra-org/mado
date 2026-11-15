@@ -2261,6 +2261,7 @@ dependencies = [
  "mado-storage",
  "mado-types",
  "proptest",
+ "psl",
  "reqwest",
  "rusqlite",
  "serde",

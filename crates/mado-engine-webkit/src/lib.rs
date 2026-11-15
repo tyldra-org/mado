@@ -33,7 +33,7 @@ use objc2_app_kit::NSView;
 
 pub use convert::{has_geolocation_delegate, safari_version};
 pub use scheme::{Resolved, SchemeResolver};
-pub use view::{TabView, TabViewInfo};
+pub use view::{TabView, TabViewInfo, synthesize_click};
 
 /// Runs a closure on the main thread (the app: Tauri's `run_on_main_thread`).
 pub type MainRunner = Arc<dyn Fn(Box<dyn FnOnce() + Send>) + Send + Sync>;

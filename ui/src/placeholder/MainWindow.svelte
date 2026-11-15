@@ -1,13 +1,15 @@
 <script lang="ts">
   // The browser window's UI webview. Placeholder until the design pass (M6):
-  // it mirrors the state, reports the page area and shows tabs, prompts and
-  // notices. The address bar arrives with M2-T06.
+  // it mirrors the state, reports the page area and shows tabs, the address
+  // bar, prompts and notices.
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
   import { t } from "../i18n";
+  import AddressBar from "./AddressBar.svelte";
   import BookmarksBar from "./BookmarksBar.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
   import Notices from "./Notices.svelte";
+  import SafariPrompt from "./SafariPrompt.svelte";
   import TabStrip from "./TabStrip.svelte";
   import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
   import UnsavedPrompt from "./UnsavedPrompt.svelte";
@@ -55,10 +57,12 @@
   <header>
     <h1>{store.state?.profile.name ?? t("app.name")}</h1>
     <TabStrip {store} {windowId} />
+    <AddressBar {store} {windowId} />
     <BookmarksBar {store} {windowId} />
     <DownloadsBubble {store} />
     <UnsavedPrompt {store} {windowId} />
     <UnresponsivePrompt {store} {windowId} />
+    <SafariPrompt {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}></main>
   <Notices {store} />

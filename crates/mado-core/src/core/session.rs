@@ -1616,6 +1616,7 @@ impl Core {
         match placed {
             Ok(_) => {
                 self.adopted.insert(request.tab);
+                self.popup_opened.insert(opener, now);
                 decision
             }
             Err(_) => PopupDecision::Block,

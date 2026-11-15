@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Web pages load in tabs through WebKit, each profile with its own website data and proxy, and sites see Mado as Safari.
 - Find in page, mute, link previews in the status bubble, page icons, a prompt for pages that stop responding, and reload, back, forward, zoom, print and save for tabs.
 - Bookmarks: a bookmarks bar and Other bookmarks, ⌘D to add or edit, folders that open as tabs, Undo after deleting, and import and export in the HTML format every browser reads.
+- Address bar: type a web address, a search, a search engine's keyword or a calculation (arithmetic, units, time zones, dates). Suggestions come from open tabs, history, bookmarks and page text, with inline completion and, if you turn them on, your search engine's suggestions. Eight search engines to choose from, and sites' own search engines are offered.
+- Addresses show the site's domain, and internationalised domains that imitate other sites stay in their `xn--` form.
+- Sites load over HTTPS when they can; for sites without it Mado asks before continuing. Pages that fail to load explain why, offer to sign in to the network behind a captive portal, and show when a page crashed.
+- ⌘-click, ⌘⇧-click and ⇧-click open links in a new tab, a new foreground tab or a new window; ⌥-click downloads. Sites whose videos only play in Safari can open there, once or always.
 - Downloads: files go to the Downloads folder under a unique name, can be paused and resumed (also after quitting Mado), get the quarantine mark, and wait for Keep when they are insecure or a risky type from a new site. A downloads button lists them.
 - History: every visit is recorded with how it happened, pages' text is searchable (never on banking sites or pages with password fields), and history can be deleted by visit, site or time, excluded per site, and exported as CSV.
 - Tabs, windows and groups: opening, closing and selecting tabs as Chrome does, pinned tabs, saved groups, ⌘⇧T for closed tabs, groups and windows, sleeping tabs with Memory Saver, startup modes with crash restore, and a warning before quitting with typed text.

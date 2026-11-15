@@ -16,6 +16,35 @@ use serde_json::{Value, json};
 use super::{Core, Internal, Reply, lookup_def};
 use crate::history::{self, Transition};
 
+/// A copied link is offered for this long after it was copied (spec 05 §2).
+const COPIED_FOR_MS: i64 = 3 * 60_000;
+
+/// The pasteboard change last seen, and when Mado first saw it.
+static COPIED: std::sync::Mutex<Option<(isize, i64)>> = std::sync::Mutex::new(None);
+
+/// The copied link to offer: the pasteboard holds an http(s) URL that
+/// Mado first saw less than 3 minutes ago.
+pub fn copied_link(
+    seen: &mut Option<(isize, i64)>,
+    change: isize,
+    text: Option<&str>,
+    now: i64,
+) -> Option<String> {
+    let first = match *seen {
+        Some((c, at)) if c == change => at,
+        _ => {
+            *seen = Some((change, now));
+            now
+        }
+    };
+    let text = text?.trim();
+    if now - first > COPIED_FOR_MS || text.contains(char::is_whitespace) {
+        return None;
+    }
+    let url = url::Url::parse(text).ok()?;
+    matches!(url.scheme(), "http" | "https").then(|| url.to_string())
+}
+
 /// Remote suggestions arrive within this, or not at all (spec 05 §2).
 const REMOTE_WAIT: Duration = Duration::from_millis(300);
 
@@ -27,6 +56,13 @@ pub struct EngineRow {
     pub engine: Engine,
     pub active: bool,
     pub source: String,
+}
+
+/// Hosts with a site engine rule (spec 05 §9, §11).
+pub fn load_engine_rules(c: &Connection) -> rusqlite::Result<std::collections::BTreeSet<String>> {
+    let mut stmt = c.prepare("SELECT host FROM site_engine_rules")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    rows.collect()
 }
 
 /// Every engine in the profile's `search_engines` table.
@@ -184,6 +220,9 @@ impl Core {
                 });
                 Ok(Value::Null)
             }
+            Command::NavOpenExternally { tab_id, answer } => {
+                self.answer_open_externally(tab_id, answer, _rec)
+            }
             Command::NavSearchEngines => {
                 let default = self
                     .settings
@@ -241,6 +280,175 @@ impl Core {
                 Err(MadoError::internal())
             }
         }
+    }
+
+    /// Hosts that open in Safari, and their parent domains' rules.
+    pub(super) fn opens_in_safari(&self, host: &str) -> bool {
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        let mut h = host.as_str();
+        loop {
+            if self.engine_rules.contains(h) {
+                return true;
+            }
+            match h.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => h = rest,
+                _ => return false,
+            }
+        }
+    }
+
+    /// A search on a page with an OpenSearch description: fetch it, with
+    /// no credentials, and add the engine turned off, keyword = host (spec 05
+    /// §3). Only the page's own host may describe an engine for it.
+    pub(super) fn open_search_seen(&mut self, tab: TabId, href: String) {
+        if self.state.profile.is_private {
+            return;
+        }
+        let page_host = self
+            .model
+            .tabs
+            .get(&tab)
+            .and_then(|t| url::Url::parse(&t.url).ok())
+            .and_then(|u| u.host_str().map(str::to_owned));
+        let desc_host = url::Url::parse(&href)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned));
+        let (Some(host), Some(desc)) = (page_host, desc_host) else {
+            return;
+        };
+        if host != desc
+            || self
+                .engines
+                .iter()
+                .any(|e| e.engine.keyword.as_deref() == Some(host.as_str()))
+        {
+            return;
+        }
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_local(async move {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build();
+            let Ok(client) = client else { return };
+            let Ok(response) = client.get(&href).send().await else {
+                return;
+            };
+            let Ok(xml) = response.text().await else {
+                return;
+            };
+            if xml.len() > 64 * 1024 {
+                return;
+            }
+            if let Some(engine) = engines::parse_opensearch(&xml, &host) {
+                let _ = inputs.send(super::Input::Internal(Internal::EngineDiscovered(engine)));
+            }
+        });
+    }
+
+    pub(super) fn engine_discovered(&mut self, engine: Engine) {
+        if self.engines.iter().any(|e| e.engine.id == engine.id) {
+            return;
+        }
+        let row = EngineRow {
+            engine,
+            active: false,
+            source: "opensearch".into(),
+        };
+        self.engines.push(row.clone());
+        let now = self.now();
+        let pending = self.profile_db.writer().write(move |c| {
+            c.execute(
+                "INSERT OR IGNORE INTO search_engines (id, name, keyword, search_url, suggest_url, active, source, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, 'opensearch', ?6)",
+                params![row.engine.id, row.engine.name, row.engine.keyword, row.engine.search_url, row.engine.suggest_url, now],
+            )
+            .map(|_| ())
+        });
+        tokio::task::spawn_local(async move {
+            if let Err(e) = pending.await {
+                tracing::error!(error = %e, "a discovered engine was not saved");
+            }
+        });
+    }
+
+    /// A DRM failure shows "This site needs Safari to play", once per page.
+    pub(super) fn drm_failed_prompt(&mut self, tab: TabId, rec: &mut PatchRecorder) {
+        let Some(url) = self.model.tabs.get(&tab).map(|t| t.url.clone()) else {
+            return;
+        };
+        let host = url::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_default();
+        if host.is_empty() {
+            return;
+        }
+        let id = mado_types::PromptId::new();
+        let mut prompts = self.state.prompts.clone();
+        prompts.insert(
+            id,
+            mado_types::state::PromptState::OpenInSafari {
+                id,
+                tab_id: tab,
+                host,
+            },
+        );
+        self.state.tx(rec).set_prompts(prompts);
+    }
+
+    /// Drops a tab's "open in Safari" prompt.
+    pub(super) fn clear_safari_prompt(&mut self, tab: TabId, rec: &mut PatchRecorder) {
+        let mut prompts = self.state.prompts.clone();
+        let before = prompts.len();
+        prompts.retain(|_, p| {
+            !matches!(p, mado_types::state::PromptState::OpenInSafari { tab_id, .. } if *tab_id == tab)
+        });
+        if prompts.len() != before {
+            self.state.tx(rec).set_prompts(prompts);
+        }
+    }
+
+    fn answer_open_externally(
+        &mut self,
+        tab: TabId,
+        answer: mado_types::command::ExternalAnswer,
+        rec: &mut PatchRecorder,
+    ) -> Result<Value, MadoError> {
+        use mado_types::command::ExternalAnswer;
+        let url = self
+            .model
+            .tabs
+            .get(&tab)
+            .map(|t| t.url.clone())
+            .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.tab.notFound"))?;
+        self.clear_safari_prompt(tab, rec);
+        if answer == ExternalAnswer::Dismiss {
+            return Ok(Value::Null);
+        }
+        self.ui.open_in_safari(&url);
+        if answer == ExternalAnswer::Always
+            && let Some(host) = url::Url::parse(&url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_owned))
+        {
+            self.engine_rules.insert(host.clone());
+            if !self.state.profile.is_private {
+                let now = self.now();
+                let pending = self.profile_db.writer().write(move |c| {
+                    c.execute(
+                        "INSERT OR REPLACE INTO site_engine_rules (host, target, reason, created_at) VALUES (?1, 'system_browser', 'drm', ?2)",
+                        params![host, now],
+                    )
+                    .map(|_| ())
+                });
+                tokio::task::spawn_local(async move {
+                    if let Err(e) = pending.await {
+                        tracing::error!(error = %e, "a site engine rule was not saved");
+                    }
+                });
+            }
+        }
+        Ok(Value::Null)
     }
 
     fn nav_open(
@@ -369,6 +577,7 @@ impl Core {
             _ => None,
         };
         let inputs = self.inputs.clone();
+        let now = self.now();
         let local = tokio::task::spawn_blocking(move || {
             let found = readers.read(|c| {
                 let history: Vec<Visited> = if private {
@@ -396,12 +605,21 @@ impl Core {
                 Ok((history, bookmarks, pages))
             });
             let (history, bookmarks, pages) = found.unwrap_or_default();
+            let clipboard = if text.is_empty() {
+                let (change, copied) = mado_platform::files::pasteboard_text();
+                let mut seen = COPIED
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                copied_link(&mut seen, change, copied.as_deref(), now)
+            } else {
+                None
+            };
             let src = Sources {
                 tabs: &tabs,
                 history: &history,
                 bookmarks: &bookmarks,
                 keywords: &keywords,
-                clipboard: None,
+                clipboard: clipboard.as_deref(),
                 page_text: &pages,
                 private,
             };
@@ -446,5 +664,50 @@ impl Core {
                 payload: json!({ "windowId": window, "requestId": request_id, "rows": merged }),
             }));
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_copied_link_is_offered_for_three_minutes() {
+        let mut seen = None;
+        let at = 1_000_000;
+        assert_eq!(
+            copied_link(&mut seen, 7, Some(" https://a.example/x "), at).as_deref(),
+            Some("https://a.example/x")
+        );
+        assert!(
+            copied_link(
+                &mut seen,
+                7,
+                Some("https://a.example/x"),
+                at + COPIED_FOR_MS - 1
+            )
+            .is_some()
+        );
+        assert!(
+            copied_link(
+                &mut seen,
+                7,
+                Some("https://a.example/x"),
+                at + COPIED_FOR_MS + 1
+            )
+            .is_none()
+        );
+        // Copied again: a new change, a new three minutes.
+        assert!(
+            copied_link(
+                &mut seen,
+                8,
+                Some("https://a.example/x"),
+                at + COPIED_FOR_MS + 2
+            )
+            .is_some()
+        );
+        assert!(copied_link(&mut seen, 9, Some("not a link"), at).is_none());
+        assert!(copied_link(&mut seen, 10, Some("javascript:alert(1)"), at).is_none());
     }
 }

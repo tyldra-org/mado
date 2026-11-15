@@ -86,6 +86,8 @@ pub enum Internal {
     },
     /// Loads `url` again in `tab` (after clearing a site's cookies).
     Reload { tab: TabId, url: String },
+    /// An OpenSearch description was fetched and parsed (spec 05 §3).
+    EngineDiscovered(mado_navigation::engines::Engine),
     /// Remote search suggestions merged with the local rows (spec 05 §2).
     RemoteSuggestions { window: WindowId, payload: Value },
     /// The safety check of a completed download (spec 08 §4).
@@ -248,6 +250,10 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// Hosts that open in Safari (site engine rules, spec 05 §9).
+    engine_rules: std::collections::BTreeSet<String>,
+    /// When each tab last opened a pop-up, for tab-under (spec 05 §7).
+    popup_opened: BTreeMap<TabId, i64>,
     /// Error pages on screen, by tab (spec 05 §6).
     error_pages: BTreeMap<TabId, errors::ErrorPage>,
     /// Tabs whose next commit is their error page, not a visit.
@@ -378,6 +384,11 @@ impl Core {
                     Vec::new()
                 }),
         );
+        let engine_rules = config
+            .profile_db
+            .readers()
+            .read(nav::load_engine_rules)
+            .unwrap_or_default();
         let http_allowed = config
             .profile_db
             .readers()
@@ -414,6 +425,8 @@ impl Core {
             navs: BTreeMap::new(),
             deleted_bookmarks: BTreeMap::new(),
             displayed: BTreeMap::new(),
+            popup_opened: BTreeMap::new(),
+            engine_rules,
             error_pages: BTreeMap::new(),
             error_commits: std::collections::BTreeSet::new(),
             upgrades: BTreeMap::new(),
@@ -785,6 +798,7 @@ impl Core {
             | Command::NavSuggest { .. }
             | Command::NavRemoveSuggestion { .. }
             | Command::NavSearchEngines
+            | Command::NavOpenExternally { .. }
             | Command::NavSetSearchEngineActive { .. }) => self.nav_command(cmd, rec, reply_to),
             cmd @ (Command::BookmarkTree { .. }
             | Command::BookmarkSearch { .. }
@@ -845,6 +859,7 @@ impl Core {
             Internal::DownloadVerdict { id, danger } => self.download_verdict(id, danger, rec),
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
+            Internal::EngineDiscovered(engine) => self.engine_discovered(engine),
             Internal::Reload { tab, url } => {
                 let _ = self.navigate(tab, url);
             }

@@ -259,6 +259,43 @@ run("WebKit adapter", () => {
     }
   });
 
+  test("link modifiers choose where a clicked link opens (05 §12 check 6)", async () => {
+    const { window, tab } = await open("http://pages.mado.test/links.html");
+    await tabWhere(tab, (t) => t.title === "Links" && t.life === "live");
+    const target = "http://pages.mado.test/nav/b.html?from=link";
+    const click = (mods: Record<string, boolean>) =>
+      mado.control.call("test.click", { tabId: tab, x: 40, y: 40, ...mods });
+    const urls = async (w: string) => {
+      const s = await state();
+      return (s.windows[w]?.tabOrder ?? []).map((id) => s.tabs[id]?.url);
+    };
+    await click({ command: true });
+    await until("a background tab", async () =>
+      (await urls(window)).includes(target) ? true : undefined,
+    );
+    expect((await state()).windows[window]?.activeTabId).toBe(tab);
+    const windows = Object.keys((await state()).windows).length;
+    await click({ shift: true });
+    await until("a new window", async () =>
+      Object.keys((await state()).windows).length === windows + 1 ? true : undefined,
+    );
+    expect((await state()).tabs[tab]?.url).toBe("http://pages.mado.test/links.html");
+    await click({});
+    await tabWhere(tab, (t) => t.url === target);
+  }, 30_000);
+
+  test("a click that opens a pop-up gets a tab (02 §8 check 4, the allowed half)", async () => {
+    const { window, tab } = await open("http://pages.mado.test/links.html");
+    await tabWhere(tab, (t) => t.title === "Links" && t.life === "live");
+    await mado.control.call("test.click", { tabId: tab, x: 40, y: 190 });
+    const s = await until("the pop-up tab", async () => {
+      const s = await state();
+      return (s.windows[window]?.tabOrder.length ?? 0) === 2 ? s : undefined;
+    });
+    const popup = s.windows[window]?.tabOrder.find((id) => id !== tab) ?? "";
+    await tabWhere(popup, (t) => t.url === "http://pages.mado.test/nav/b.html?from=popup");
+  }, 30_000);
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");

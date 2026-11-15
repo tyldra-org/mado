@@ -226,12 +226,25 @@ impl Core {
             self.https_fallback(tab, &up);
             return NavDecision::Cancel;
         }
+        if let Some(decision) = self.link_with_modifiers(tab, request) {
+            return decision;
+        }
+        if self.tab_under(tab, request) {
+            return NavDecision::Cancel;
+        }
         let context = crate::navigation::PolicyContext {
             https_first: self.https_first(),
-            opens_externally: &|_| false,
+            opens_externally: &|h| self.opens_in_safari(h),
             http_fallback: &|u| self.http_fallback_allowed(u),
         };
         let decision = crate::navigation::decide(request, &context);
+        if let NavDecision::OpenExternal {
+            url,
+            reason: mado_engine::ExternalReason::EngineRule,
+        } = &decision
+        {
+            self.ui.open_in_safari(url);
+        }
         if request.is_main_frame {
             self.continue_once.remove(&request.url);
             if let NavDecision::Redirect { url } = &decision
@@ -251,6 +264,92 @@ impl Core {
             }
         }
         decision
+    }
+
+    /// 05 §7: a link clicked with modifiers opens in a new tab or window,
+    /// or downloads, and the page stays.
+    fn link_with_modifiers(&mut self, tab: TabId, request: &NavRequest) -> Option<NavDecision> {
+        let mado_engine::NavPhase::Action {
+            modifiers: m,
+            method,
+        } = &request.phase
+        else {
+            return None;
+        };
+        if !request.is_main_frame
+            || request.initiated_by_mado
+            || !request.user_gesture
+            || method != "GET"
+            || !(request.url.starts_with("http:") || request.url.starts_with("https:"))
+        {
+            return None;
+        }
+        if m.option && !m.command && !m.shift {
+            return Some(NavDecision::Download);
+        }
+        let new_tab = m.command || m.button == 1;
+        if !new_tab && !m.shift {
+            return None;
+        }
+        let window = self.model.tabs.get(&tab)?.window_id;
+        let (now, prefs) = (self.now(), self.prefs());
+        let opened = if new_tab {
+            self.model
+                .open_tab(
+                    window,
+                    request.url.clone(),
+                    None,
+                    m.shift,
+                    Some(tab),
+                    now,
+                    prefs,
+                )
+                .ok()
+        } else {
+            self.open_window(
+                mado_types::state::Bounds::default(),
+                std::slice::from_ref(&request.url),
+            )
+            .ok()
+            .and_then(|w| {
+                self.model
+                    .window(w)
+                    .ok()
+                    .and_then(|w| w.tab_order.first().copied())
+            })
+        };
+        if let Some(t) = opened {
+            self.pending_transition
+                .insert(t, crate::history::Transition::Link);
+        }
+        Some(NavDecision::Cancel)
+    }
+
+    /// 05 §7, tab-under: within a second of opening a pop-up, the opener may
+    /// not move to another site without a gesture of its own.
+    fn tab_under(&mut self, tab: TabId, request: &NavRequest) -> bool {
+        if !request.is_main_frame || request.initiated_by_mado || request.user_gesture {
+            return false;
+        }
+        let now = self.now();
+        let Some(at) = self.popup_opened.get(&tab).copied() else {
+            return false;
+        };
+        if now - at > 1000 {
+            self.popup_opened.remove(&tab);
+            return false;
+        }
+        let site = |u: &str| {
+            let host = host_of(u);
+            psl::domain_str(&host).map_or(host.clone(), str::to_owned)
+        };
+        let current = self
+            .model
+            .tabs
+            .get(&tab)
+            .map(|t| t.url.clone())
+            .unwrap_or_default();
+        site(&current) != site(&request.url)
     }
 
     /// A main-frame document committed: an upgrade succeeded, and an
