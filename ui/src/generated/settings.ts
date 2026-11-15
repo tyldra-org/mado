@@ -20,6 +20,10 @@ export type SettingKey =
   | "appearance.fonts.sansSerif"
   | "appearance.fonts.fixed"
   | "appearance.minimumFontSize"
+  | "reader.font"
+  | "reader.size"
+  | "reader.width"
+  | "reader.theme"
   | "appearance.defaultZoom"
   | "addressBar.show"
   | "tabs.newTabPosition"
@@ -119,6 +123,10 @@ export interface SettingValues {
   "appearance.fonts.sansSerif": string;
   "appearance.fonts.fixed": string;
   "appearance.minimumFontSize": number;
+  "reader.font": "serif" | "sans";
+  "reader.size": number;
+  "reader.width": "narrow" | "medium" | "wide";
+  "reader.theme": "system" | "light" | "sepia" | "dark";
   "appearance.defaultZoom": number;
   "addressBar.show": "site" | "fullUrl";
   "tabs.newTabPosition": "end" | "afterCurrent";
@@ -218,6 +226,10 @@ export const settingDefaults: SettingValues = {
   "appearance.fonts.sansSerif": "",
   "appearance.fonts.fixed": "",
   "appearance.minimumFontSize": 0,
+  "reader.font": "serif",
+  "reader.size": 19,
+  "reader.width": "medium",
+  "reader.theme": "system",
   "appearance.defaultZoom": 1.0,
   "addressBar.show": "site",
   "tabs.newTabPosition": "end",

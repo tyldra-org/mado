@@ -21,6 +21,31 @@ pub struct Resolved {
     pub body: Vec<u8>,
 }
 
+thread_local! {
+    /// Each tab's reader page (spec 08 §10), served at `mado://reader?tab=<id>`.
+    static READER: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+pub fn set_reader(tab: mado_types::TabId, html: String) {
+    READER.with_borrow_mut(|r| r.insert(tab.to_string(), html));
+}
+
+pub fn forget_reader(tab: mado_types::TabId) {
+    READER.with_borrow_mut(|r| r.remove(&tab.to_string()));
+}
+
+/// The reader page for `mado://reader?tab=<id>`, while the tab has one.
+fn reader_page(url: &str) -> Option<Resolved> {
+    let rest = url.strip_prefix("mado://reader?tab=")?;
+    READER
+        .with_borrow(|r| r.get(rest).cloned())
+        .map(|html| Resolved {
+            mime: "text/html".into(),
+            body: html.into_bytes(),
+        })
+}
+
 /// Maps a `mado:` URL to a bundled resource; `None` is not found.
 pub type SchemeResolver = Arc<dyn Fn(&str) -> Option<Resolved> + Send + Sync>;
 
@@ -45,7 +70,9 @@ define_class!(
             let url = convert::url_string(request.URL());
             let document = convert::url_string(request.mainDocumentURL());
             let from_mado = document.is_empty() || document.starts_with("mado:");
-            let found = from_mado.then(|| (self.ivars().resolver)(&url)).flatten();
+            let found = from_mado
+                .then(|| reader_page(&url).or_else(|| (self.ivars().resolver)(&url)))
+                .flatten();
             match (found, request.URL()) {
                 (Some(r), Some(ns_url)) => {
                     let response =

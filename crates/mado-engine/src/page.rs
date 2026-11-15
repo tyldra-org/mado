@@ -413,6 +413,29 @@ const PROTOCOL_HANDLERS: &str = include_str!(concat!(
     "/../../app/resources/inject/protocol-handlers.js"
 ));
 
+const READER_PROBE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/reader-probe.js"
+));
+const READER: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/reader.js"
+));
+
+/// Where the `reader` scripts leave their answer in the Mado world.
+const READER_RESULT: &str = r#"return globalThis[Symbol.for("mado.readerResult")];"#;
+
+/// The body for `EvaluateInWorld` that answers whether the page looks like
+/// an article (spec 08 §10).
+pub fn reader_probe() -> String {
+    format!("// reader-probe\n{READER_PROBE}\n{READER_RESULT}")
+}
+
+/// The body for `EvaluateInWorld` that answers the article, or null.
+pub fn reader_extract() -> String {
+    format!("// reader-extract\n{READER}\n{READER_RESULT}")
+}
+
 const GPC: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/gpc.js"
@@ -651,6 +674,8 @@ mod tests {
         );
         assert!(set.scripts.iter().all(|s| !s.source.is_empty()));
         assert!(gpc().source.contains("globalPrivacyControl"));
+        assert!(reader_probe().ends_with("readerResult\")];"));
+        assert!(reader_extract().len() > 10_000, "Readability is bundled");
         assert_eq!(
             bundled(true).scripts.last().map(|s| s.name),
             Some("geolocation")

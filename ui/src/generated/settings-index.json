@@ -284,6 +284,74 @@
     "undoNotice": false
   },
   {
+    "feature": "reader",
+    "help": "settings.reader.font.help",
+    "key": "reader.font",
+    "keywords": "settings.reader.font.keywords",
+    "label": "settings.reader.font.label",
+    "options": [
+      "serif",
+      "sans"
+    ],
+    "protected": false,
+    "renderer": "select",
+    "restart": "none",
+    "scope": "profile",
+    "section": "appearance",
+    "undoNotice": false
+  },
+  {
+    "feature": "reader",
+    "help": "settings.reader.size.help",
+    "key": "reader.size",
+    "keywords": "settings.reader.size.keywords",
+    "label": "settings.reader.size.label",
+    "options": null,
+    "protected": false,
+    "renderer": "number",
+    "restart": "none",
+    "scope": "profile",
+    "section": "appearance",
+    "undoNotice": false
+  },
+  {
+    "feature": "reader",
+    "help": "settings.reader.width.help",
+    "key": "reader.width",
+    "keywords": "settings.reader.width.keywords",
+    "label": "settings.reader.width.label",
+    "options": [
+      "narrow",
+      "medium",
+      "wide"
+    ],
+    "protected": false,
+    "renderer": "select",
+    "restart": "none",
+    "scope": "profile",
+    "section": "appearance",
+    "undoNotice": false
+  },
+  {
+    "feature": "reader",
+    "help": "settings.reader.theme.help",
+    "key": "reader.theme",
+    "keywords": "settings.reader.theme.keywords",
+    "label": "settings.reader.theme.label",
+    "options": [
+      "system",
+      "light",
+      "sepia",
+      "dark"
+    ],
+    "protected": false,
+    "renderer": "select",
+    "restart": "none",
+    "scope": "profile",
+    "section": "appearance",
+    "undoNotice": false
+  },
+  {
     "feature": null,
     "help": "settings.appearance.defaultZoom.help",
     "key": "appearance.defaultZoom",

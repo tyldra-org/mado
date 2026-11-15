@@ -16,6 +16,7 @@ test-hooks = []
 workspace = true
 
 [dependencies]
+ammonia = "4.2.5"
 base64 = "0.23"
 jiff = "0.2.44"
 mado-engine = { version = "0.0.0", path = "../mado-engine" }

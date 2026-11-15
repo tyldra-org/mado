@@ -83,10 +83,14 @@ async function locate(name: string, from: string): Promise<string> {
   }
 }
 
-/** Production dependencies of ui/, and theirs, from node_modules. */
+/** Production dependencies of ui/ and inject/ (bundled into the page
+ * scripts), and theirs, from node_modules. */
 async function javascript(ok: Set<string>): Promise<Credit[]> {
   const seen = new Map<string, Credit>();
-  const queue: [string, string][] = [[join(root, "ui"), ""]];
+  const queue: [string, string][] = [
+    [join(root, "ui"), ""],
+    [join(root, "inject"), ""],
+  ];
   for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
     const [dir, name] = next;
     const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8")) as {

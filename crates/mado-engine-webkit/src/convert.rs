@@ -67,6 +67,19 @@ pub fn to_json(value: Option<&AnyObject>) -> Value {
     if let Some(s) = value.downcast_ref::<NSString>() {
         return Value::String(s.to_string());
     }
+    // A bare number or boolean is no JSON document for NSJSONSerialization.
+    if let Some(n) = value.downcast_ref::<objc2_foundation::NSNumber>() {
+        // SAFETY: `objCType` is a C string the number owns.
+        let kind = unsafe { std::ffi::CStr::from_ptr(n.objCType().as_ptr()) }.to_bytes();
+        let class = value.class().name().to_bytes();
+        return if class == b"__NSCFBoolean" || kind == b"c" || kind == b"B" {
+            Value::Bool(n.boolValue())
+        } else if matches!(kind, b"f" | b"d") {
+            serde_json::Number::from_f64(n.doubleValue()).map_or(Value::Null, Value::Number)
+        } else {
+            Value::from(n.longLongValue())
+        };
+    }
     // SAFETY: isValidJSONObject accepts any object.
     if unsafe { NSJSONSerialization::isValidJSONObject(value) } {
         // SAFETY: checked valid above.

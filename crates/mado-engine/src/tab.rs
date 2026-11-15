@@ -251,7 +251,12 @@ pub enum TabCommand {
     /// The certificate of the page, or of the load that failed on it
     /// (spec 08 §3).
     ShowCertificate,
-    SetReader(bool),
+    /// Loads `mado://reader?tab=<id>` as a new history entry showing
+    /// `html`, a page with no script (spec 08 §10). Back returns to the
+    /// article's page.
+    ShowReader {
+        html: String,
+    },
     /// Stored; applies from the next navigation (spec 02 §4.4).
     SetJavaScriptEnabled(bool),
     SetImagesEnabled(bool),
@@ -297,7 +302,7 @@ impl TabCommand {
             Self::ShowDevTools => "showDevTools",
             Self::ShowCertificate => "showCertificate",
             Self::ShowSource => "showSource",
-            Self::SetReader(_) => "setReader",
+            Self::ShowReader { .. } => "showReader",
             Self::SetJavaScriptEnabled(_) => "setJavaScriptEnabled",
             Self::SetImagesEnabled(_) => "setImagesEnabled",
             Self::ExitFullscreen => "exitFullscreen",
