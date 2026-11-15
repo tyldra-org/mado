@@ -50,8 +50,13 @@ pub trait Updates: Send {
     /// Checks the channel now; progress comes back as
     /// `Internal::UpdateStatus`.
     fn check(&mut self);
-    /// Installs the ready update and relaunches.
+    /// Installs the ready update and relaunches every running profile.
     fn relaunch(&mut self);
+    /// The same, unless another profile is in use (security updates, spec
+    /// 15 §5): each is asked to quit only if idle.
+    fn relaunch_when_idle(&mut self) {
+        self.relaunch();
+    }
 }
 
 /// The app's profiles (spec 12 §1). They live in the app database and in

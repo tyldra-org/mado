@@ -24,6 +24,8 @@ pub enum Timer {
     QuitNow,
     /// Quit even if clearing on quit is not done (spec 08 §7).
     ClearOnExitLimit,
+    /// A ready security update may relaunch now (spec 15 §5).
+    SecurityRelaunch,
     /// A private window may have been in the background long enough to lock.
     PrivateLock(mado_types::WindowId),
     /// Deleted bookmarks' Undo ran out.

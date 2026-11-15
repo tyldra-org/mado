@@ -33,6 +33,8 @@ pub struct Sent {
     pub menu_state: std::collections::BTreeMap<String, (bool, bool)>,
     pub shortcuts: std::collections::BTreeMap<String, String>,
     pub settings_opened: usize,
+    /// Relaunches asked of the updater: `true` when only if idle.
+    pub relaunches: Vec<bool>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -111,12 +113,35 @@ impl UiSink for Collect {
     }
 }
 
+/// An updater that only counts what the core asked of it.
+struct CountUpdates(Arc<Mutex<Sent>>);
+
+impl crate::Updates for CountUpdates {
+    fn check(&mut self) {}
+    fn relaunch(&mut self) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .relaunches
+            .push(false);
+    }
+    fn relaunch_when_idle(&mut self) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .relaunches
+            .push(true);
+    }
+}
+
 thread_local! {
     /// The profile service the next `TestCore` on this thread uses.
     pub static PROFILES: std::cell::RefCell<std::sync::Arc<dyn crate::ui::Profiles>> =
         std::cell::RefCell::new(std::sync::Arc::new(crate::ui::NoProfiles));
     /// The home folder the next `TestCore` imports from.
     pub static IMPORT_HOME: std::cell::RefCell<std::path::PathBuf> = std::cell::RefCell::new(std::path::PathBuf::from("/nonexistent"));
+    /// Whether the next `TestCore` restores its session after an update.
+    pub static RESTORE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Whether the next `TestCore` on this thread is a private profile.
     pub static PRIVATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The captive portal probe the next `TestCore` on this thread uses.
@@ -224,7 +249,13 @@ impl TestCore {
             clean_start,
             page_scripts: mado_engine::PageScriptSet::default(),
             ui: Box::new(Collect(Arc::clone(&sent))),
-            updates: Box::new(crate::NoUpdates),
+            updates: Box::new(CountUpdates(Arc::clone(&sent))),
+            about: mado_types::state::AboutState {
+                version: "0.1.0".into(),
+                engine_version: "625.2.8".into(),
+                engine_outdated: false,
+            },
+            restore_session: RESTORE.get(),
             clock: || 1_800_000_000_000,
         })
         .expect("core starts");

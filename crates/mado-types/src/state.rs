@@ -56,6 +56,8 @@ pub struct State {
     pub ai: AiState,
     #[patch(nested)]
     pub update: UpdateState,
+    /// This build and the web engine under it (spec 15 §5).
+    pub about: AboutState,
     #[patch(nested)]
     pub settings: SettingsState,
     #[patch(map)]
@@ -711,6 +713,19 @@ pub struct UpdateState {
     pub status: UpdateStatus,
     pub version: Option<String>,
     pub security: bool,
+}
+
+/// Mado's version and the web engine's, for About (spec 15 §5).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AboutState {
+    pub version: String,
+    /// WebKit's version, without macOS's prefix (`625.2.8`).
+    pub engine_version: String,
+    /// Older than the compatibility list's `minSafeEngine`: a macOS
+    /// update with web engine security fixes is waiting.
+    pub engine_outdated: bool,
 }
 
 /// Values of the settings marked `ui: true` (spec 06 §1), and which of

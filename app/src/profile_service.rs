@@ -109,7 +109,20 @@ impl AppProfiles {
 
     /// Asks a running profile's owner to act, through its control endpoint.
     fn tell(&self, id: ProfileId, action: OwnerAction) -> Result<(), String> {
-        let secret = mado_control::LaunchSecret::read(&self.paths.launch_secret(id))
+        tell(&self.paths, id, action)
+    }
+}
+
+/// Asks the owner of a running profile to act, through its control
+/// endpoint (spec 12 §1.2).
+pub fn tell(paths: &Paths, id: ProfileId, action: OwnerAction) -> Result<(), String> {
+    tauri::async_runtime::block_on(tell_async(paths, id, action))
+}
+
+/// [`tell`], from async code.
+pub async fn tell_async(paths: &Paths, id: ProfileId, action: OwnerAction) -> Result<(), String> {
+    {
+        let secret = mado_control::LaunchSecret::read(&paths.launch_secret(id))
             .map_err(|e| e.to_string())?;
         let request = LaunchRequest {
             urls: Vec::new(),
@@ -119,8 +132,9 @@ impl AppProfiles {
             source: LaunchSource::Cli,
             control: Some(action),
         };
-        let socket = self.paths.control_socket(id);
-        tauri::async_runtime::block_on(mado_control::forward(&socket, &secret, &request))
+        let socket = paths.control_socket(id);
+        mado_control::forward(&socket, &secret, &request)
+            .await
             .map_err(|e| e.to_string())
     }
 }

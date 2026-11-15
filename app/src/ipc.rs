@@ -148,6 +148,14 @@ impl UiSink for TauriUi {
             "screen" => "Privacy_ScreenCapture",
             "speechRecognition" => "Privacy_SpeechRecognition",
             "fullDiskAccess" => "Privacy_AllFiles",
+            "softwareUpdate" => {
+                std::thread::spawn(|| {
+                    let _ = std::process::Command::new("/usr/bin/open")
+                        .arg("x-apple.systempreferences:com.apple.Software-Update-Settings.extension")
+                        .status();
+                });
+                return;
+            }
             _ => "Privacy",
         };
         let url = format!("x-apple.systempreferences:com.apple.preference.security?{anchor}");

@@ -3,4 +3,4 @@
 /**
  * What one Mado process asks another profile's owner to do.
  */
-export type OwnerAction = "quit" | "profileChanged";
+export type OwnerAction = "quit" | "profileChanged" | "quitForUpdate" | "quitForUpdateIfIdle";

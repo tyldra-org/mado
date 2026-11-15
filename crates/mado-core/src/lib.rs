@@ -8,6 +8,7 @@
 //! handler changes the state document only through generated setters, which
 //! record the patch every UI and overlay webview applies.
 
+pub mod about;
 pub mod bookmarks;
 mod core;
 pub mod downloads;
