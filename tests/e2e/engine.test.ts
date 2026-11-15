@@ -424,6 +424,24 @@ run("WebKit adapter", () => {
     await tabWhere(tab, (t) => t.url === "http://pages.mado.test/reader/article.html");
   }, 30_000);
 
+  test("a mado:// page loads and runs a command from its allow-list; a web page cannot (01 §4.4)", async () => {
+    const visited = "http://pages.mado.test/nav/b.html";
+    const page = await open(visited);
+    await tabWhere(page.tab, (t) => t.title === "Page B");
+    const { tab } = await open("mado://history");
+    await tabWhere(tab, (t) => t.title === "History");
+    // The first entry is the newest visit; clicking it opens it in this tab.
+    for (let y = 40; y < 400; y += 20) {
+      await mado.control.call("test.click", { tabId: tab, x: 60, y });
+      await sleep(150);
+      if ((await state()).tabs[tab]?.url === visited) break;
+    }
+    await tabWhere(tab, (t) => t.url === visited);
+    const forged = await open("http://pages.mado.test/forge-invoke.html");
+    await tabWhere(forged.tab, (t) => t.title === "Forge: no reply");
+    expect((await state()).tabs[forged.tab]?.url).toBe("http://pages.mado.test/forge-invoke.html");
+  }, 30_000);
+
   test("data.clear removes site data from WebKit's store (08 §7)", async () => {
     const url = "http://pages.mado.test/privacy/storage.html";
     const first = await open(url);

@@ -7,6 +7,7 @@ mod dialogs;
 mod dl;
 mod errors;
 mod import;
+mod internal;
 mod lock;
 mod marks;
 mod nav;
@@ -144,6 +145,12 @@ pub enum Internal {
     UpdateStatus(mado_types::state::UpdateState),
     /// Clearing on quit is done (spec 08 §7).
     ClearedOnExit,
+    /// A command an internal page sent finished (spec 01 §4.4).
+    InvokeAnswered {
+        tab: TabId,
+        id: u64,
+        result: Result<Value, MadoError>,
+    },
     /// Another browser's data was read for `import.run` (spec 12 §5).
     BrowserImportRead {
         browser: mado_import::Browser,
@@ -800,6 +807,7 @@ impl Core {
             return;
         }
         self.ui.patch(&patch);
+        self.forward_to_pages(&patch);
     }
 
     fn now(&self) -> i64 {
@@ -1090,6 +1098,7 @@ impl Core {
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
             Internal::ClearedOnExit => self.cleared_on_exit(),
+            Internal::InvokeAnswered { tab, id, result } => self.invoke_answered(tab, id, result),
             Internal::BrowserImportRead {
                 browser,
                 result,

@@ -19,6 +19,7 @@ export class CoreStore {
       (state) => {
         this.state = state;
       },
+      transport.label() === "internal",
     );
   }
 

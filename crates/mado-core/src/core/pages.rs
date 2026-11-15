@@ -70,6 +70,7 @@ impl Core {
         }
         let now = self.now();
         match message {
+            PageMessage::Invoke(i) => self.internal_invoke(tab, frame, i),
             PageMessage::Heartbeat(_) if frame.is_main_frame => {
                 self.heartbeats.insert(tab, now);
                 self.responsive(tab, rec);

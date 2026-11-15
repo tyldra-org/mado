@@ -1303,16 +1303,88 @@ mod double_option {
     }
 }
 
+/// A `mado://` page that runs in a tab and may send commands (spec 01 §4.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum InternalPage {
+    NewTab,
+    History,
+    Downloads,
+    Bookmarks,
+    About,
+    Credits,
+}
+
+impl InternalPage {
+    /// The page a `mado://<page>` URL names.
+    pub fn of_url(url: &str) -> Option<Self> {
+        let rest = url.strip_prefix("mado://")?;
+        let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+        Some(match host {
+            "newtab" => Self::NewTab,
+            "history" => Self::History,
+            "downloads" => Self::Downloads,
+            "bookmarks" => Self::Bookmarks,
+            "about" => Self::About,
+            "credits" => Self::Credits,
+            _ => return None,
+        })
+    }
+
+    /// Whether this page may send `cmd` (its allow-list). `state.get` is
+    /// answered with only the fields the page reads and its own tab and
+    /// window; `nav.open` always acts from the page's own tab.
+    pub fn allows(self, cmd: &Command) -> bool {
+        use Command as C;
+        let opens = matches!(cmd, C::NavOpen { .. } | C::StateGet);
+        match self {
+            Self::NewTab => {
+                opens
+                    || matches!(
+                        cmd,
+                        C::NavSuggest { .. }
+                            | C::BookmarkTree { .. }
+                            | C::BookmarkRecent { .. }
+                            | C::HistoryQuery { .. }
+                    )
+            }
+            Self::History => opens || cmd.family() == CommandFamily::History,
+            Self::Downloads => opens || cmd.family() == CommandFamily::Download,
+            Self::Bookmarks => {
+                opens
+                    || (cmd.family() == CommandFamily::Bookmark
+                        && !matches!(cmd, C::BookmarkExport { .. } | C::BookmarkImport { .. }))
+            }
+            Self::About => matches!(cmd, C::UpdateCheck | C::UpdateRelaunch | C::StateGet),
+            Self::Credits => matches!(cmd, C::StateGet),
+        }
+    }
+}
+
 /// Who sent a command. The app sets it from the transport (the calling
 /// webview's label, the control client), never from the payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Origin {
-    Ui { window: WindowId },
-    Overlay { window: WindowId },
+    Ui {
+        window: WindowId,
+    },
+    Overlay {
+        window: WindowId,
+    },
     Settings,
-    Control { client: ClientId },
-    Agent { task: TaskId },
+    Control {
+        client: ClientId,
+    },
+    Agent {
+        task: TaskId,
+    },
+    /// A `mado://` page in a tab, through its `internal` page script.
+    InternalPage {
+        tab: TabId,
+        page: InternalPage,
+    },
     System,
 }
 
@@ -1320,7 +1392,12 @@ impl Origin {
     /// Control clients and agents may not touch protected settings or
     /// commands (spec 06, protected settings).
     pub fn is_user(&self) -> bool {
-        !matches!(self, Self::Control { .. } | Self::Agent { .. })
+        // Internal pages are web content: what they may do is their
+        // allow-list, and protected commands are never on it (01 §4.4).
+        !matches!(
+            self,
+            Self::Control { .. } | Self::Agent { .. } | Self::InternalPage { .. }
+        )
     }
 }
 
