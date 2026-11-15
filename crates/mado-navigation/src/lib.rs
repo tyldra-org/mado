@@ -4,6 +4,10 @@
 
 mod calc;
 mod classify;
+mod display;
+mod idn;
 
 pub use calc::evaluate;
 pub use classify::{Context, Input, KNOWN_SCHEMES, Refusal, SCOPES, classify};
+pub use display::{Display, display};
+pub use idn::{TopDomains, host_for_display};

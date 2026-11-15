@@ -1,5 +1,5 @@
-// Writes app/resources/credits.json: every bundled Rust crate and
-// JavaScript package with its licence, for mado://credits (spec 15 §8).
+// Writes app/resources/credits.json: every bundled Rust crate, JavaScript
+// package and data file with its licence, for mado://credits (spec 15 §8).
 // Fails when a licence is not on the allow-list in about.toml.
 //
 //   bun scripts/credits.ts
@@ -11,8 +11,24 @@ export interface Credit {
   name: string;
   version: string;
   license: string;
-  source: "rust" | "javascript";
+  source: "rust" | "javascript" | "data";
 }
+
+/** Data files bundled into the app that are not part of a package. */
+export const DATA: Credit[] = [
+  {
+    name: "Unicode TR39 confusables and identifier status",
+    version: "18.0.0",
+    license: "Unicode-3.0",
+    source: "data",
+  },
+  {
+    name: "Chromium top domains and IDN spoof checks",
+    version: "2023-09",
+    license: "BSD-3-Clause",
+    source: "data",
+  },
+];
 
 const root = join(import.meta.dir, "..");
 

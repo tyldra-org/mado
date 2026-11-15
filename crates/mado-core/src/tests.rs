@@ -1186,3 +1186,31 @@ fn download_commands_follow_the_state() {
     cmd(Command::DownloadClearList).expect("clear");
     assert!(state_of(&core).downloads.is_empty());
 }
+
+/// 05 §4: `displayUrl` shows the registrable domain, IDN as Unicode only
+/// when safe, and the full URL when `addressBar.show` is `fullUrl`.
+#[test]
+fn display_urls_follow_the_spoof_checks_and_the_setting() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let safe = new_tab(&core, w, "https://www.xn--bcher-kva.de/regal");
+    let spoof = new_tab(&core, w, "https://xn--ggle-55da.com/login");
+    let shown = |tab| state_of(&core).tabs[&tab].display_url.clone();
+    assert_eq!(shown(safe).text, "bücher.de");
+    assert_eq!(shown(spoof).text, "xn--ggle-55da.com");
+    assert!(shown(spoof).punycode);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "addressBar.show".into(),
+            value: json!("fullUrl"),
+            token: None,
+        },
+    )
+    .expect("set");
+    let full = shown(safe);
+    assert_eq!(full.text, "https://www.bücher.de/regal");
+    assert_eq!((full.emphasis_start, full.emphasis_end), (12, 21));
+}

@@ -809,7 +809,6 @@ impl Model {
             .and_then(|e| e.pinned_home_url.clone());
         if let Some(t) = self.tabs.get_mut(&tab) {
             if let Some(home) = home {
-                t.display_url.text.clone_from(&home);
                 t.url = home;
             }
             t.life = TabLife::Sleeping;
