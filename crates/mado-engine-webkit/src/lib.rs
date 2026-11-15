@@ -13,6 +13,7 @@
 
 mod convert;
 mod delegate;
+mod download;
 mod scheme;
 mod timeouts;
 mod view;
@@ -32,7 +33,7 @@ use objc2_app_kit::NSView;
 
 pub use convert::{has_geolocation_delegate, safari_version};
 pub use scheme::{Resolved, SchemeResolver};
-pub use view::{TabView, TabViewInfo, download};
+pub use view::{TabView, TabViewInfo};
 
 /// Runs a closure on the main thread (the app: Tauri's `run_on_main_thread`).
 pub type MainRunner = Arc<dyn Fn(Box<dyn FnOnce() + Send>) + Send + Sync>;
@@ -128,4 +129,12 @@ pub fn clear_data(req: ClearDataRequest, done: Callback<Result<(), EngineError>>
 
 pub fn set_proxy(proxy: ProxyConfig) {
     with(|a| a.set_proxy(&proxy));
+}
+
+/// Pauses, cancels or resumes a download (spec 12 §4.2).
+pub fn download(
+    id: mado_engine::event::EngineDownloadId,
+    cmd: mado_engine::event::DownloadCommand,
+) {
+    download::command(id, cmd, view::resume_view());
 }

@@ -99,6 +99,14 @@ impl Engine for TauriWindows {
     fn set_proxy(&mut self, proxy: ProxyConfig) {
         mado_engine_webkit::set_proxy(proxy);
     }
+
+    fn download(
+        &mut self,
+        id: mado_engine::event::EngineDownloadId,
+        cmd: mado_engine::event::DownloadCommand,
+    ) {
+        mado_engine_webkit::download(id, cmd);
+    }
 }
 
 /// Where the adapter finds a window's content view.

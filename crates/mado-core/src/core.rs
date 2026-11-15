@@ -1,6 +1,7 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
+mod dl;
 mod marks;
 mod pages;
 mod session;
@@ -57,6 +58,8 @@ pub enum Internal {
     OpenWindow { bounds: Bounds },
     /// ⌘Q (`shortcut`), the Dock's Quit or the system asked Mado to quit.
     QuitRequested { shortcut: bool },
+    /// SIGTERM: quit without questions, after pausing downloads.
+    Terminate,
     /// macOS reported memory pressure (spec 04 §7).
     MemoryPressure { critical: bool },
     /// The power source changed (energy saver, spec 04 §7).
@@ -74,6 +77,11 @@ pub enum Internal {
     VisitRecorded { tab: TabId, visit: i64 },
     /// A bookmark change was written.
     BookmarksChanged,
+    /// The safety check of a completed download (spec 08 §4).
+    DownloadVerdict {
+        id: mado_types::DownloadId,
+        danger: Option<String>,
+    },
     /// Bookmarks were deleted; they wait for Undo.
     BookmarksDeleted(Vec<crate::bookmarks::Node>),
     /// Opens links as tabs (a bookmark folder).
@@ -227,6 +235,14 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// Downloads beyond the document (spec 12 §4).
+    dls: BTreeMap<mado_types::DownloadId, dl::Dl>,
+    dl_by_engine: BTreeMap<mado_engine::event::EngineDownloadId, mado_types::DownloadId>,
+    /// Downloads each page started, for `automaticDownloads`.
+    page_downloads: BTreeMap<TabId, u32>,
+    next_resume: u64,
+    /// Quitting waits for downloads to pause.
+    quit_after_downloads: bool,
     /// Deleted bookmarks waiting for Undo, by token.
     deleted_bookmarks: BTreeMap<u64, Vec<crate::bookmarks::Node>>,
     /// Each tab's current navigation, for history (spec 12 §2.1).
@@ -307,6 +323,18 @@ impl Core {
                 })
         };
         let closed = std::mem::take(&mut loaded.closed);
+        let downloads = if config.profile.is_private {
+            Vec::new()
+        } else {
+            config
+                .profile_db
+                .readers()
+                .read(dl::load)
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "the download list could not be read");
+                    Vec::new()
+                })
+        };
         let page_scripts = config.page_scripts;
         let mut core = Self {
             state: State {
@@ -337,6 +365,11 @@ impl Core {
             unresponsive: BTreeMap::new(),
             navs: BTreeMap::new(),
             deleted_bookmarks: BTreeMap::new(),
+            dls: BTreeMap::new(),
+            dl_by_engine: BTreeMap::new(),
+            page_downloads: BTreeMap::new(),
+            next_resume: 0,
+            quit_after_downloads: false,
             pending_transition: BTreeMap::new(),
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
@@ -350,6 +383,10 @@ impl Core {
             hooks: Hooks::default(),
         };
         core.mirror_all_settings();
+        for (state, info) in downloads {
+            core.dls.insert(state.id, info);
+            core.state.downloads.insert(state.id, state);
+        }
         // The proxy and page scripts apply to every tab view, so before the
         // first one.
         core.engine.send(EngineOp::SetProxy(core.proxy()));
@@ -647,6 +684,18 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            cmd @ (Command::DownloadPause { .. }
+            | Command::DownloadResume { .. }
+            | Command::DownloadCancel { .. }
+            | Command::DownloadKeep { .. }
+            | Command::DownloadDiscard { .. }
+            | Command::DownloadOpen { .. }
+            | Command::DownloadReveal { .. }
+            | Command::DownloadCopyFile { .. }
+            | Command::DownloadCopyPath { .. }
+            | Command::DownloadRemove { .. }
+            | Command::DownloadOpenSource { .. }
+            | Command::DownloadClearList) => self.download_command(cmd, rec),
             cmd @ (Command::BookmarkTree { .. }
             | Command::BookmarkSearch { .. }
             | Command::BookmarkAdd { .. }
@@ -683,6 +732,7 @@ impl Core {
                 }
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
+            Internal::Terminate => self.terminate(),
             #[cfg(test)]
             Internal::TestUnsavedInput { tab } => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
@@ -702,6 +752,7 @@ impl Core {
             Internal::SleepReady { tab, blob } => self.sleep_ready(tab, blob),
             Internal::VisitRecorded { tab, visit } => self.visit_recorded(tab, visit),
             Internal::BookmarksChanged => self.bookmarks_changed(rec),
+            Internal::DownloadVerdict { id, danger } => self.download_verdict(id, danger, rec),
             Internal::BookmarksDeleted(nodes) => self.bookmarks_deleted(nodes, rec),
             Internal::OpenUrls {
                 urls,
@@ -901,6 +952,12 @@ impl Core {
                 self.heartbeat_check(&mut rec);
                 self.timers
                     .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
+            }
+            Timer::QuitNow => {
+                if self.quit_after_downloads {
+                    self.quit_after_downloads = false;
+                    self.ui.quit();
+                }
             }
             Timer::ForgetDeletedBookmarks(token) => {
                 self.deleted_bookmarks.remove(&token);

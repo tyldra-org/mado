@@ -154,6 +154,33 @@ pub struct EngineDownload {
     pub total: Option<u64>,
 }
 
+/// Where a download goes, the core's answer to `DownloadStarted`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadDestination {
+    /// Write here (the core's `.madodownload` temporary name).
+    Path(PathBuf),
+    /// Show the save panel, starting at this path (`downloads.askWhere`);
+    /// the file goes where the user chose, with the same suffix.
+    Ask(PathBuf),
+    /// Safe default.
+    Cancel,
+}
+
+/// What the core asks of a running download (spec 12 §4.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadCommand {
+    /// Stop and keep resume data: answered with `DownloadFinished` and
+    /// `DownloadError::Interrupted`.
+    Pause,
+    Cancel,
+    /// Start again from resume data, under the same engine ID, writing on
+    /// at `path`.
+    Resume {
+        resume_data: Vec<u8>,
+        path: PathBuf,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DownloadError {
     Cancelled,
@@ -390,9 +417,11 @@ pub enum EngineEvent {
         request: FileChooserRequest,
         reply: Reply<Vec<PathBuf>>,
     },
+    /// Default: `DownloadDestination::Cancel`.
     DownloadStarted {
         tab: Option<TabId>,
         download: EngineDownload,
+        reply: Reply<DownloadDestination>,
     },
     DownloadProgress {
         id: EngineDownloadId,

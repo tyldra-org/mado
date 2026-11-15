@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Web pages load in tabs through WebKit, each profile with its own website data and proxy, and sites see Mado as Safari.
 - Find in page, mute, link previews in the status bubble, page icons, a prompt for pages that stop responding, and reload, back, forward, zoom, print and save for tabs.
 - Bookmarks: a bookmarks bar and Other bookmarks, ⌘D to add or edit, folders that open as tabs, Undo after deleting, and import and export in the HTML format every browser reads.
+- Downloads: files go to the Downloads folder under a unique name, can be paused and resumed (also after quitting Mado), get the quarantine mark, and wait for Keep when they are insecure or a risky type from a new site. A downloads button lists them.
 - History: every visit is recorded with how it happened, pages' text is searchable (never on banking sites or pages with password fields), and history can be deleted by visit, site or time, excluded per site, and exported as CSV.
 - Tabs, windows and groups: opening, closing and selecting tabs as Chrome does, pinned tabs, saved groups, ⌘⇧T for closed tabs, groups and windows, sleeping tabs with Memory Saver, startup modes with crash restore, and a warning before quitting with typed text.
 - Nightly builds for Apple silicon Macs, signed with Mado's own certificate, that update themselves on the nightly channel. Intel Macs are not supported.

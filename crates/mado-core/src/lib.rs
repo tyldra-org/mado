@@ -10,6 +10,7 @@
 
 pub mod bookmarks;
 mod core;
+pub mod downloads;
 pub mod history;
 pub mod navigation;
 pub mod store;

@@ -8,7 +8,10 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use mado_engine::event::{EngineSecurity, GoneReason};
+use mado_engine::event::{
+    DownloadCommand, DownloadDestination, DownloadError, EngineDownload, EngineDownloadId,
+    EngineSecurity, GoneReason,
+};
 use mado_engine::tab::{Image, ImageFormat, Modifiers, SessionBlob};
 use mado_engine::{
     Callback, Capabilities, ClearDataRequest, Engine, EngineError, EngineEvent, EventSink,
@@ -59,6 +62,15 @@ impl FakeTab {
     }
 }
 
+/// A download as the fake engine sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeDownload {
+    pub destination: Option<DownloadDestination>,
+    pub running: bool,
+    pub received: u64,
+    pub total: Option<u64>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Session {
     history: Vec<String>,
@@ -79,6 +91,8 @@ pub struct FakeState {
     pub page_scripts: PageScriptSet,
     pub proxy: ProxyConfig,
     pub cleared: Vec<ClearDataRequest>,
+    /// Downloads: where the core put them, and whether they run.
+    pub downloads: BTreeMap<EngineDownloadId, FakeDownload>,
     next_nav: u64,
 }
 
@@ -143,6 +157,92 @@ impl FakeControl {
             },
         };
         self.decide(tab, request, |_, _, _| {});
+    }
+
+    /// The page starts a download; the core picks its destination.
+    pub fn download(
+        &self,
+        tab: TabId,
+        id: u64,
+        url: &str,
+        filename: &str,
+        total: Option<u64>,
+    ) -> EngineDownloadId {
+        let id = EngineDownloadId(id);
+        lock(&self.state).downloads.insert(
+            id,
+            FakeDownload {
+                destination: None,
+                running: true,
+                received: 0,
+                total,
+            },
+        );
+        let control = self.clone();
+        let (reply, _expiry) = Reply::new(
+            DownloadDestination::Cancel,
+            move |d: DownloadDestination| {
+                let cancel = d == DownloadDestination::Cancel;
+                if let Some(dl) = lock(&control.state).downloads.get_mut(&id) {
+                    dl.destination = Some(d);
+                    dl.running = !cancel;
+                }
+                if cancel {
+                    control.events.send(EngineEvent::DownloadFinished {
+                        id,
+                        result: Err(DownloadError::Cancelled),
+                    });
+                }
+            },
+        );
+        self.events.send(EngineEvent::DownloadStarted {
+            tab: Some(tab),
+            download: EngineDownload {
+                id,
+                url: url.to_owned(),
+                suggested_filename: filename.to_owned(),
+                mime: None,
+                total,
+            },
+            reply,
+        });
+        id
+    }
+
+    /// Bytes arrive.
+    pub fn download_progress(&self, id: EngineDownloadId, received: u64) {
+        let total = {
+            let mut s = lock(&self.state);
+            let Some(d) = s.downloads.get_mut(&id) else {
+                return;
+            };
+            d.received = received;
+            d.total
+        };
+        self.events.send(EngineEvent::DownloadProgress {
+            id,
+            received,
+            total,
+        });
+    }
+
+    /// The download completes at its destination.
+    pub fn download_done(&self, id: EngineDownloadId) {
+        let path = {
+            let mut s = lock(&self.state);
+            let Some(d) = s.downloads.get_mut(&id) else {
+                return;
+            };
+            d.running = false;
+            match &d.destination {
+                Some(DownloadDestination::Path(p) | DownloadDestination::Ask(p)) => p.clone(),
+                _ => return,
+            }
+        };
+        self.events.send(EngineEvent::DownloadFinished {
+            id,
+            result: Ok(path),
+        });
     }
 
     /// The tab's content process dies.
@@ -554,6 +654,39 @@ impl Engine for FakeEngine {
 
     fn set_proxy(&mut self, proxy: ProxyConfig) {
         self.lock().proxy = proxy;
+    }
+
+    fn download(&mut self, id: EngineDownloadId, cmd: DownloadCommand) {
+        let event = {
+            let mut s = self.lock();
+            let d = s.downloads.entry(id).or_insert(FakeDownload {
+                destination: None,
+                running: false,
+                received: 0,
+                total: None,
+            });
+            match cmd {
+                DownloadCommand::Pause => {
+                    d.running = false;
+                    Some(Err(DownloadError::Interrupted {
+                        resume_data: format!("resume:{}", d.received).into_bytes(),
+                    }))
+                }
+                DownloadCommand::Cancel => {
+                    d.running = false;
+                    Some(Err(DownloadError::Cancelled))
+                }
+                DownloadCommand::Resume { path, .. } => {
+                    d.running = true;
+                    d.destination = Some(DownloadDestination::Path(path));
+                    None
+                }
+            }
+        };
+        if let Some(result) = event {
+            self.control
+                .send(EngineEvent::DownloadFinished { id, result });
+        }
     }
 }
 

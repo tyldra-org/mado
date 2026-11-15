@@ -199,6 +199,7 @@ impl Core {
 
     /// A new document starts without a heartbeat and with no prompt.
     pub(super) fn new_document(&mut self, tab: TabId, rec: &mut PatchRecorder) {
+        self.page_downloads.remove(&tab);
         self.heartbeats.remove(&tab);
         self.responsive(tab, rec);
         self.context_targets.remove(&tab);
@@ -206,6 +207,7 @@ impl Core {
     }
 
     pub(super) fn forget_tab(&mut self, tab: TabId) {
+        self.page_downloads.remove(&tab);
         self.tab_gone(tab);
         self.heartbeats.remove(&tab);
         self.unresponsive.remove(&tab);

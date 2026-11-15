@@ -864,6 +864,11 @@ impl Core {
         self.request_close(CloseAction::Quit, rec);
     }
 
+    /// The system asked Mado to stop: no prompts, downloads pause first.
+    pub(super) fn terminate(&mut self) {
+        self.finish_close(CloseAction::Quit);
+    }
+
     fn request_close(&mut self, action: CloseAction, rec: &mut PatchRecorder) {
         let unsaved: Vec<UnsavedTab> = self
             .model
@@ -907,7 +912,14 @@ impl Core {
     /// Pages' own `beforeunload` handlers run with page dialogs (M2-T07).
     fn finish_close(&mut self, action: CloseAction) {
         match action {
-            CloseAction::Quit => self.ui.quit(),
+            CloseAction::Quit => {
+                if self.pause_downloads_for_quit() {
+                    self.timers
+                        .schedule(Timer::QuitNow, std::time::Duration::from_secs(3));
+                } else {
+                    self.ui.quit();
+                }
+            }
             CloseAction::Window(w) => {
                 if let Ok((snapshot, _)) = self.model.remove_window(w)
                     && !snapshot.tabs.is_empty()
@@ -1507,6 +1519,17 @@ impl Core {
                 message,
                 ..
             } => self.page_message(tab, &frame, message, rec),
+            EngineEvent::DownloadStarted {
+                tab,
+                download,
+                reply,
+            } => self.download_started(tab, download, reply, rec),
+            EngineEvent::DownloadProgress {
+                id,
+                received,
+                total,
+            } => self.download_progress(id, received, total, rec),
+            EngineEvent::DownloadFinished { id, result } => self.download_finished(id, result, rec),
             EngineEvent::NewWindowRequested {
                 tab,
                 request,

@@ -137,6 +137,100 @@ fn certificates() -> Result<(Certs, String), Error> {
 #[derive(Clone)]
 struct Pages(Arc<PathBuf>);
 
+/// A download for tests (spec 16 §2): `?name=<file>&bytes=<n>&rate=<bytes per
+/// second>` sends `n` predictable bytes as an attachment, slowly when asked,
+/// and honours `Range` with `If-Range` so a paused download resumes.
+fn download(request: &Request) -> Response {
+    let query: HashMap<String, String> = request
+        .uri()
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    let name: String = query
+        .get("name")
+        .map_or("file.bin", String::as_str)
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        .collect();
+    let total: u64 = query
+        .get("bytes")
+        .and_then(|b| b.parse().ok())
+        .unwrap_or(1024)
+        .min(1 << 30);
+    let rate: u64 = query.get("rate").and_then(|r| r.parse().ok()).unwrap_or(0);
+    let etag = format!("\"{name}-{total}\"");
+    let range_start = request
+        .headers()
+        .get(header::RANGE)
+        .and_then(|r| r.to_str().ok())
+        .and_then(|r| r.strip_prefix("bytes="))
+        .and_then(|r| r.split('-').next())
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|_| {
+            request
+                .headers()
+                .get(header::IF_RANGE)
+                .and_then(|v| v.to_str().ok())
+                .is_none_or(|v| v == etag)
+        })
+        .filter(|s| *s < total);
+    let start = range_start.unwrap_or(0);
+    let body = futures_stream(start, total, rate);
+    let mut response = Response::new(Body::from_stream(body));
+    let h = response.headers_mut();
+    let set = |h: &mut axum::http::HeaderMap, k: header::HeaderName, v: String| {
+        if let Ok(v) = v.parse() {
+            h.insert(k, v);
+        }
+    };
+    set(h, header::CONTENT_TYPE, "application/octet-stream".into());
+    set(
+        h,
+        header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{name}\""),
+    );
+    set(h, header::ACCEPT_RANGES, "bytes".into());
+    set(h, header::ETAG, etag.clone());
+    set(h, header::CONTENT_LENGTH, (total - start).to_string());
+    if range_start.is_some() {
+        set(
+            h,
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{}/{total}", total - 1),
+        );
+    }
+    if range_start.is_some() {
+        *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+    }
+    response
+}
+
+/// Byte `i` of a test download is `i % 251`, so a resumed file can be
+/// checked byte for byte.
+fn futures_stream(
+    start: u64,
+    total: u64,
+    rate: u64,
+) -> impl futures_util::Stream<Item = Result<Vec<u8>, std::io::Error>> {
+    const CHUNK: u64 = 16 * 1024;
+    futures_util::stream::unfold(start, move |at| async move {
+        if at >= total {
+            return None;
+        }
+        let end = (at + CHUNK).min(total);
+        if let Some(ms) = ((end - at) * 1000).checked_div(rate) {
+            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+        }
+        let bytes: Vec<u8> = (at..end)
+            .map(|i| u8::try_from(i % 251).unwrap_or(0))
+            .collect();
+        Some((Ok(bytes), end))
+    })
+}
+
 /// `/__echo` returns the request as JSON; every other path is a file under
 /// the pages folder. Hosts outside `*.mado.test` get 502: tests never reach
 /// the internet through the fixture proxy.
@@ -167,6 +261,9 @@ async fn handle(State(pages): State<Pages>, request: Request) -> Response {
             .collect();
         return axum::Json(json!({ "host": host, "path": path, "method": request.method().as_str(), "headers": headers }))
             .into_response();
+    }
+    if path == "/__download" {
+        return download(&request);
     }
     let relative = path.trim_start_matches('/');
     let relative = if relative.is_empty() {
