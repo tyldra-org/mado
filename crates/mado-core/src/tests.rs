@@ -2541,6 +2541,12 @@ impl crate::Profiles for RoutingProfiles {
     fn route(&self, url: &str) -> Option<mado_types::ProfileId> {
         url.contains("acme.com").then_some(self.0)
     }
+    fn export(&self, _: mado_types::ProfileId, _: &str) -> Result<(), MadoError> {
+        Ok(())
+    }
+    fn import(&self, _: &str) -> Result<Value, MadoError> {
+        Ok(json!({}))
+    }
 }
 
 /// 12 §1.3: links from other apps that a rule sends to another profile go

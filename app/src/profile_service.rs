@@ -293,6 +293,172 @@ impl Profiles for AppProfiles {
     fn route(&self, url: &str) -> Option<ProfileId> {
         profiles::route(&self.app_db, url)
     }
+
+    fn export(&self, id: ProfileId, path: &str) -> Result<(), MadoError> {
+        let profile = self.find(id)?;
+        export(
+            &self.paths,
+            &profile,
+            std::path::Path::new(path),
+            (self.now)(),
+        )
+        .map_err(failed)
+    }
+
+    fn import(&self, path: &str) -> Result<Value, MadoError> {
+        let id = ProfileId::new();
+        let (name, color) = import(&self.paths, id, std::path::Path::new(path)).map_err(|e| {
+            let _ = std::fs::remove_dir_all(self.paths.profile(id));
+            MadoError::new(ErrorCode::InvalidInput, "error.profile.badFile").arg("reason", e)
+        })?;
+        let (text, now) = (id.to_string(), (self.now)());
+        self.app_db
+            .writer()
+            .write(move |c| {
+                c.execute(
+                    "INSERT INTO profiles (id, name, color, avatar, sort, created_at, schema_version)
+                     VALUES (?1, ?2, ?3, '', (SELECT COALESCE(MAX(sort), 0) + 1 FROM profiles), ?4, 1)",
+                    params![text, name, color, now],
+                )
+            })
+            .wait()
+            .map_err(failed)?;
+        Ok(json!({ "id": id }))
+    }
+}
+
+/// Version of the `.madoprofile` format (spec 12 §1.5).
+const EXPORT_VERSION: u32 = 1;
+
+/// Tables an export leaves empty: page text, the session journal and the
+/// AI audit stay on this Mac.
+const NOT_EXPORTED: &[&str] = &["page_text", "page_text_meta", "session_journal", "ai_audit"];
+
+/// Writes `profile`'s `.madoprofile` to `dest` (spec 12 §1.5): the
+/// manifest, a copy of the database without page text, the session journal
+/// and the AI audit, and the extension list. The vault joins with M4.
+pub fn export(
+    paths: &Paths,
+    profile: &Profile,
+    dest: &std::path::Path,
+    now: i64,
+) -> Result<(), String> {
+    let copy = std::env::temp_dir().join(format!("mado-export-{}-{now}.sqlite", profile.id));
+    let _ = std::fs::remove_file(&copy);
+    let result = write_export(paths, profile, &copy, dest, now);
+    let _ = std::fs::remove_file(&copy);
+    result
+}
+
+fn write_export(
+    paths: &Paths,
+    profile: &Profile,
+    copy: &std::path::Path,
+    dest: &std::path::Path,
+    now: i64,
+) -> Result<(), String> {
+    use std::io::Write;
+    {
+        let conn = rusqlite::Connection::open_with_flags(
+            paths.profile_db(profile.id),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute("VACUUM INTO ?1", [copy.to_string_lossy()])
+            .map_err(|e| e.to_string())?;
+    }
+    let extensions: Vec<Value> = {
+        let c = rusqlite::Connection::open(copy).map_err(|e| e.to_string())?;
+        for t in NOT_EXPORTED {
+            c.execute(&format!("DELETE FROM {t}"), [])
+                .map_err(|e| e.to_string())?;
+        }
+        let list = {
+            let mut stmt = c
+                .prepare("SELECT id, enabled, private_allowed FROM extensions ORDER BY id")
+                .map_err(|e| e.to_string())?;
+            stmt.query_map([], |r| {
+                Ok(json!({ "id": r.get::<_, String>(0)?, "enabled": r.get::<_, bool>(1)?, "privateAllowed": r.get::<_, bool>(2)? }))
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect()
+        };
+        c.execute("DELETE FROM extensions", [])
+            .map_err(|e| e.to_string())?;
+        c.execute_batch("VACUUM").map_err(|e| e.to_string())?;
+        list
+    };
+    let manifest = json!({ "version": EXPORT_VERSION, "name": profile.name, "color": profile.color, "created": now });
+    let partial = dest.with_extension("madoprofile.partial");
+    let file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut put = |name: &str, bytes: &[u8]| -> Result<(), String> {
+        zip.start_file(name, opts).map_err(|e| e.to_string())?;
+        zip.write_all(bytes).map_err(|e| e.to_string())
+    };
+    put("manifest.json", manifest.to_string().as_bytes())?;
+    put(
+        "profile.sqlite",
+        &std::fs::read(copy).map_err(|e| e.to_string())?,
+    )?;
+    put("extensions.json", json!(extensions).to_string().as_bytes())?;
+    zip.finish().map_err(|e| e.to_string())?;
+    std::fs::rename(&partial, dest).map_err(|e| e.to_string())
+}
+
+/// Reads a `.madoprofile` into a new profile folder; returns its name and
+/// colour. The database's own version check refuses a newer one when the
+/// profile opens.
+pub fn import(
+    paths: &Paths,
+    id: ProfileId,
+    src: &std::path::Path,
+) -> Result<(String, String), String> {
+    use std::io::Read;
+    const MAX: u64 = 4 * 1024 * 1024 * 1024;
+    let file = std::fs::File::open(src).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let mut read = |name: &str| -> Result<Vec<u8>, String> {
+        let entry = zip
+            .by_name(name)
+            .map_err(|_| format!("{name} is missing"))?;
+        if entry.size() > MAX {
+            return Err(format!("{name} is too large"));
+        }
+        let mut out = Vec::new();
+        entry
+            .take(MAX)
+            .read_to_end(&mut out)
+            .map_err(|e| e.to_string())?;
+        Ok(out)
+    };
+    let manifest: Value =
+        serde_json::from_slice(&read("manifest.json")?).map_err(|e| e.to_string())?;
+    if manifest["version"].as_u64() != Some(u64::from(EXPORT_VERSION)) {
+        return Err("not a profile file this Mado reads".into());
+    }
+    let db = read("profile.sqlite")?;
+    if !db.starts_with(b"SQLite format 3\0") {
+        return Err("the profile database is damaged".into());
+    }
+    let folder = paths.profile(id);
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    std::fs::write(paths.profile_db(id), db).map_err(|e| e.to_string())?;
+    let name: String = manifest["name"]
+        .as_str()
+        .unwrap_or("Imported")
+        .chars()
+        .take(64)
+        .collect();
+    let color = manifest["color"]
+        .as_str()
+        .filter(|c| c.len() <= 16)
+        .unwrap_or("blue")
+        .to_owned();
+    Ok((name, color))
 }
 
 #[cfg(test)]
@@ -370,6 +536,65 @@ mod tests {
             .map(|p| p.id)
             .collect();
         assert_eq!(left, vec![home]);
+    }
+
+    /// 12 §1.5: an export holds the bookmarks but no page text or session
+    /// journal, and imports as a new profile.
+    #[test]
+    fn a_profile_exports_and_imports_without_private_tables() {
+        let dir = tempfile::tempdir().expect("dir");
+        let s = service(
+            dir.path(),
+            ProfileId::new(),
+            Arc::new(Mutex::new(Vec::new())),
+        );
+        let home = profiles::ensure_one(&s.app_db, 1).expect("one")[0].clone();
+        let db = mado_storage::open(
+            &s.paths.profile_db(home.id),
+            mado_storage::Kind::Profile,
+            &s.paths.backups(home.id),
+            &s.paths.broken(home.id),
+        )
+        .expect("profile db");
+        drop(db);
+        {
+            let c = rusqlite::Connection::open(s.paths.profile_db(home.id)).expect("open");
+            c.execute(
+                "INSERT INTO bookmarks (id, parent_id, kind, title, url, sort, root, created_at, updated_at) VALUES ('b1', NULL, 'link', 'Kept', 'https://a.example/', 0, NULL, 1, 1)",
+                [],
+            )
+            .expect("a bookmark");
+            c.execute("INSERT INTO page_text (rowid, title, url, body) VALUES (1, 't', 'u', 'secret words')", [])
+                .expect("page text");
+        }
+        let file = dir.path().join("Home.madoprofile");
+        export(&s.paths, &home, &file, 5).expect("export");
+        let imported: ProfileId = serde_json::from_value(
+            Profiles::import(&s, file.to_str().expect("path")).expect("import")["id"].clone(),
+        )
+        .expect("an id");
+        let c = rusqlite::Connection::open(s.paths.profile_db(imported)).expect("open");
+        let text: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM page_text WHERE page_text MATCH 'secret'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(text, 0, "page text stays behind");
+        let kept: String = c
+            .query_row("SELECT title FROM bookmarks WHERE id = 'b1'", [], |r| {
+                r.get(0)
+            })
+            .expect("kept");
+        assert_eq!(kept, "Kept");
+        let names: Vec<String> = profiles::list(&s.app_db)
+            .expect("list")
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert_eq!(names, vec!["Personal".to_owned(), "Personal".to_owned()]);
+        assert!(Profiles::import(&s, dir.path().join("none").to_str().expect("path")).is_err());
     }
 
     #[test]

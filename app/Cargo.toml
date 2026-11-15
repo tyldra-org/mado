@@ -42,6 +42,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 url = "2.5.8"
 uuid = { version = "1.29.2", features = ["v7"] }
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }

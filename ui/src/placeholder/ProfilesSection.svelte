@@ -14,6 +14,7 @@
   let newName = $state("");
   let confirming = $state<string | null>(null);
   let error = $state<string | null>(null);
+  let file = $state("");
 
   async function load() {
     profiles = (await client.call({ type: "profile.list" }).catch(() => [])) as Profile[];
@@ -101,6 +102,26 @@
       run({ type: "profile.create", name: newName, color: "blue", avatar: "" }).then(
         () => (newName = ""),
       )}>{t("profiles.add")}</button
+  >
+
+  <h3>{t("profiles.file")}</h3>
+  <label
+    >{t("profiles.filePath")}
+    <input bind:value={file} placeholder="/Users/you/Desktop/Work.madoprofile" /></label
+  >
+  {#each profiles.filter((p) => p.current) as p (p.id)}
+    <button
+      type="button"
+      disabled={!file.trim()}
+      onclick={() => run({ type: "profile.export", id: p.id, path: file.trim(), passphrase: null })}
+      >{t("profiles.export", { name: p.name })}</button
+    >
+  {/each}
+  <button
+    type="button"
+    disabled={!file.trim()}
+    onclick={() => run({ type: "profile.import", path: file.trim(), passphrase: null })}
+    >{t("profiles.import")}</button
   >
 
   <h3>{t("profiles.linkRules")}</h3>
