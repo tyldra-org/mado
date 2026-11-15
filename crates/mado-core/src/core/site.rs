@@ -342,8 +342,12 @@ impl Core {
         let mado_ui = origin.is_user();
         match cmd {
             Command::PromptRespond { id, decision } => {
-                let armed = match self.state.prompts.get(&id) {
-                    Some(PromptState::Permission { armed_at, .. }) => *armed_at,
+                let (armed, link) = match self.state.prompts.get(&id) {
+                    Some(PromptState::Permission { armed_at, .. }) => (*armed_at, false),
+                    Some(
+                        PromptState::AppLink { armed_at, .. }
+                        | PromptState::ProtocolHandler { armed_at, .. },
+                    ) => (*armed_at, true),
                     _ => return Err(not_found()),
                 };
                 if !mado_ui {
@@ -357,6 +361,10 @@ impl Core {
                         ErrorCode::InvalidInput,
                         "error.prompt.notArmed",
                     ));
+                }
+                if link {
+                    self.answer_link_prompt(id, decision, rec);
+                    return Ok(Value::Null);
                 }
                 let p = self.close_prompt(id, rec).ok_or_else(not_found)?;
                 match decision {
@@ -379,11 +387,13 @@ impl Core {
                 Ok(Value::Null)
             }
             Command::PromptDismiss { id } => {
-                if !matches!(
-                    self.state.prompts.get(&id),
-                    Some(PromptState::Permission { .. })
-                ) {
-                    return Err(not_found());
+                match self.state.prompts.get(&id) {
+                    Some(PromptState::Permission { .. }) => {}
+                    Some(PromptState::AppLink { .. } | PromptState::ProtocolHandler { .. }) => {
+                        self.answer_link_prompt(id, PromptDecision::Never, rec);
+                        return Ok(Value::Null);
+                    }
+                    _ => return Err(not_found()),
                 }
                 if let Some(p) = self.close_prompt(id, rec) {
                     self.dismissed(p);
@@ -516,6 +526,7 @@ impl Core {
     /// and "this time" grants end.
     pub(super) fn forget_permissions(&mut self, tab: TabId, rec: &mut PatchRecorder) {
         self.this_time.remove(&tab);
+        self.forget_link_prompts(tab, rec);
         if let Some(queue) = self.perm_queue.remove(&tab) {
             for (_, reply) in queue {
                 reply.send(PermissionDecision::Deny);

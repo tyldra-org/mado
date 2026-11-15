@@ -17,6 +17,8 @@ pub struct Sent {
     pub notices: Vec<Notice>,
     /// Pages handed to Safari.
     pub safari: Vec<String>,
+    /// Links handed to other apps.
+    pub launched: Vec<String>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -35,6 +37,13 @@ impl UiSink for Collect {
             .unwrap_or_else(|e| e.into_inner())
             .notices
             .push(notice.clone());
+    }
+    fn launch_app_link(&mut self, url: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .launched
+            .push(url.to_owned());
     }
     fn open_in_safari(&mut self, url: &str) {
         self.0
@@ -122,6 +131,20 @@ impl TestCore {
                     _ => mado_platform::permissions::OsStatus::Granted,
                 },
                 request: |_| mado_platform::permissions::OsStatus::Granted,
+                // Only zoommtg: and mailto: have an app here.
+                handler: |url| {
+                    let name = if url.starts_with("zoommtg:") {
+                        "zoom.us"
+                    } else if url.starts_with("mailto:") {
+                        "Mail"
+                    } else {
+                        return None;
+                    };
+                    Some(mado_platform::applinks::Handler {
+                        name: name.into(),
+                        icon_png: Some(vec![137, 80, 78, 71]),
+                    })
+                },
             },
             user_agent: mado_engine::UserAgent::EngineDefault,
             clean_start,

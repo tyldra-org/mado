@@ -118,6 +118,15 @@ impl UiSink for TauriUi {
         });
     }
 
+    fn launch_app_link(&mut self, url: &str) {
+        let url = url.to_owned();
+        std::thread::spawn(move || {
+            if let Err(e) = mado_platform::applinks::launch(&url) {
+                tracing::warn!(error = %e, "an app link did not open");
+            }
+        });
+    }
+
     fn open_in_safari(&mut self, url: &str) {
         let url = url.to_owned();
         std::thread::spawn(move || {

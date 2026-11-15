@@ -2011,3 +2011,153 @@ fn the_notification_shim_follows_the_site_setting() {
             })
     });
 }
+
+fn app_link_prompt(core: &TestCore) -> Option<(mado_types::PromptId, String, Option<String>)> {
+    state_of(core).prompts.values().find_map(|p| match p {
+        mado_types::state::PromptState::AppLink {
+            id,
+            app_name,
+            app_icon,
+            ..
+        } => Some((*id, app_name.clone(), app_icon.clone())),
+        _ => None,
+    })
+}
+
+/// 07 §6 on the fake engine: no gesture or a blocked scheme opens nothing;
+/// no app gives a quiet notice; otherwise the prompt names the app, and
+/// "Always" lets the site open it without asking; a fourth launch within
+/// 10 seconds is refused; mailto: opens with no prompt.
+#[test]
+fn app_links_ask_with_the_apps_name_and_remember() {
+    use mado_engine::tab::Modifiers;
+    use mado_types::command::PromptDecision;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://meet.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://meet.example/"
+    });
+    let launched = || {
+        core.sent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .launched
+            .clone()
+    };
+    let zoom = "zoommtg://zoom.us/join?confno=1";
+    core.page.page_navigates(tab, zoom, false);
+    core.page.page_navigates(tab, "search-ms:query=x", true);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(
+        app_link_prompt(&core).is_none(),
+        "no gesture, blocked scheme: nothing"
+    );
+    core.page
+        .page_clicks(tab, "unknownapp://x", Modifiers::default());
+    eventually("the no-app notice", || {
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.noAppForLink")
+    });
+    core.page.page_clicks(tab, zoom, Modifiers::default());
+    eventually("the prompt", || app_link_prompt(&core).is_some());
+    let (id, name, icon) = app_link_prompt(&core).expect("prompt");
+    assert_eq!(name, "zoom.us");
+    assert_eq!(icon.as_deref(), Some("data:image/png;base64,iVBORw=="));
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+            1_800_000_000_600,
+        ))));
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::PromptRespond {
+            id,
+            decision: PromptDecision::AllowWhileVisiting,
+        },
+    )
+    .expect("open");
+    assert_eq!(launched(), vec![zoom.to_owned()]);
+    core.page.page_clicks(tab, zoom, Modifiers::default());
+    eventually("opened without asking", || launched().len() == 2);
+    assert!(app_link_prompt(&core).is_none());
+    // The fourth launch from the tab within 10 seconds (the no-app link
+    // counted too) is refused.
+    core.page
+        .page_clicks(tab, "mailto:a@b.example", Modifiers::default());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(launched().len(), 2);
+    // Ten seconds later, mailto: opens with no prompt.
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+            1_800_000_011_000,
+        ))));
+    core.page
+        .page_clicks(tab, "mailto:a@b.example", Modifiers::default());
+    eventually("mail", || {
+        launched().last().is_some_and(|u| u == "mailto:a@b.example")
+    });
+}
+
+/// 07 §6: a registered mail handler opens mailto: links in a new tab.
+#[test]
+fn a_registered_handler_takes_mailto_links() {
+    use mado_engine::page::{PageMessage, ProtocolHandlerRegister};
+    use mado_engine::tab::Modifiers;
+    use mado_types::command::PromptDecision;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://mail.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://mail.example/"
+    });
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Page,
+        frame: mado_engine::event::FrameInfo {
+            is_main_frame: true,
+            origin: "https://mail.example".into(),
+            url: "https://mail.example/".into(),
+        },
+        message: PageMessage::ProtocolHandlerRegister(ProtocolHandlerRegister {
+            scheme: "mailto".into(),
+            url: "https://mail.example/compose?to=%s".into(),
+        }),
+    });
+    let id = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            mado_types::state::PromptState::ProtocolHandler { id, scheme, .. }
+                if scheme == "mailto" =>
+            {
+                Some(*id)
+            }
+            _ => None,
+        })
+    };
+    eventually("the prompt", || id().is_some());
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+            1_800_000_000_600,
+        ))));
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::PromptRespond {
+            id: id().expect("prompt"),
+            decision: PromptDecision::AllowWhileVisiting,
+        },
+    )
+    .expect("allow");
+    core.page
+        .page_clicks(tab, "mailto:a@b.example", Modifiers::default());
+    eventually("the compose tab", || {
+        state_of(&core)
+            .tabs
+            .values()
+            .any(|t| t.url == "https://mail.example/compose?to=mailto%3Aa%40b.example")
+    });
+}
