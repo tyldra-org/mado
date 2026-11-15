@@ -2,6 +2,7 @@
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
 mod dl;
+mod errors;
 mod marks;
 mod nav;
 mod pages;
@@ -26,7 +27,6 @@ use mado_types::{
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::navigation::{self, HttpsFirst, PolicyContext};
 use crate::store::{self, Loaded};
 use crate::tabs::{ClosedEntry, Model};
 use crate::timers::{Timer, Timers};
@@ -78,6 +78,14 @@ pub enum Internal {
     VisitRecorded { tab: TabId, visit: i64 },
     /// A bookmark change was written.
     BookmarksChanged,
+    /// The captive portal probe found a portal after a failed load.
+    CaptivePortal {
+        tab: TabId,
+        url: String,
+        portal: String,
+    },
+    /// Loads `url` again in `tab` (after clearing a site's cookies).
+    Reload { tab: TabId, url: String },
     /// Remote search suggestions merged with the local rows (spec 05 §2).
     RemoteSuggestions { window: WindowId, payload: Value },
     /// The safety check of a completed download (spec 08 §4).
@@ -158,6 +166,8 @@ pub struct CoreConfig {
     pub updates: Box<dyn Updates>,
     /// The time source, Unix milliseconds. Tests pass a fixed clock.
     pub clock: fn() -> i64,
+    /// The captive portal probe (spec 05 §8); `None` turns detection off.
+    pub captive_probe: Option<String>,
 }
 
 impl std::fmt::Debug for CoreConfig {
@@ -238,6 +248,17 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// Error pages on screen, by tab (spec 05 §6).
+    error_pages: BTreeMap<TabId, errors::ErrorPage>,
+    /// Tabs whose next commit is their error page, not a visit.
+    error_commits: std::collections::BTreeSet<TabId>,
+    /// HTTPS-first upgrades in flight (spec 05 §5).
+    upgrades: BTreeMap<TabId, errors::Upgrade>,
+    /// `httpAllowed` hosts and when they expire.
+    http_allowed: BTreeMap<String, i64>,
+    /// http URLs the user chose to continue to, allowed once.
+    continue_once: std::collections::BTreeSet<String>,
+    captive_probe: Option<String>,
     /// The profile's search engines (spec 05 §3).
     engines: Vec<nav::EngineRow>,
     /// Searches waiting for their visit, for `search_terms`.
@@ -299,8 +320,10 @@ pub fn start(config: CoreConfig) -> std::io::Result<(CoreHandle, std::thread::Jo
     let thread = std::thread::Builder::new()
         .name("mado-core".into())
         .spawn(move || {
+            // IO for the network requests the core makes itself (remote
+            // suggestions, the captive portal probe).
             let runtime = match tokio::runtime::Builder::new_current_thread()
-                .enable_time()
+                .enable_all()
                 .build()
             {
                 Ok(rt) => rt,
@@ -355,6 +378,11 @@ impl Core {
                     Vec::new()
                 }),
         );
+        let http_allowed = config
+            .profile_db
+            .readers()
+            .read(|c| errors::load_http_allowed(c, (config.clock)()))
+            .unwrap_or_default();
         let page_scripts = config.page_scripts;
         let mut core = Self {
             state: State {
@@ -386,6 +414,12 @@ impl Core {
             navs: BTreeMap::new(),
             deleted_bookmarks: BTreeMap::new(),
             displayed: BTreeMap::new(),
+            error_pages: BTreeMap::new(),
+            error_commits: std::collections::BTreeSet::new(),
+            upgrades: BTreeMap::new(),
+            http_allowed,
+            continue_once: std::collections::BTreeSet::new(),
+            captive_probe: config.captive_probe.clone(),
             engines,
             pending_search: BTreeMap::new(),
             dls: BTreeMap::new(),
@@ -810,6 +844,10 @@ impl Core {
             Internal::BookmarksChanged => self.bookmarks_changed(rec),
             Internal::DownloadVerdict { id, danger } => self.download_verdict(id, danger, rec),
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
+            Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
+            Internal::Reload { tab, url } => {
+                let _ = self.navigate(tab, url);
+            }
             Internal::BookmarksDeleted(nodes) => self.bookmarks_deleted(nodes, rec),
             Internal::OpenUrls {
                 urls,
@@ -909,19 +947,36 @@ impl Core {
 
     fn engine_event(&mut self, event: EngineEvent, rec: &mut PatchRecorder) {
         match event {
-            EngineEvent::DecidePolicy { request, reply, .. } => {
-                let https_first = HttpsFirst::from_setting(
-                    self.settings
-                        .value(lookup_def("security.httpsFirst"))
-                        .as_str()
-                        .unwrap_or_default(),
+            EngineEvent::DecidePolicy {
+                tab,
+                request,
+                reply,
+            } => {
+                let decision = self.decide_navigation(tab, &request);
+                reply.send(decision);
+            }
+            EngineEvent::NavigationFailed {
+                tab,
+                nav_id,
+                url,
+                error,
+            } => {
+                self.navigation_failed(tab, url.clone(), &error);
+                self.tab_event(
+                    EngineEvent::NavigationFailed {
+                        tab,
+                        nav_id,
+                        url,
+                        error,
+                    },
+                    rec,
                 );
-                let context = PolicyContext {
-                    https_first,
-                    opens_externally: &|_| false,
-                    http_fallback: &|_| false,
-                };
-                reply.send(navigation::decide(&request, &context));
+            }
+            EngineEvent::ProcessGone { tab, reason } => {
+                self.tab_event(EngineEvent::ProcessGone { tab, reason }, rec);
+                if reason == mado_engine::event::GoneReason::Crashed {
+                    self.page_crashed(tab);
+                }
             }
             // Tabs and windows (04). Page, permission, dialog and download
             // events get their handlers with their tasks; an unanswered
@@ -1010,6 +1065,7 @@ impl Core {
                 self.timers
                     .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
             }
+            Timer::UpgradeTimeout(tab) => self.upgrade_timed_out(tab),
             Timer::QuitNow => {
                 if self.quit_after_downloads {
                     self.quit_after_downloads = false;

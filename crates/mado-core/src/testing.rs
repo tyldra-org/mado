@@ -36,6 +36,11 @@ impl UiSink for Collect {
     }
 }
 
+thread_local! {
+    /// The captive portal probe the next `TestCore` on this thread uses.
+    pub static CAPTIVE_PROBE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
 pub struct TestCore {
     pub handle: CoreHandle,
     pub sent: Arc<Mutex<Sent>>,
@@ -98,6 +103,7 @@ impl TestCore {
             backups,
             settings: Settings::new(Strings::english()),
             engine,
+            captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
             user_agent: mado_engine::UserAgent::EngineDefault,
             clean_start,
             page_scripts: mado_engine::PageScriptSet::default(),

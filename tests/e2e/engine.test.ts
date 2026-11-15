@@ -247,6 +247,18 @@ run("WebKit adapter", () => {
     expect(await new Response(xattr.stdout).text()).toStartWith("0081;");
   }, 30_000);
 
+  test("a dropped connection and a redirect loop show their error pages (05 §12 check 5)", async () => {
+    for (const [path, title] of [
+      ["/__reset", "The connection was reset"],
+      ["/__loop", "Too many redirects"],
+    ]) {
+      const url = `http://pages.mado.test${path}`;
+      const { tab } = await open(url);
+      // The title comes first; the URL settles on the failed one.
+      await tabWhere(tab, (t) => t.title === title && t.url === url);
+    }
+  });
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");

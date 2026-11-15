@@ -42,6 +42,9 @@ impl Core {
     /// A main-frame document committed: end the previous visit and record
     /// this one.
     pub(super) fn nav_committed(&mut self, tab: TabId, url: &str) {
+        if self.committed_page(tab, url) {
+            return;
+        }
         let now = self.now();
         let previous = self.navs.get(&tab).copied().unwrap_or_default();
         if let Some(visit) = previous.visit {

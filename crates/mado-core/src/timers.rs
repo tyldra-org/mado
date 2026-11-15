@@ -16,6 +16,8 @@ pub enum Timer {
     SleepCheck,
     /// Looks for pages that stopped sending heartbeats (spec 02 §5.3).
     HeartbeatCheck,
+    /// An HTTPS-first upgrade had its time (spec 05 §5).
+    UpgradeTimeout(mado_types::TabId),
     /// Quit even if downloads did not pause in time.
     QuitNow,
     /// Deleted bookmarks' Undo ran out.

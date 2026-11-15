@@ -254,6 +254,12 @@ pub enum TabCommand {
     SetImagesEnabled(bool),
     ExitFullscreen,
     MediaControl(MediaAction),
+    /// An error page (spec 05 §6): `html` shown as the document of `url`,
+    /// which stays the tab's URL. No script runs in it.
+    ShowErrorPage {
+        html: String,
+        url: String,
+    },
 }
 
 impl TabCommand {
@@ -290,6 +296,7 @@ impl TabCommand {
             Self::SetImagesEnabled(_) => "setImagesEnabled",
             Self::ExitFullscreen => "exitFullscreen",
             Self::MediaControl(_) => "mediaControl",
+            Self::ShowErrorPage { .. } => "showErrorPage",
         }
     }
 
