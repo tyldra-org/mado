@@ -10,3 +10,12 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+jiff = "0.2.44"
+psl = "2.1.254"
+serde = { version = "1.0.229", features = ["derive"] }
+url = "2.5.8"
+
+[dev-dependencies]
+serde_norway = "0.9.42"
