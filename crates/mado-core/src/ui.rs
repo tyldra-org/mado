@@ -74,6 +74,10 @@ pub trait Profiles: Send + Sync {
     ) -> Result<(), mado_types::MadoError>;
     /// The profile a link from another app belongs in, by the link rules.
     fn route(&self, url: &str) -> Option<mado_types::ProfileId>;
+    /// Writes a `.madoprofile` (spec 12 §1.5).
+    fn export(&self, id: mado_types::ProfileId, path: &str) -> Result<(), mado_types::MadoError>;
+    /// Creates a profile from a `.madoprofile`; returns `{ id }`.
+    fn import(&self, path: &str) -> Result<serde_json::Value, mado_types::MadoError>;
 }
 
 /// No profile service: tests that do not exercise profiles.
@@ -125,6 +129,12 @@ impl Profiles for NoProfiles {
     }
     fn route(&self, _: &str) -> Option<mado_types::ProfileId> {
         None
+    }
+    fn export(&self, _: mado_types::ProfileId, _: &str) -> Result<(), mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn import(&self, _: &str) -> Result<serde_json::Value, mado_types::MadoError> {
+        Err(unavailable())
     }
 }
 

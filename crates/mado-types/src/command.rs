@@ -632,6 +632,22 @@ pub enum Command {
     ProfileOpen { id: crate::ids::ProfileId },
     #[serde(rename = "profile.linkRules")]
     ProfileLinkRules,
+    /// Writes the profile to a `.madoprofile` at `path` (absolute). The
+    /// passphrase protects the vault, which joins the file with M4.
+    #[serde(rename = "profile.export", rename_all = "camelCase")]
+    ProfileExport {
+        id: crate::ids::ProfileId,
+        path: String,
+        #[serde(default)]
+        passphrase: Option<String>,
+    },
+    /// Creates a profile from a `.madoprofile`; returns `{ id }`.
+    #[serde(rename = "profile.import", rename_all = "camelCase")]
+    ProfileImport {
+        path: String,
+        #[serde(default)]
+        passphrase: Option<String>,
+    },
     /// Opens a guest window: a temporary profile deleted on close.
     #[serde(rename = "profile.openGuest")]
     ProfileOpenGuest,
@@ -917,6 +933,8 @@ impl Command {
             | Self::ProfileOpen { .. }
             | Self::ProfileLinkRules
             | Self::ProfileOpenGuest
+            | Self::ProfileExport { .. }
+            | Self::ProfileImport { .. }
             | Self::ProfileLinkRulesSet { .. } => CommandFamily::Profile,
             Self::SiteStopCapture { .. } => CommandFamily::Site,
             Self::HistoryQuery { .. }
@@ -1036,6 +1054,8 @@ impl Command {
             Self::ProfileOpen { .. } => "profile.open",
             Self::ProfileLinkRules => "profile.linkRules",
             Self::ProfileOpenGuest => "profile.openGuest",
+            Self::ProfileExport { .. } => "profile.export",
+            Self::ProfileImport { .. } => "profile.import",
             Self::ProfileLinkRulesSet { .. } => "profile.linkRules.set",
             Self::NavSetSearchEngineActive { .. } => "nav.setSearchEngineActive",
             Self::HistoryQuery { .. } => "history.query",

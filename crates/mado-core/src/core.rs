@@ -948,6 +948,8 @@ impl Core {
             | Command::ProfileDelete { .. }
             | Command::ProfileOpen { .. }
             | Command::ProfileLinkRules
+            | Command::ProfileExport { .. }
+            | Command::ProfileImport { .. }
             | Command::ProfileLinkRulesSet { .. }) => {
                 self.profile_command(origin, cmd, rec, reply_to)
             }

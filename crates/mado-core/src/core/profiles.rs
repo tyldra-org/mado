@@ -26,6 +26,14 @@ fn check_name(name: &str) -> Result<String, MadoError> {
     Ok(name.to_owned())
 }
 
+fn check_path(path: &str) -> Result<(), MadoError> {
+    if std::path::Path::new(path).is_absolute() {
+        Ok(())
+    } else {
+        Err(bad("error.file.notAbsolute"))
+    }
+}
+
 fn check_color(color: &str) -> Result<(), MadoError> {
     if COLORS.contains(&color) {
         Ok(())
@@ -92,6 +100,14 @@ impl Core {
                 Box::new(move |p| p.delete(id).map(|()| Value::Null))
             }
             Command::ProfileOpen { id } => Box::new(move |p| p.open(id).map(|()| Value::Null)),
+            Command::ProfileExport { id, path, .. } => {
+                check_path(&path)?;
+                Box::new(move |p| p.export(id, &path).map(|()| Value::Null))
+            }
+            Command::ProfileImport { path, .. } => {
+                check_path(&path)?;
+                Box::new(move |p| p.import(&path))
+            }
             Command::ProfileLinkRules => Box::new(|p| p.link_rules().map(|r| json!(r))),
             Command::ProfileLinkRulesSet { rules } => {
                 for r in &rules {
