@@ -118,6 +118,15 @@ impl UiSink for TauriUi {
         });
     }
 
+    fn copy_text(&mut self, text: &str) {
+        let text = text.to_owned();
+        let _ = self.app.run_on_main_thread(move || {
+            if let Err(e) = mado_platform::files::copy_text(&text) {
+                tracing::warn!(error = %e, "the pasteboard refused the text");
+            }
+        });
+    }
+
     fn launch_app_link(&mut self, url: &str) {
         let url = url.to_owned();
         std::thread::spawn(move || {

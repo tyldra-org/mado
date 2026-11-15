@@ -667,6 +667,80 @@ impl Core {
     }
 }
 
+impl Core {
+    /// A context menu item the core runs (spec 07 §8).
+    pub(super) fn context_chosen(
+        &mut self,
+        tab: TabId,
+        c: mado_engine::event::ContextData,
+        action: mado_engine::event::ContextAction,
+    ) {
+        use mado_engine::event::ContextAction as A;
+        let Some(window) = self.model.tabs.get(&tab).map(|t| t.window_id) else {
+            return;
+        };
+        let (now, prefs) = (self.now(), self.prefs());
+        let link = c.link_url.clone().unwrap_or_default();
+        let open_tab = |core: &mut Self, url: String, foreground: bool| {
+            if let Ok(t) = core
+                .model
+                .open_tab(window, url, None, foreground, Some(tab), now, prefs)
+            {
+                core.pending_transition.insert(t, Transition::Link);
+            }
+        };
+        match action {
+            A::OpenLinkInNewTab if !link.is_empty() => open_tab(self, link, false),
+            A::OpenImageInNewTab => {
+                if let Some(image) = c.image_url {
+                    open_tab(self, image, false);
+                }
+            }
+            A::OpenLinkInNewWindow if !link.is_empty() => {
+                let _ = self.open_window(Bounds::default(), &[link]);
+            }
+            A::OpenLinkInSafari if !link.is_empty() => self.ui.open_in_safari(&link),
+            A::CopyLink if !link.is_empty() => self.ui.copy_text(&link),
+            A::CopyCleanLink if !link.is_empty() => {
+                self.ui.copy_text(&mado_engine::menu::clean_link(&link));
+            }
+            A::CopyLinkAsMarkdown if !link.is_empty() => {
+                let text = c
+                    .link_text
+                    .unwrap_or_else(|| link.clone())
+                    .replace(['[', ']'], "");
+                self.ui.copy_text(&format!("[{}]({link})", text.trim()));
+            }
+            A::CopyImageAddress => {
+                if let Some(image) = c.image_url {
+                    self.ui.copy_text(&image);
+                }
+            }
+            A::SearchSelection => {
+                if let (Some(text), Some(engine)) = (c.selection, self.default_engine()) {
+                    let url = engines::expand(&engine.search_url, text.trim());
+                    open_tab(self, url, true);
+                }
+            }
+            A::CopyLinkToHighlight => {
+                if let Some(text) = c.selection {
+                    let page = c.page_url.split('#').next().unwrap_or_default().to_owned();
+                    let encoded: String =
+                        url::form_urlencoded::byte_serialize(text.trim().as_bytes())
+                            .collect::<String>()
+                            .replace('+', "%20");
+                    self.ui.copy_text(&format!("{page}#:~:text={encoded}"));
+                }
+            }
+            A::Print => self.outbox.push(mado_engine::EngineOp::Apply(
+                tab,
+                mado_engine::TabCommand::Print,
+            )),
+            other => tracing::trace!(?other, "a context action the engine runs"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

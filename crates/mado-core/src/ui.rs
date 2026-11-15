@@ -15,6 +15,8 @@ pub trait UiSink: Send {
     fn show_notification(&mut self, _id: &str, _title: &str, _body: &str) {}
     /// Opens a macOS privacy pane (spec 07 §4).
     fn open_system_settings(&mut self, _pane: &str) {}
+    /// Puts text on the pasteboard (context menu copies, spec 07 §8).
+    fn copy_text(&mut self, _text: &str) {}
     /// Opens a link in the app that handles its scheme (spec 07 §6).
     fn launch_app_link(&mut self, _url: &str) {}
     /// Opens a web page in Safari (site engine rules, spec 05 §9, §11).

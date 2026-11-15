@@ -19,6 +19,8 @@ pub struct Sent {
     pub safari: Vec<String>,
     /// Links handed to other apps.
     pub launched: Vec<String>,
+    /// Text put on the pasteboard.
+    pub copied: Vec<String>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -37,6 +39,13 @@ impl UiSink for Collect {
             .unwrap_or_else(|e| e.into_inner())
             .notices
             .push(notice.clone());
+    }
+    fn copy_text(&mut self, text: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .copied
+            .push(text.to_owned());
     }
     fn launch_app_link(&mut self, url: &str) {
         self.0

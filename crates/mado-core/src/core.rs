@@ -1093,6 +1093,11 @@ impl Core {
 
     fn engine_event(&mut self, event: EngineEvent, rec: &mut PatchRecorder) {
         match event {
+            EngineEvent::ContextMenuChosen {
+                tab,
+                context,
+                action,
+            } => self.context_chosen(tab, context, action),
             EngineEvent::DialogRequested { tab, dialog, reply } => {
                 self.dialog_requested(tab, dialog, reply, rec);
             }

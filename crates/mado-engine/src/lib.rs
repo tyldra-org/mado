@@ -10,6 +10,7 @@
 
 pub mod caps;
 pub mod event;
+pub mod menu;
 pub mod nav;
 pub mod page;
 pub mod reply;
