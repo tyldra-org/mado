@@ -9,6 +9,7 @@
   import BookmarksBar from "./BookmarksBar.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
   import Notices from "./Notices.svelte";
+  import PermissionPrompt from "./PermissionPrompt.svelte";
   import SafariPrompt from "./SafariPrompt.svelte";
   import TabStrip from "./TabStrip.svelte";
   import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
@@ -63,6 +64,7 @@
     <UnsavedPrompt {store} {windowId} />
     <UnresponsivePrompt {store} {windowId} />
     <SafariPrompt {store} {windowId} />
+    <PermissionPrompt {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}></main>
   <Notices {store} />

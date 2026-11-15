@@ -113,6 +113,16 @@ impl TestCore {
             settings: Settings::new(Strings::english()),
             engine,
             captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
+            // Camera denied at the OS, everything else answered yes.
+            os: crate::OsPermissions {
+                status: |p| match p {
+                    mado_platform::permissions::OsPermission::Camera => {
+                        mado_platform::permissions::OsStatus::Denied
+                    }
+                    _ => mado_platform::permissions::OsStatus::Granted,
+                },
+                request: |_| mado_platform::permissions::OsStatus::Granted,
+            },
             user_agent: mado_engine::UserAgent::EngineDefault,
             clean_start,
             page_scripts: mado_engine::PageScriptSet::default(),

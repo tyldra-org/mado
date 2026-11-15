@@ -11,7 +11,7 @@ use mado_engine::{EngineOp, TabCommand, World};
 use mado_types::command::{Command, SaveFormat};
 use mado_types::state::{FindState, PromptState, TabLife, UnresponsivePrompt};
 use mado_types::{ErrorCode, MadoError, PatchRecorder, PromptId, TabId};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::Core;
 
@@ -47,7 +47,7 @@ fn best_icon(icons: &[Icon]) -> Option<&Icon> {
 }
 
 impl Core {
-    fn post(&mut self, tab: TabId, message: Value) {
+    pub(super) fn post(&mut self, tab: TabId, message: Value) {
         self.outbox.push(EngineOp::Apply(
             tab,
             TabCommand::PostToPage {
@@ -128,23 +128,25 @@ impl Core {
                     t.has_unsaved_input = u.dirty;
                 }
             }
-            // Until the permission flow decides (M2-T07), a page asking for
-            // notifications hears "default" and nothing is shown; location
-            // requests are refused; handlers are not registered.
+            // The shims ask the permission flow (07 §1.1).
             PageMessage::NotificationRequest(_) => {
-                self.post(
+                self.shim_permission(
                     tab,
-                    json!({ "type": "notificationPermission", "permission": "default" }),
+                    mado_engine::PermissionKind::Notifications,
+                    super::site::ShimThen::Notifications,
+                    rec,
                 );
             }
             PageMessage::GeolocationGet(g) | PageMessage::GeolocationWatch(g) => {
-                self.post(
+                self.shim_permission(
                     tab,
-                    json!({ "type": "geolocationPosition", "id": g.id, "error": 1 }),
+                    mado_engine::PermissionKind::Location,
+                    super::site::ShimThen::Geolocation(g.id),
+                    rec,
                 );
             }
-            PageMessage::NotificationShow(_)
-            | PageMessage::NotificationClose(_)
+            PageMessage::NotificationShow(n) => self.show_notification(tab, &n),
+            PageMessage::NotificationClose(_)
             | PageMessage::GeolocationClear(_)
             | PageMessage::ProtocolHandlerRegister(_) => {}
             other => tracing::trace!(message = other.name(), "page message for a later task"),
@@ -201,6 +203,7 @@ impl Core {
     /// A new document starts without a heartbeat and with no prompt.
     pub(super) fn new_document(&mut self, tab: TabId, rec: &mut PatchRecorder) {
         self.clear_safari_prompt(tab, rec);
+        self.forget_permissions(tab, rec);
         self.page_downloads.remove(&tab);
         self.heartbeats.remove(&tab);
         self.responsive(tab, rec);

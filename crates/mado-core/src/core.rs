@@ -7,6 +7,7 @@ mod marks;
 mod nav;
 mod pages;
 mod session;
+mod site;
 mod visits;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -86,6 +87,18 @@ pub enum Internal {
     },
     /// Loads `url` again in `tab` (after clearing a site's cookies).
     Reload { tab: TabId, url: String },
+    /// macOS answered its own permission prompt (spec 07 §4).
+    OsAnswered { token: u64, granted: bool },
+    /// A shim's permission request was decided (spec 07 §1.1).
+    ShimDecided {
+        tab: TabId,
+        then: site::ShimThen,
+        granted: bool,
+    },
+    /// A page notification was clicked in macOS.
+    NotificationClicked { id: String },
+    /// A held automatic download was allowed or not (spec 07 §1).
+    DownloadAllowed { token: u64, granted: bool },
     /// An OpenSearch description was fetched and parsed (spec 05 §3).
     EngineDiscovered(mado_navigation::engines::Engine),
     /// Remote search suggestions merged with the local rows (spec 05 §2).
@@ -170,6 +183,30 @@ pub struct CoreConfig {
     pub clock: fn() -> i64,
     /// The captive portal probe (spec 05 §8); `None` turns detection off.
     pub captive_probe: Option<String>,
+    /// macOS privacy permissions (spec 07 §4); tests pass fakes.
+    pub os: OsPermissions,
+}
+
+/// How the core asks macOS about its own permissions.
+#[derive(Debug, Clone, Copy)]
+pub struct OsPermissions {
+    /// The current status; never prompts.
+    pub status:
+        fn(mado_platform::permissions::OsPermission) -> mado_platform::permissions::OsStatus,
+    /// Shows macOS's prompt if it was never answered; blocks.
+    pub request:
+        fn(mado_platform::permissions::OsPermission) -> mado_platform::permissions::OsStatus,
+}
+
+impl OsPermissions {
+    /// The real macOS permissions.
+    pub fn system() -> Self {
+        use mado_platform::permissions::{OsStatus, request, status};
+        Self {
+            status: |p| status(p).unwrap_or(OsStatus::NotDetermined),
+            request: |p| request(p).unwrap_or(OsStatus::Denied),
+        }
+    }
 }
 
 impl std::fmt::Debug for CoreConfig {
@@ -250,6 +287,27 @@ pub struct Core {
     heartbeats: BTreeMap<TabId, i64>,
     /// Tabs showing "Page unresponsive", with their prompt.
     unresponsive: BTreeMap<TabId, PromptId>,
+    /// Site settings (spec 07).
+    sites: mado_permissions::Store,
+    dismissals: mado_permissions::Dismissals,
+    pending_perms: BTreeMap<PromptId, site::Pending>,
+    perm_queue: site::Queue,
+    /// "Allow this time" grants, until the tab's next document.
+    this_time: BTreeMap<TabId, std::collections::BTreeSet<(String, String)>>,
+    os_waiting: BTreeMap<u64, mado_engine::Reply<mado_engine::event::PermissionDecision>>,
+    next_os_wait: u64,
+    /// Downloads waiting for `automaticDownloads`, by token.
+    held_downloads: BTreeMap<
+        u64,
+        (
+            TabId,
+            mado_engine::event::EngineDownload,
+            mado_engine::Reply<mado_engine::event::DownloadDestination>,
+        ),
+    >,
+    next_held: u64,
+    /// Auto-revoked rows, by notice token, for Undo.
+    revoked: BTreeMap<u64, Vec<mado_permissions::Row>>,
     /// Hosts that open in Safari (site engine rules, spec 05 §9).
     engine_rules: std::collections::BTreeSet<String>,
     /// When each tab last opened a pop-up, for tab-under (spec 05 §7).
@@ -265,6 +323,7 @@ pub struct Core {
     /// http URLs the user chose to continue to, allowed once.
     continue_once: std::collections::BTreeSet<String>,
     captive_probe: Option<String>,
+    os: OsPermissions,
     /// The profile's search engines (spec 05 §3).
     engines: Vec<nav::EngineRow>,
     /// Searches waiting for their visit, for `search_terms`.
@@ -384,6 +443,13 @@ impl Core {
                     Vec::new()
                 }),
         );
+        let sites = mado_permissions::Store::new(
+            config
+                .profile_db
+                .readers()
+                .read(site::load)
+                .unwrap_or_default(),
+        );
         let engine_rules = config
             .profile_db
             .readers()
@@ -427,12 +493,23 @@ impl Core {
             displayed: BTreeMap::new(),
             popup_opened: BTreeMap::new(),
             engine_rules,
+            sites,
+            dismissals: mado_permissions::Dismissals::default(),
+            pending_perms: BTreeMap::new(),
+            perm_queue: BTreeMap::new(),
+            this_time: BTreeMap::new(),
+            os_waiting: BTreeMap::new(),
+            next_os_wait: 0,
+            revoked: BTreeMap::new(),
+            held_downloads: BTreeMap::new(),
+            next_held: 0,
             error_pages: BTreeMap::new(),
             error_commits: std::collections::BTreeSet::new(),
             upgrades: BTreeMap::new(),
             http_allowed,
             continue_once: std::collections::BTreeSet::new(),
             captive_probe: config.captive_probe.clone(),
+            os: config.os,
             engines,
             pending_search: BTreeMap::new(),
             dls: BTreeMap::new(),
@@ -464,6 +541,8 @@ impl Core {
         core.timers
             .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
         core.timers.schedule(Timer::DailyBackup, DAY);
+        core.timers
+            .schedule(Timer::AutoRevoke, std::time::Duration::from_secs(600));
         core
     }
 
@@ -794,6 +873,17 @@ impl Core {
             | Command::DownloadRemove { .. }
             | Command::DownloadOpenSource { .. }
             | Command::DownloadClearList) => self.download_command(cmd, rec),
+            cmd @ (Command::PromptRespond { .. }
+            | Command::PromptDismiss { .. }
+            | Command::PermissionList { .. }
+            | Command::PermissionSet { .. }
+            | Command::PermissionReset { .. }
+            | Command::SiteStopCapture { .. }) => self.prompt_command(origin, cmd, rec, reply_to),
+            Command::PermissionUndoRevoke { token } => self.undo_revoke(token),
+            Command::AppOpenSystemSettings { pane } => {
+                self.ui.open_system_settings(&pane);
+                Ok(Value::Null)
+            }
             cmd @ (Command::NavOpen { .. }
             | Command::NavSuggest { .. }
             | Command::NavRemoveSuggestion { .. }
@@ -860,6 +950,12 @@ impl Core {
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
             Internal::EngineDiscovered(engine) => self.engine_discovered(engine),
+            Internal::OsAnswered { token, granted } => self.os_answered(token, granted),
+            Internal::ShimDecided { tab, then, granted } => self.shim_decided(tab, then, granted),
+            Internal::NotificationClicked { id } => self.notification_clicked(&id),
+            Internal::DownloadAllowed { token, granted } => {
+                self.download_allowed(token, granted, rec)
+            }
             Internal::Reload { tab, url } => {
                 let _ = self.navigate(tab, url);
             }
@@ -962,6 +1058,13 @@ impl Core {
 
     fn engine_event(&mut self, event: EngineEvent, rec: &mut PatchRecorder) {
         match event {
+            EngineEvent::PermissionRequested {
+                tab,
+                request,
+                reply,
+            } => {
+                self.permission_requested(tab, request, reply, rec);
+            }
             EngineEvent::DecidePolicy {
                 tab,
                 request,
@@ -1081,6 +1184,11 @@ impl Core {
                     .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
             }
             Timer::UpgradeTimeout(tab) => self.upgrade_timed_out(tab),
+            Timer::AutoRevoke => {
+                self.auto_revoke(&mut rec);
+                self.timers
+                    .schedule(Timer::AutoRevoke, std::time::Duration::from_secs(86_400));
+            }
             Timer::QuitNow => {
                 if self.quit_after_downloads {
                     self.quit_after_downloads = false;

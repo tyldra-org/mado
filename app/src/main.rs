@@ -390,6 +390,7 @@ fn start_owner(
         )),
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
+        os: mado_core::OsPermissions::system(),
     })?;
     let _ = owner.core.set(handle.clone());
     if let Ok(mut slot) = owner.core_thread.lock() {
@@ -434,6 +435,13 @@ fn start_owner(
             critical: level == mado_platform::power::Pressure::Critical,
         }));
     });
+    // A click on a page's notification goes back to its tab (07 §1.1).
+    let clicks = handle.clone();
+    if let Err(e) = mado_platform::notify::on_click(move |id| {
+        clicks.send(Input::Internal(Internal::NotificationClicked { id }));
+    }) {
+        tracing::warn!(error = %e, "notification clicks are not delivered");
+    }
     let power = handle.clone();
     mado_platform::power::watch_power(std::time::Duration::from_secs(60), move |source| {
         power.send(Input::Internal(Internal::Power(mado_core::Power {

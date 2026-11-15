@@ -10,3 +10,7 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+url = "2.5.8"

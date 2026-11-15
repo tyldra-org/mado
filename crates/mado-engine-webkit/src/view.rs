@@ -773,6 +773,18 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 );
             }
             TabCommand::ShowDevTools => show_inspector(&view)?,
+            TabCommand::StopCapture(kind) => {
+                let none = objc2_web_kit::WKMediaCaptureState::None;
+                match kind {
+                    mado_engine::PermissionKind::Camera => {
+                        view.setCameraCaptureState_completionHandler(none, None);
+                    }
+                    mado_engine::PermissionKind::Microphone => {
+                        view.setMicrophoneCaptureState_completionHandler(none, None);
+                    }
+                    _ => return Err(EngineError::Unsupported("only camera and microphone stop")),
+                }
+            }
             TabCommand::ShowErrorPage { html, url } => {
                 // A simulated response keeps `url` as the page's URL, where
                 // loadHTMLString would show about:blank.

@@ -254,6 +254,8 @@ pub enum TabCommand {
     SetImagesEnabled(bool),
     ExitFullscreen,
     MediaControl(MediaAction),
+    /// Stops the page's camera or microphone (spec 07 §5).
+    StopCapture(crate::caps::PermissionKind),
     /// An error page (spec 05 §6): `html` shown as the document of `url`,
     /// which stays the tab's URL. No script runs in it.
     ShowErrorPage {
@@ -297,6 +299,7 @@ impl TabCommand {
             Self::ExitFullscreen => "exitFullscreen",
             Self::MediaControl(_) => "mediaControl",
             Self::ShowErrorPage { .. } => "showErrorPage",
+            Self::StopCapture(_) => "stopCapture",
         }
     }
 

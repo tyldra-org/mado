@@ -92,6 +92,32 @@ impl UiSink for TauriUi {
         }
     }
 
+    fn show_notification(&mut self, id: &str, title: &str, body: &str) {
+        let (id, title, body) = (id.to_owned(), title.to_owned(), body.to_owned());
+        std::thread::spawn(move || {
+            if let Err(e) = mado_platform::notify::post(&id, &title, &body) {
+                tracing::warn!(error = %e, "a notification was not shown");
+            }
+        });
+    }
+
+    fn open_system_settings(&mut self, pane: &str) {
+        let anchor = match pane {
+            "camera" => "Privacy_Camera",
+            "microphone" => "Privacy_Microphone",
+            "location" => "Privacy_LocationServices",
+            "screen" => "Privacy_ScreenCapture",
+            "speechRecognition" => "Privacy_SpeechRecognition",
+            _ => "Privacy",
+        };
+        let url = format!("x-apple.systempreferences:com.apple.preference.security?{anchor}");
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("/usr/bin/open")
+                .arg(url)
+                .status();
+        });
+    }
+
     fn open_in_safari(&mut self, url: &str) {
         let url = url.to_owned();
         std::thread::spawn(move || {
