@@ -18,6 +18,9 @@ pub struct Args {
     pub files: Vec<PathBuf>,
     /// Internal: a profile picker handing a launch to another process.
     pub handoff_token: Option<String>,
+    /// Internal: started by an update relaunch while the old process is
+    /// still quitting; waits for the profile's lock instead of forwarding.
+    pub relaunch: bool,
 }
 
 impl Args {
@@ -38,6 +41,7 @@ impl Args {
                 "--guest" => out.guest = true,
                 "--hidden" => out.hidden = true,
                 "--new-window" => out.new_window = true,
+                "--relaunch" => out.relaunch = true,
                 // macOS passes these to apps started from Finder.
                 s if s.starts_with("-psn_") => {}
                 s if s.starts_with("--") => return Err(format!("unknown option {s}")),

@@ -122,6 +122,28 @@ describe("internal pages (01 §4.4)", () => {
     });
   });
 
+  test("About shows the versions, the engine warning and the update button (15 §5)", async () => {
+    const { seen } = await show("about", (cmd) =>
+      cmd.type === "state.get"
+        ? {
+            rev: 1,
+            state: {
+              update: { status: "ready", version: "0.2.0", security: false },
+              about: { version: "0.1.0", engineVersion: "600.1", engineOutdated: true },
+            },
+            ...ids,
+          }
+        : null,
+    );
+    expect(screen.getByText("Mado 0.1.0")).toBeTruthy();
+    expect(screen.getByText("WebKit 600.1")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Open Software Update" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Relaunch to update" }));
+    await settle();
+    expect(seen).toContainEqual({ type: "app.openSystemSettings", pane: "softwareUpdate" });
+    expect(seen).toContainEqual({ type: "update.relaunch" });
+  });
+
   test("an unknown page says so", async () => {
     await show("nowhere", () => ({ rev: 1, state: {}, ...ids }));
     expect(screen.getByRole("heading", { name: "Mado has no such page." })).toBeTruthy();

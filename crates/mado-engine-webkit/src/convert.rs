@@ -112,6 +112,22 @@ pub fn from_json(value: &Value) -> Option<Retained<AnyObject>> {
 }
 
 /// Safari's `CFBundleShortVersionString`, for the user agent (spec 02 §6).
+/// WebKit.framework's `CFBundleVersion` (`22625.2.8.11.9`): the engine
+/// pages actually run on, updated with macOS (spec 15 §5).
+pub fn webkit_bundle_version() -> Option<String> {
+    let path =
+        NSString::from_str("/System/Library/Frameworks/WebKit.framework/Resources/Info.plist");
+    let url = NSURL::fileURLWithPath(&path);
+    // SAFETY: reading a property list file.
+    let plist =
+        unsafe { NSDictionary::<NSString, AnyObject>::dictionaryWithContentsOfURL_error(&url) }
+            .ok()?;
+    let v = plist.objectForKey(&NSString::from_str("CFBundleVersion"))?;
+    let s = v.downcast_ref::<NSString>()?.to_string();
+    let valid = !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || c == '.');
+    valid.then_some(s)
+}
+
 pub fn safari_version() -> Option<String> {
     let path = NSString::from_str("/Applications/Safari.app/Contents/Info.plist");
     let url = NSURL::fileURLWithPath(&path);

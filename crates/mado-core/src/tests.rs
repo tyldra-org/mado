@@ -3250,7 +3250,8 @@ fn internal_pages_invoke_through_their_allow_lists() {
         .keys()
         .cloned()
         .collect();
-    assert_eq!(keys, ["update"]);
+    assert_eq!(keys, ["about", "update"]);
+    assert_eq!(snap["value"]["state"]["about"]["version"], "0.1.0");
     core.handle
         .send(Input::Internal(Internal::UpdateStatus(UpdateState {
             status: UpdateStatus::Ready,
@@ -3453,6 +3454,83 @@ fn every_menu_item_runs_its_command() {
         sent().shortcuts.get("duplicateTab").map(String::as_str),
         Some("Cmd+Shift+K")
     );
+}
+
+/// 15 §5: a ready security update relaunches by itself after 10 minutes,
+/// once nobody has used Mado for 10 minutes and no tab holds typed text;
+/// after the relaunch the last session comes back whatever startup.mode
+/// says.
+#[test]
+fn security_updates_relaunch_when_idle_and_sessions_come_back() {
+    use mado_types::state::{UpdateState, UpdateStatus};
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://kept.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://kept.example/"
+    });
+    let clock = |now: i64| {
+        core.handle
+            .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+                now,
+            ))))
+    };
+    let relaunches = || {
+        core.sent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .relaunches
+            .clone()
+    };
+    clock(1_000_000);
+    // Input at 1_000_000.
+    let _ = ask(&core, Origin::Ui { window: w }, Command::StateGet);
+    core.handle
+        .send(Input::Internal(Internal::UpdateStatus(UpdateState {
+            status: UpdateStatus::Ready,
+            version: Some("0.2.0".into()),
+            security: true,
+        })));
+    let check = || {
+        let _ = ask(&core, Origin::System, Command::StateGet);
+        core.handle.send(Input::Internal(Internal::Hook(
+            crate::TestHook::SecurityCheck,
+        )));
+        let _ = ask(&core, Origin::System, Command::StateGet);
+    };
+    clock(1_000_000 + 9 * 60_000);
+    check();
+    assert!(relaunches().is_empty(), "not 10 minutes yet");
+    clock(1_000_000 + 11 * 60_000);
+    // Someone typed into a page: no relaunch.
+    core.handle
+        .send(Input::Internal(Internal::TestUnsavedInput { tab }));
+    check();
+    assert!(relaunches().is_empty(), "typed text waits");
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    core.handle
+        .send(Input::Internal(Internal::IdleForUpdate { reply: tx }));
+    assert!(!rx.blocking_recv().expect("answer"));
+    core.page
+        .page_navigates(tab, "https://kept.example/next", true);
+    eventually("typed text gone", || {
+        !state_of(&core).tabs[&tab].has_unsaved_input
+    });
+    check();
+    assert_eq!(relaunches(), vec![true]);
+    // The relaunched profile opens its last session even with newTab.
+    let dir = core.stop();
+    crate::testing::RESTORE.set(true);
+    let again = TestCore::start_in(dir, true);
+    crate::testing::RESTORE.set(false);
+    startup(&again);
+    eventually("the session", || {
+        state_of(&again)
+            .tabs
+            .values()
+            .any(|t| t.url == "https://kept.example/next")
+    });
 }
 
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and

@@ -314,6 +314,14 @@ fn claim(
     args: &Args,
     profile: Profile,
 ) -> Result<Claim, Box<dyn std::error::Error>> {
+    // An update relaunch starts this process before the old one has quit:
+    // wait for its lock rather than forwarding to it (spec 15 §5).
+    if args.relaunch {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while lock::is_held(&paths.lock(profile.id)) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
     for attempt in 0..2 {
         if let Some(lock) = ProfileLock::acquire(&paths.lock(profile.id), VERSION, now())? {
             let ready = prepare(paths, profile.id)?;
@@ -437,7 +445,20 @@ fn start_owner(
             Arc::clone(&owner.core),
             Arc::clone(&owner.app_db),
             Arc::clone(&owner.staged),
+            owner.paths.clone(),
+            id,
         )),
+        about: {
+            let engine = mado_engine_webkit::webkit_bundle_version()
+                .map(|v| mado_core::about::engine_version(&v))
+                .unwrap_or_default();
+            mado_types::state::AboutState {
+                version: context().package_info().version.to_string(),
+                engine_outdated: mado_core::about::engine_outdated(&engine),
+                engine_version: engine,
+            }
+        },
+        restore_session: update::take_restore(&owner.app_db, id),
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
         os: mado_core::OsPermissions::system(),
@@ -478,6 +499,33 @@ fn start_owner(
                     core.send(Input::Internal(Internal::Terminate));
                     return Ok(());
                 }
+                Some(
+                    action @ (mado_types::command::OwnerAction::QuitForUpdate
+                    | mado_types::command::OwnerAction::QuitForUpdateIfIdle),
+                ) => {
+                    // An update relaunch (spec 15 §5): this profile quits
+                    // and opens its last session at the next launch.
+                    if action == mado_types::command::OwnerAction::QuitForUpdateIfIdle {
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        core.send(Input::Internal(Internal::IdleForUpdate { reply: tx }));
+                        if !rx.await.unwrap_or(false) {
+                            return Err(mado_types::MadoError::new(
+                                mado_types::ErrorCode::Conflict,
+                                "error.update.inUse",
+                            ));
+                        }
+                    }
+                    let db = Arc::clone(&rows);
+                    let _ =
+                        tauri::async_runtime::spawn_blocking(move || update::mark_restore(&db, id))
+                            .await;
+                    // Answer first: quitting closes this endpoint.
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        core.send(Input::Internal(Internal::Terminate));
+                    });
+                    return Ok(());
+                }
                 Some(mado_types::command::OwnerAction::ProfileChanged) => {
                     if let Some(p) = profiles::list(&rows)
                         .ok()
@@ -501,7 +549,16 @@ fn start_owner(
         endpoint,
         secret,
         on_forward,
-        test_access(&handle, app),
+        test_access(
+            &handle,
+            app,
+            (
+                owner.paths.clone(),
+                Arc::clone(&owner.app_db),
+                id,
+                Arc::clone(&owner.staged),
+            ),
+        ),
     ));
     write_control_entry(owner)?;
 
@@ -511,6 +568,14 @@ fn start_owner(
     }
     if profile_count > 1 {
         mado_platform::dock::set_badge(Some(&owner.profile.initial()));
+    }
+    // Profiles an update relaunch quit come back (spec 15 §5).
+    for other in update::take_relaunch_list(&owner.app_db) {
+        if other != id
+            && let Err(e) = profile_service::launch(other, None)
+        {
+            tracing::warn!(%other, error = %e, "a profile did not come back after the update");
+        }
     }
     // The Dock tile's menu (01 §5.4): New Window, New Private Window.
     let strings = mado_settings::Strings::english();
@@ -579,12 +644,20 @@ fn start_owner(
     Ok(())
 }
 
+/// What the relaunch of an update needs: paths, app database,
+/// own profile and the staged update.
+type RelaunchParts = (Paths, Arc<Storage>, mado_types::ProfileId, update::Staged);
+
 /// End-to-end tests' access to the control endpoint (spec 16 §1): with the
 /// `test-hooks` feature and `MADO_TEST_TOKEN` set, a session that says
 /// `hello` with that token may send commands as a control client and the
 /// `test.*` hooks of spec 16 §3. Release builds never compile this.
 #[cfg(feature = "test-hooks")]
-fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control::TestAccess> {
+fn test_access(
+    core: &CoreHandle,
+    app: &tauri::AppHandle,
+    relaunch: RelaunchParts,
+) -> Option<mado_control::TestAccess> {
     use mado_core::TestHook;
     let app = app.clone();
     let token = std::env::var("MADO_TEST_TOKEN")
@@ -596,9 +669,20 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
         Arc::new(move |method: String, params: serde_json::Value| {
             let core = core.clone();
             let app = app.clone();
+            let relaunch_parts = relaunch.clone();
             Box::pin(async move {
                 if method == "test.click" {
                     return test_click(&app, &params).await;
+                }
+                if method == "test.relaunchForUpdate" {
+                    // The relaunch of an update, without an update to
+                    // install (spec 15 §5, 16 §3).
+                    let (paths, db, own, staged) = relaunch_parts;
+                    let core2 = core.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        update::relaunch_all(&core2, &paths, &db, own, &staged, false);
+                    });
+                    return Ok(serde_json::Value::Null);
                 }
                 if method == "test.key" {
                     let tab: Option<mado_types::TabId> =
@@ -748,7 +832,11 @@ async fn test_has_data_store(
 }
 
 #[cfg(not(feature = "test-hooks"))]
-fn test_access(_core: &CoreHandle, _app: &tauri::AppHandle) -> Option<mado_control::TestAccess> {
+fn test_access(
+    _core: &CoreHandle,
+    _app: &tauri::AppHandle,
+    _relaunch: RelaunchParts,
+) -> Option<mado_control::TestAccess> {
     None
 }
 

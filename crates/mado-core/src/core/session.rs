@@ -1112,7 +1112,12 @@ impl Core {
         let loaded = std::mem::take(&mut self.loaded);
         let baseline = loaded.model.clone();
         let had_windows = !loaded.model.windows.is_empty();
-        let mode = self.setting_str("startup.mode");
+        // After an update relaunch the last session always comes back.
+        let mode = if std::mem::take(&mut self.restore_session) {
+            "continue".to_owned()
+        } else {
+            self.setting_str("startup.mode")
+        };
         let now = self.now();
         if mode == "continue" && had_windows {
             self.model = loaded.model;

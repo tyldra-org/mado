@@ -160,6 +160,12 @@ pub enum OwnerAction {
     Quit,
     /// The profile's name, colour or avatar changed: reload them.
     ProfileChanged,
+    /// Quit so an update can install, and open the last session at the
+    /// next launch (spec 15 §5).
+    QuitForUpdate,
+    /// The same, only if the profile has been idle for 10 minutes with no
+    /// typed text in a tab; refused otherwise (security updates).
+    QuitForUpdateIfIdle,
 }
 
 /// A link rule (spec 12 §1.3): URLs from other apps matching `pattern` open
@@ -1356,7 +1362,10 @@ impl InternalPage {
                     || (cmd.family() == CommandFamily::Bookmark
                         && !matches!(cmd, C::BookmarkExport { .. } | C::BookmarkImport { .. }))
             }
-            Self::About => matches!(cmd, C::UpdateCheck | C::UpdateRelaunch | C::StateGet),
+            Self::About => {
+                matches!(cmd, C::UpdateCheck | C::UpdateRelaunch | C::StateGet)
+                    || matches!(cmd, C::AppOpenSystemSettings { pane } if pane == "softwareUpdate")
+            }
             Self::Credits => matches!(cmd, C::StateGet),
         }
     }

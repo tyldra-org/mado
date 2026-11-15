@@ -7,7 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use mado_core::{CoreHandle, Input, Internal, Updates};
+use mado_platform::Paths;
 use mado_storage::Storage;
+use mado_types::ProfileId;
+use mado_types::command::OwnerAction;
 use mado_types::command::{Command, Origin};
 use mado_types::state::{UpdateState, UpdateStatus};
 use rusqlite::OptionalExtension;
@@ -24,7 +27,10 @@ pub type Staged = Arc<Mutex<Option<(Update, Vec<u8>)>>>;
 #[derive(Debug)]
 enum Ask {
     Check,
-    Relaunch,
+    /// `if_idle`: only when every other profile is idle (security).
+    Relaunch {
+        if_idle: bool,
+    },
 }
 
 /// The core's handle on the updater task.
@@ -38,7 +44,10 @@ impl Updates for TauriUpdates {
         let _ = self.tx.send(Ask::Check);
     }
     fn relaunch(&mut self) {
-        let _ = self.tx.send(Ask::Relaunch);
+        let _ = self.tx.send(Ask::Relaunch { if_idle: false });
+    }
+    fn relaunch_when_idle(&mut self) {
+        let _ = self.tx.send(Ask::Relaunch { if_idle: true });
     }
 }
 
@@ -111,12 +120,142 @@ fn endpoint(channel: &str) -> String {
     })
 }
 
+fn restore_key(id: ProfileId) -> String {
+    format!("restore_after_update.{id}")
+}
+
+/// Marks `id` to open its last session at its next launch (spec 15 §5).
+pub fn mark_restore(app_db: &Storage, id: ProfileId) {
+    if let Err(e) = crate::profiles::set_app_state(app_db, &restore_key(id), "1").wait() {
+        tracing::warn!(error = %e, "the session restore mark was not written");
+    }
+}
+
+/// Whether `id` quit for an update, clearing the mark.
+pub fn take_restore(app_db: &Storage, id: ProfileId) -> bool {
+    let key = restore_key(id);
+    app_db
+        .writer()
+        .write(move |c| c.execute("DELETE FROM app_state WHERE k = ?1", [key]))
+        .wait()
+        .is_ok_and(|n| n > 0)
+}
+
+const RELAUNCH_KEY: &str = "relaunch_profiles";
+
+/// The other profiles an update relaunch quit, to start again; cleared.
+pub fn take_relaunch_list(app_db: &Storage) -> Vec<ProfileId> {
+    let ids = app_db
+        .readers()
+        .read(|c| {
+            c.query_row(
+                "SELECT v FROM app_state WHERE k = ?1",
+                [RELAUNCH_KEY],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+        })
+        .ok()
+        .flatten();
+    let _ = app_db
+        .writer()
+        .write(|c| c.execute("DELETE FROM app_state WHERE k = ?1", [RELAUNCH_KEY]))
+        .wait();
+    ids.unwrap_or_default()
+        .split(',')
+        .filter_map(|s| s.parse().ok())
+        .collect()
+}
+
+/// Quits every other running profile for the update (each marks its own
+/// session to come back), remembers them, installs the staged update and
+/// restarts this process, which starts them again. With `if_idle`, one
+/// profile in use stops the relaunch. Returns false when it stopped.
+/// Blocks: run it on a blocking thread.
+pub fn relaunch_all(
+    core: &CoreHandle,
+    paths: &Paths,
+    app_db: &Storage,
+    own: ProfileId,
+    staged: &Staged,
+    if_idle: bool,
+) -> bool {
+    let others: Vec<ProfileId> = crate::profiles::list(app_db)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.id)
+        .filter(|id| *id != own && crate::lock::is_held(&paths.lock(*id)))
+        .collect();
+    let action = if if_idle {
+        OwnerAction::QuitForUpdateIfIdle
+    } else {
+        OwnerAction::QuitForUpdate
+    };
+    let mut quit = Vec::new();
+    for id in others {
+        match crate::profile_service::tell(paths, id, action) {
+            Ok(()) => quit.push(id),
+            Err(e) if if_idle => {
+                tracing::info!(%id, error = %e, "a profile is in use; the security update waits");
+                // The ones already asked come back now.
+                for back in quit {
+                    let _ = crate::profile_service::launch(back, None);
+                }
+                return false;
+            }
+            Err(e) => tracing::warn!(%id, error = %e, "a profile did not quit for the update"),
+        }
+    }
+    // Their locks go when they have written everything.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while quit.iter().any(|id| crate::lock::is_held(&paths.lock(*id)))
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let list: Vec<String> = quit.iter().map(ToString::to_string).collect();
+    let _ = crate::profiles::set_app_state(app_db, RELAUNCH_KEY, &list.join(",")).wait();
+    mark_restore(app_db, own);
+    let installed = install_staged(staged);
+    if !installed {
+        tracing::warn!("no update was installed; relaunching the same version");
+    }
+    // The new process waits for this one's lock and opens the session's
+    // windows even if this one was started hidden; this one quits as on ⌘Q
+    // without questions, so its session and the database are saved.
+    let mut args: Vec<std::ffi::OsString> = Vec::new();
+    let mut old = std::env::args_os().skip(1);
+    while let Some(a) = old.next() {
+        if a == "--profile" {
+            old.next();
+        } else if a != "--relaunch" && a != "--hidden" {
+            args.push(a);
+        }
+    }
+    let spawned = std::env::current_exe().and_then(|exe| {
+        std::process::Command::new(exe)
+            .args(&args)
+            .arg("--relaunch")
+            .arg("--profile")
+            .arg(own.to_string())
+            .spawn()
+    });
+    if let Err(e) = spawned {
+        tracing::error!(error = %e, "Mado could not start again after the update");
+        return false;
+    }
+    core.send(Input::Internal(Internal::Terminate));
+    true
+}
+
 /// Starts the updater task. Returns the core's handle on it.
 pub fn start(
     app: AppHandle,
     core: Arc<std::sync::OnceLock<CoreHandle>>,
     app_db: Arc<Storage>,
     staged: Staged,
+    paths: Paths,
+    own: ProfileId,
 ) -> TauriUpdates {
     let (tx, mut rx) = mpsc::unbounded_channel();
     tauri::async_runtime::spawn(async move {
@@ -136,9 +275,19 @@ pub fn start(
                     let status = check(&app, core, &app_db, &staged).await;
                     core.send(Input::Internal(Internal::UpdateStatus(status)));
                 }
-                Ask::Relaunch => {
-                    if install_staged(&staged) {
-                        app.restart();
+                Ask::Relaunch { if_idle } => {
+                    let has_update = staged.lock().map(|s| s.is_some()).unwrap_or(false);
+                    if has_update {
+                        let (core, paths, db, staged) = (
+                            core.clone(),
+                            paths.clone(),
+                            Arc::clone(&app_db),
+                            Arc::clone(&staged),
+                        );
+                        let _ = tauri::async_runtime::spawn_blocking(move || {
+                            relaunch_all(&core, &paths, &db, own, &staged, if_idle)
+                        })
+                        .await;
                     }
                 }
             }
@@ -267,6 +416,131 @@ mod tests {
                 .filter(|id| in_rollout(id, 0.1))
                 .all(|id| in_rollout(id, 0.5))
         );
+    }
+
+    /// A channel file and two archives on a local server, as the release
+    /// workflow publishes them.
+    fn serve(files: Vec<(&'static str, Vec<u8>)>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader, Write};
+            for stream in listener.incoming().flatten() {
+                let mut reader = BufReader::new(&stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() {
+                    continue;
+                }
+                let path = line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_owned();
+                loop {
+                    let mut h = String::new();
+                    if reader.read_line(&mut h).map_or(true, |n| n == 0) || h == "\r\n" {
+                        break;
+                    }
+                }
+                let body = files
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .map(|(_, b)| b.clone());
+                let mut s = &stream;
+                let _ = match body {
+                    Some(b) => s
+                        .write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", b.len()).as_bytes())
+                        .and_then(|()| s.write_all(&b)),
+                    None => s.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+                };
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// 15 §10 check 2: the plugin, configured as Mado's (signed version
+    /// required), downloads a correctly signed archive and refuses a
+    /// tampered one.
+    #[test]
+    fn a_tampered_archive_is_rejected() {
+        use base64::Engine as _;
+        use tauri_plugin_updater::UpdaterExt as _;
+        let b64 = |s: String| base64::engine::general_purpose::STANDARD.encode(s);
+        let keys = minisign::KeyPair::generate_unencrypted_keypair().expect("keys");
+        let archive = b"the update archive".to_vec();
+        let signature = minisign::sign(
+            Some(&keys.pk),
+            &keys.sk,
+            std::io::Cursor::new(&archive),
+            Some("timestamp:0\tfile:Mado.app.tar.gz\tversion:9.0.0"),
+            None,
+        )
+        .expect("sign")
+        .into_string();
+        let mut tampered = archive.clone();
+        tampered[0] ^= 1;
+        let channel = |url: &str| {
+            serde_json::json!({
+                "version": "9.0.0",
+                "pub_date": "2026-11-15T00:00:00Z",
+                "rollout": 1,
+                "security": false,
+                "platforms": { "darwin-aarch64": { "url": url, "signature": b64(signature.clone()) } }
+            })
+        };
+        let base = serve(vec![
+            ("/good.tar.gz", archive.clone()),
+            ("/bad.tar.gz", tampered),
+        ]);
+        let good = channel(&format!("{base}/good.tar.gz"))
+            .to_string()
+            .into_bytes();
+        let bad = channel(&format!("{base}/bad.tar.gz"))
+            .to_string()
+            .into_bytes();
+        let base2 = serve(vec![("/good.json", good), ("/bad.json", bad)]);
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({
+                "pubkey": b64(keys.pk.to_box().expect("box").to_string()),
+                "endpoints": [],
+                "requireSignedVersion": true,
+                "dangerousInsecureTransportProtocol": true
+            }),
+        );
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .expect("app");
+        let fetch = |name: &str| {
+            let url: url::Url = format!("{base2}/{name}").parse().expect("url");
+            tauri::async_runtime::block_on(async {
+                let update = app
+                    .updater_builder()
+                    .endpoints(vec![url])
+                    .expect("endpoints")
+                    .build()
+                    .expect("updater")
+                    .check()
+                    .await
+                    .expect("check")
+                    .expect("an update");
+                update.download(|_, _| {}, || {}).await
+            })
+        };
+        assert_eq!(fetch("good.json").expect("verified"), archive);
+        assert!(
+            fetch("bad.json").is_err(),
+            "the tampered archive must be refused"
+        );
+    }
+
+    /// 15 §10 check 3: with `rollout: 0`, no install ID is in, so no
+    /// client downloads or installs it.
+    #[test]
+    fn rollout_zero_reaches_nobody() {
+        assert!((0..10_000).all(|i| !in_rollout(&format!("id-{i}"), 0.0)));
     }
 
     #[test]

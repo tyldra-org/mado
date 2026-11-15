@@ -146,6 +146,9 @@ pub enum Internal {
     UpdateStatus(mado_types::state::UpdateState),
     /// Clearing on quit is done (spec 08 §7).
     ClearedOnExit,
+    /// Whether this profile may quit for a security update now: no input
+    /// for 10 minutes and no typed text in a tab (spec 15 §5).
+    IdleForUpdate { reply: oneshot::Sender<bool> },
     /// A command an internal page sent finished (spec 01 §4.4).
     InvokeAnswered {
         tab: TabId,
@@ -219,7 +222,14 @@ pub enum TestHook {
     ErrorAction { tab: TabId, action: String },
     /// Runs the private window lock check now, as its timer would.
     PrivateLockCheck,
+    /// Runs the security update check now, as its timer would.
+    SecurityCheck,
 }
+
+/// A security update relaunches on its own after this long ready, once
+/// nobody has used Mado for as long (spec 15 §5).
+const SECURITY_GRACE_MS: i64 = 10 * 60_000;
+const SECURITY_CHECK: Duration = Duration::from_secs(60);
 
 /// How long a notice with Undo stays (spec 06 §3).
 const UNDO_NOTICE: Duration = Duration::from_secs(10);
@@ -242,6 +252,11 @@ pub struct CoreConfig {
     pub page_scripts: mado_engine::PageScriptSet,
     pub ui: Box<dyn UiSink>,
     pub updates: Box<dyn Updates>,
+    /// This build and the web engine (About, spec 15 §5).
+    pub about: mado_types::state::AboutState,
+    /// Open the last session whatever `startup.mode` says: this profile
+    /// quit for an update (spec 15 §5).
+    pub restore_session: bool,
     /// The time source, Unix milliseconds. Tests pass a fixed clock.
     pub clock: fn() -> i64,
     /// The captive portal probe (spec 05 §8); `None` turns detection off.
@@ -442,6 +457,11 @@ pub struct Core {
     drm_failed: BTreeSet<TabId>,
     /// `privacy.clearOnExit` is clearing before the app quits.
     clearing_on_exit: bool,
+    /// When the user last sent a command from one of Mado's windows.
+    last_input: i64,
+    /// Since when a security update has been ready to install.
+    security_ready_at: Option<i64>,
+    restore_session: bool,
     /// The menu states the app shows (spec 01 §5.4).
     menu_shown: menus::MenuState,
     /// The user's home folder, for importing (spec 12 §5.1).
@@ -578,6 +598,7 @@ impl Core {
         let mut core = Self {
             state: State {
                 profile: config.profile,
+                about: config.about.clone(),
                 ..State::default()
             },
             rev: 0,
@@ -644,6 +665,9 @@ impl Core {
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             clearing_on_exit: false,
+            last_input: (config.clock)(),
+            security_ready_at: None,
+            restore_session: config.restore_session,
             menu_shown: menus::MenuState::new(),
             home: config.home,
             reader_always,
@@ -731,6 +755,15 @@ impl Core {
                     reply: r,
                 } => {
                     reply = Some(r);
+                    if matches!(
+                        origin,
+                        Origin::Ui { .. }
+                            | Origin::Overlay { .. }
+                            | Origin::Settings
+                            | Origin::InternalPage { .. }
+                    ) {
+                        self.last_input = self.now();
+                    }
                     self.command(&origin, cmd, &mut rec, &mut reply)
                 }
                 Input::Engine(event) => {
@@ -1117,6 +1150,9 @@ impl Core {
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
             Internal::ClearedOnExit => self.cleared_on_exit(),
+            Internal::IdleForUpdate { reply } => {
+                let _ = reply.send(self.idle_for_update());
+            }
             Internal::InvokeAnswered { tab, id, result } => self.invoke_answered(tab, id, result),
             Internal::Menu { id, window } => self.menu_action(&id, window, rec),
             Internal::SourceRead { tab, url, html } => self.source_read(tab, url, html),
@@ -1209,6 +1245,13 @@ impl Core {
             Internal::UpdateStatus(update) => {
                 let ready = update.status == mado_types::state::UpdateStatus::Ready
                     && self.state.update.status != mado_types::state::UpdateStatus::Ready;
+                if ready && update.security {
+                    self.security_ready_at = Some(self.now());
+                    self.timers
+                        .schedule(Timer::SecurityRelaunch, SECURITY_CHECK);
+                } else if update.status != mado_types::state::UpdateStatus::Ready {
+                    self.security_ready_at = None;
+                }
                 let mut tx = self.state.tx(rec);
                 let mut u = tx.update();
                 u.set_status(update.status);
@@ -1262,6 +1305,7 @@ impl Core {
                 TestHook::FakeAuthSuccess => self.hooks.auth_success = true,
                 TestHook::ErrorAction { tab, action } => self.press_error_action(tab, &action),
                 TestHook::PrivateLockCheck => self.private_lock_check(),
+                TestHook::SecurityCheck => self.fire(Timer::SecurityRelaunch),
             },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {
@@ -1449,6 +1493,17 @@ impl Core {
                 }
             }
             Timer::ClearOnExitLimit => self.cleared_on_exit(),
+            Timer::SecurityRelaunch => {
+                if let Some(since) = self.security_ready_at {
+                    if self.now() - since >= SECURITY_GRACE_MS && self.idle_for_update() {
+                        self.security_ready_at = None;
+                        self.updates.relaunch_when_idle();
+                    } else {
+                        self.timers
+                            .schedule(Timer::SecurityRelaunch, SECURITY_CHECK);
+                    }
+                }
+            }
             Timer::PrivateLock(_) => self.private_lock_check(),
             Timer::ForgetDeletedBookmarks(token) => {
                 self.deleted_bookmarks.remove(&token);
@@ -1551,6 +1606,12 @@ impl Core {
             set.scripts.push(mado_engine::page::gpc());
         }
         set
+    }
+
+    /// No input for 10 minutes and no typed text in any tab (spec 15 §5).
+    fn idle_for_update(&self) -> bool {
+        self.now() - self.last_input >= SECURITY_GRACE_MS
+            && !self.model.tabs.values().any(|t| t.has_unsaved_input)
     }
 
     /// Lets queued writes finish; the app then checkpoints and releases the

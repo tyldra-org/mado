@@ -15,7 +15,7 @@ use super::{Core, Input, Internal};
 fn reads(page: InternalPage) -> &'static [&'static str] {
     match page {
         InternalPage::Downloads => &["downloads"],
-        InternalPage::About => &["update"],
+        InternalPage::About => &["update", "about"],
         _ => &[],
     }
 }
