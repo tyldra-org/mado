@@ -352,6 +352,25 @@ run("WebKit adapter", () => {
     });
   });
 
+  test("a bad certificate shows the interstitial; Proceed loads it; an HSTS host has no Proceed (08 §12 check 2)", async () => {
+    // The app does not trust the fixture server's test CA: every https
+    // fixture is a certificate error.
+    const { tab } = await open("https://expired.mado.test/index.html");
+    await tabWhere(tab, (t) => t.title === "This connection isn't private");
+    await mado.control.call("test.errorAction", { tabId: tab, action: "proceed" });
+    const t = await tabWhere(
+      tab,
+      (t) =>
+        t.title !== "This connection isn't private" &&
+        t.title !== "" &&
+        (t as Tab & { security: { level: string } }).security.level === "dangerous",
+    );
+    expect(t.url).toBe("https://expired.mado.test/index.html");
+    expect((t as Tab & { security: { level: string } }).security.level).toBe("dangerous");
+    const hsts = await open("https://hsts.mado.test/index.html");
+    await tabWhere(hsts.tab, (t) => t.title === "hsts.mado.test can't be opened safely");
+  }, 30_000);
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");

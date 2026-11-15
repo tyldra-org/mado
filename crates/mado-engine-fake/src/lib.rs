@@ -95,6 +95,8 @@ pub struct FakeState {
     pub cleared: Vec<ClearDataRequest>,
     /// Downloads: where the core put them, and whether they run.
     pub downloads: BTreeMap<EngineDownloadId, FakeDownload>,
+    /// Hosts whose certificate the user accepted (Proceed).
+    pub allowed_certificates: Vec<String>,
     /// Messages posted to pages, in order.
     pub posted: Vec<(TabId, serde_json::Value)>,
     /// Error pages shown: tab, URL and HTML.
@@ -201,6 +203,7 @@ impl FakeControl {
                 mime: mime.to_owned(),
                 attachment,
                 can_show,
+                hsts: false,
             },
         };
         self.decide(tab, request, |_, _, _| {});
@@ -332,7 +335,17 @@ impl FakeControl {
                     .ok()
                     .and_then(|u| Some(format!("{}://{}", u.scheme(), u.host_str()?)))
                     .unwrap_or_default();
-                let failure = lock(&control.state).unreachable.get(&origin).cloned();
+                let failure = {
+                    let s = lock(&control.state);
+                    let host = url::Url::parse(&url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(str::to_owned))
+                        .unwrap_or_default();
+                    s.unreachable.get(&origin).cloned().filter(|e| {
+                        !(*e == mado_engine::NetError::Certificate
+                            && s.allowed_certificates.contains(&host))
+                    })
+                };
                 match failure {
                     Some(error) => control.fail(tab, &url, error),
                     None => control.commit(tab, &url, kind, true),
@@ -752,6 +765,10 @@ impl Engine for FakeEngine {
 
     fn set_proxy(&mut self, proxy: ProxyConfig) {
         self.lock().proxy = proxy;
+    }
+
+    fn allow_certificate(&mut self, host: String) {
+        self.lock().allowed_certificates.push(host);
     }
 
     fn download(&mut self, id: EngineDownloadId, cmd: DownloadCommand) {

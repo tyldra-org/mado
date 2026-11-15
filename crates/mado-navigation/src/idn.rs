@@ -575,8 +575,9 @@ impl TopDomains {
         None
     }
 
-    /// A top domain `host` looks like without being it or under it.
-    fn similar(&self, host: &str) -> Option<&str> {
+    /// A top domain `host` (Unicode) looks like without being it or under
+    /// it, by confusable skeleton.
+    pub fn similar(&self, host: &str) -> Option<&str> {
         for s in skeletons(host) {
             if s.is_empty() {
                 continue;

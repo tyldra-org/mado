@@ -22,6 +22,7 @@ mado-engine = { version = "0.0.0", path = "../mado-engine" }
 mado-navigation = { version = "0.0.0", path = "../mado-navigation" }
 mado-permissions = { version = "0.0.0", path = "../mado-permissions" }
 mado-platform = { version = "0.0.0", path = "../mado-platform" }
+mado-safety = { version = "0.0.0", path = "../mado-safety" }
 mado-settings = { version = "0.0.0", path = "../mado-settings" }
 mado-storage = { version = "0.0.0", path = "../mado-storage" }
 mado-types = { version = "0.0.0", path = "../mado-types" }

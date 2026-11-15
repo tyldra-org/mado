@@ -193,10 +193,6 @@ impl Core {
         rec: &mut PatchRecorder,
     ) {
         let key = key_name(&request.kind);
-        eprintln!(
-            "DBG perm key={key} value={:?}",
-            self.site_value(&request.origin, &key, request.embedder.as_deref())
-        );
         let agent = self.model.tabs.get(&tab).is_some_and(|t| t.agent.is_some());
         if agent
             && matches!(

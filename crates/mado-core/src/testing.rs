@@ -153,6 +153,7 @@ impl TestCore {
             engine,
             captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
             profiles: PROFILES.with_borrow(Clone::clone),
+            hsts_extra: ["hsts.example".to_owned()].into(),
             // Camera denied at the OS, everything else answered yes.
             os: crate::OsPermissions {
                 status: |p| match p {

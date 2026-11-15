@@ -135,6 +135,11 @@ pub fn set_proxy(proxy: ProxyConfig) {
     with(|a| a.set_proxy(&proxy));
 }
 
+/// Accepts `host`'s certificate for the session (spec 08 §3).
+pub fn allow_certificate(host: String) {
+    delegate::TRUSTED.with_borrow_mut(|t| t.insert(host));
+}
+
 /// Pauses, cancels or resumes a download (spec 12 §4.2).
 pub fn download(
     id: mado_engine::event::EngineDownloadId,

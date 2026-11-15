@@ -376,6 +376,7 @@ mod tests {
                 mime: "application/zip".into(),
                 attachment,
                 can_show,
+                hsts: false,
             },
             ..request("https://site.example/f.zip", Src::Mado, true, false)
         };

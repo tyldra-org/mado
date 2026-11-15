@@ -100,6 +100,10 @@ impl Engine for TauriWindows {
         mado_engine_webkit::set_proxy(proxy);
     }
 
+    fn allow_certificate(&mut self, host: String) {
+        mado_engine_webkit::allow_certificate(host);
+    }
+
     fn download(
         &mut self,
         id: mado_engine::event::EngineDownloadId,

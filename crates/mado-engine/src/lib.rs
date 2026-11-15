@@ -141,6 +141,9 @@ pub trait Engine {
     fn set_proxy(&mut self, proxy: ProxyConfig);
     /// Pauses, cancels or resumes a download (spec 12 §4.2).
     fn download(&mut self, id: event::EngineDownloadId, cmd: event::DownloadCommand);
+    /// Accepts `host`'s certificate for this session, after the user chose
+    /// Proceed on its interstitial (spec 08 §3). Never persisted.
+    fn allow_certificate(&mut self, host: String);
 }
 
 /// One call on the engine, queued from the core for the main thread.
@@ -153,6 +156,7 @@ pub enum EngineOp {
     ClearData(ClearDataRequest, Callback<Result<(), EngineError>>),
     SetProxy(ProxyConfig),
     Download(event::EngineDownloadId, event::DownloadCommand),
+    AllowCertificate(String),
 }
 
 impl std::fmt::Debug for EngineOp {
@@ -165,6 +169,7 @@ impl std::fmt::Debug for EngineOp {
             Self::SetPageScripts(s) => write!(f, "SetPageScripts({} scripts)", s.scripts.len()),
             Self::ClearData(req, _) => write!(f, "ClearData({:?})", req.kinds),
             Self::SetProxy(_) => f.write_str("SetProxy"),
+            Self::AllowCertificate(_) => write!(f, "AllowCertificate"),
             Self::Download(id, cmd) => write!(
                 f,
                 "Download({id:?}, {})",
@@ -206,6 +211,7 @@ impl EngineOp {
             Self::ClearData(req, done) => engine.clear_data(req, done),
             Self::SetProxy(proxy) => engine.set_proxy(proxy),
             Self::Download(id, cmd) => engine.download(id, cmd),
+            Self::AllowCertificate(host) => engine.allow_certificate(host),
         }
     }
 }

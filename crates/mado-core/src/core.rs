@@ -163,6 +163,8 @@ pub enum TestHook {
     FakeClock(i64),
     /// `app.authenticate` succeeds without asking the OS.
     FakeAuthSuccess,
+    /// Presses a button of the error page on `tab`, as a click would.
+    ErrorAction { tab: TabId, action: String },
 }
 
 /// How long a notice with Undo stays (spec 06 §3).
@@ -194,6 +196,8 @@ pub struct CoreConfig {
     pub os: OsPermissions,
     /// The app's profiles (spec 12 §1).
     pub profiles: std::sync::Arc<dyn crate::ui::Profiles>,
+    /// Hosts treated as HSTS-preloaded besides the bundled list; tests only.
+    pub hsts_extra: std::collections::BTreeSet<String>,
 }
 
 /// How the core asks macOS about its own permissions.
@@ -335,12 +339,15 @@ pub struct Core {
     revoked: BTreeMap<u64, Vec<mado_permissions::Row>>,
     /// Hosts that open in Safari (site engine rules, spec 05 §9).
     engine_rules: std::collections::BTreeSet<String>,
+    /// Hosts that sent HSTS this session, hosts the user proceeded to
+    /// despite their certificate, and extra preloaded hosts (tests).
+    hsts_seen: std::collections::BTreeSet<String>,
+    proceeded: std::collections::BTreeSet<String>,
+    hsts_extra: std::collections::BTreeSet<String>,
     /// When each tab last opened a pop-up, for tab-under (spec 05 §7).
     popup_opened: BTreeMap<TabId, i64>,
     /// Error pages on screen, by tab (spec 05 §6).
     error_pages: BTreeMap<TabId, errors::ErrorPage>,
-    /// Tabs whose next commit is their error page, not a visit.
-    error_commits: std::collections::BTreeSet<TabId>,
     /// HTTPS-first upgrades in flight (spec 05 §5).
     upgrades: BTreeMap<TabId, errors::Upgrade>,
     /// `httpAllowed` hosts and when they expire.
@@ -523,6 +530,9 @@ impl Core {
             deleted_bookmarks: BTreeMap::new(),
             displayed: BTreeMap::new(),
             popup_opened: BTreeMap::new(),
+            hsts_seen: std::collections::BTreeSet::new(),
+            proceeded: std::collections::BTreeSet::new(),
+            hsts_extra: config.hsts_extra.clone(),
             engine_rules,
             sites,
             held: dialogs::Held::default(),
@@ -541,7 +551,6 @@ impl Core {
             held_downloads: BTreeMap::new(),
             next_held: 0,
             error_pages: BTreeMap::new(),
-            error_commits: std::collections::BTreeSet::new(),
             upgrades: BTreeMap::new(),
             http_allowed,
             continue_once: std::collections::BTreeSet::new(),
@@ -1122,6 +1131,7 @@ impl Core {
                 TestHook::DropNextPatch => self.hooks.drop_next_patch = true,
                 TestHook::FakeClock(now) => self.hooks.clock = Some(now),
                 TestHook::FakeAuthSuccess => self.hooks.auth_success = true,
+                TestHook::ErrorAction { tab, action } => self.press_error_action(tab, &action),
             },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {

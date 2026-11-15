@@ -223,7 +223,6 @@ impl Core {
         self.page_downloads.remove(&tab);
         self.popup_opened.remove(&tab);
         self.error_pages.remove(&tab);
-        self.error_commits.remove(&tab);
         self.upgrades.remove(&tab);
         self.tab_gone(tab);
         self.heartbeats.remove(&tab);
@@ -257,6 +256,9 @@ impl Core {
                 if matches!(t.life, TabLife::Crashed) {
                     // A crashed view is gone: make a new one at the same page.
                     self.recreate(tab_id);
+                } else if let Some(url) = self.error_page_url(tab_id) {
+                    // Reloading an error page tries the failed URL again.
+                    self.navigate(tab_id, url)?;
                 } else {
                     live(self, tab_id)?;
                     self.outbox
