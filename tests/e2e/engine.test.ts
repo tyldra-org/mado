@@ -357,6 +357,11 @@ run("WebKit adapter", () => {
     // fixture is a certificate error.
     const { tab } = await open("https://expired.mado.test/index.html");
     await tabWhere(tab, (t) => t.title === "This connection isn't private");
+    // View certificate opens macOS's certificate sheet with the failed trust.
+    await mado.control.call("test.errorAction", { tabId: tab, action: "viewCertificate" });
+    await until("the certificate sheet", async () =>
+      (await mado.control.call<boolean>("test.takeSheet", { tabId: tab })) ? true : undefined,
+    );
     await mado.control.call("test.errorAction", { tabId: tab, action: "proceed" });
     const t = await tabWhere(
       tab,

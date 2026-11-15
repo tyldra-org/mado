@@ -54,6 +54,8 @@ enum Action {
     GoTo,
     /// Accept a bad certificate for this session.
     Proceed,
+    /// Show the certificate that failed (08 §3).
+    ViewCertificate,
 }
 
 impl Action {
@@ -66,6 +68,7 @@ impl Action {
             Self::ClearCookies => "clearCookies",
             Self::GoTo => "goTo",
             Self::Proceed => "proceed",
+            Self::ViewCertificate => "viewCertificate",
         }
     }
 
@@ -78,6 +81,7 @@ impl Action {
             Self::ClearCookies,
             Self::GoTo,
             Self::Proceed,
+            Self::ViewCertificate,
         ]
         .into_iter()
         .find(|a| a.name() == s)
@@ -127,8 +131,9 @@ impl ErrorKind {
             Self::Lookalike => &[Action::GoTo, Action::Continue],
             Self::CaptivePortal => &[Action::SignIn],
             Self::TooManyRedirects => &[Action::ClearCookies],
-            Self::Certificate => &[Action::Reload, Action::Proceed],
-            Self::UnsupportedScheme | Self::CertificateHsts => &[],
+            Self::Certificate => &[Action::Reload, Action::Proceed, Action::ViewCertificate],
+            Self::CertificateHsts => &[Action::ViewCertificate],
+            Self::UnsupportedScheme => &[],
             _ => &[Action::Reload],
         }
     }
@@ -698,6 +703,12 @@ impl Core {
                         .model
                         .open_tab(window, portal, None, true, None, now, prefs);
                 }
+            }
+            Action::ViewCertificate => {
+                self.outbox.push(EngineOp::Apply(
+                    tab,
+                    mado_engine::TabCommand::ShowCertificate,
+                ));
             }
             Action::Proceed => {
                 self.proceeded.insert(host.clone());

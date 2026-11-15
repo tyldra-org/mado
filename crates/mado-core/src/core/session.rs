@@ -1290,7 +1290,8 @@ impl Core {
                 if let Some(rect) = w.content_rect {
                     first.push(EngineOp::Apply(a, TabCommand::SetFrame(rect)));
                 }
-                if active != previous {
+                // A locked window shows no page (08 §6).
+                if active != previous && !w.locked {
                     first.push(EngineOp::Apply(a, TabCommand::SetVisible(true)));
                 }
             }
@@ -1369,6 +1370,9 @@ impl Core {
         let now = self.now();
         match event {
             EngineEvent::WindowCreated { .. } | EngineEvent::TabCreated { .. } => {}
+            EngineEvent::WindowFocusChanged { window, focused } => {
+                self.window_focus_changed(window, focused);
+            }
             EngineEvent::WindowCloseRequested { window } => {
                 if self.model.windows.contains_key(&window) {
                     self.request_close(CloseAction::Window(window), rec);

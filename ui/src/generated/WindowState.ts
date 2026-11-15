@@ -23,4 +23,8 @@ contentRect: Rect | null, findBar: FindState | null, focus: Focus, overlay: Over
 /**
  * Status bubble text.
  */
-hoverLink: string | null, isPrivate: boolean, };
+hoverLink: string | null, isPrivate: boolean, 
+/**
+ * A private window hidden behind "Unlock with Touch ID" (spec 08 §6).
+ */
+locked: boolean, };

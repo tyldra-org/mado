@@ -122,6 +122,12 @@ fn setting_bool(app: &Storage, key: &str, default: bool) -> bool {
         .map_or(default, |v| v == "true")
 }
 
+/// The profile used last, which a new private profile copies its settings
+/// from (spec 12 §1.6).
+pub fn last_profile(app: &Storage) -> Option<ProfileId> {
+    app_state(app, "last_profile_id")?.parse().ok()
+}
+
 fn app_state(app: &Storage, key: &str) -> Option<String> {
     let key = key.to_owned();
     app.readers()

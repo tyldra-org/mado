@@ -145,6 +145,10 @@ describe("site information", () => {
     expect(sent(seen, "permission.reset")).toEqual([
       { type: "permission.reset", origin: "https://alpha.example", key: null },
     ]);
+    await fireEvent.click(screen.getByRole("button", { name: "Certificate" }));
+    expect(sent(seen, "site.showCertificate")).toEqual([
+      { type: "site.showCertificate", tabId: A },
+    ]);
     await fireEvent.click(screen.getByRole("button", { name: "Clear cookies and site data" }));
     await new Promise((r) => setTimeout(r, 0));
     await tick();
@@ -152,6 +156,26 @@ describe("site information", () => {
       { type: "site.clearData", origin: "https://alpha.example" },
     ]);
     expect(screen.getByRole("status").textContent).toContain("cookies and data are cleared");
+  });
+});
+
+describe("private window lock (08 §6)", () => {
+  test("a locked window shows only Unlock, which asks the core", async () => {
+    const seen = await shown({
+      windows: {
+        [W]: {
+          id: W,
+          layout: "vertical",
+          tabOrder: [A],
+          activeTabId: A,
+          overlay: null,
+          locked: true,
+        },
+      },
+    });
+    expect(screen.getByRole("heading", { name: "This private window is locked" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Unlock with Touch ID" }));
+    expect(sent(seen, "window.unlock")).toEqual([{ type: "window.unlock", windowId: W }]);
   });
 });
 

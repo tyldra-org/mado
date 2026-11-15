@@ -2746,6 +2746,101 @@ fn a_lookalike_domain_asks_did_you_mean() {
     });
 }
 
+/// 08 §6: with `privacy.lockPrivateWindows` on, a private window five
+/// minutes in the background hides its page until the user authenticates;
+/// focus in time keeps it open, and a normal profile never locks.
+#[test]
+fn private_windows_lock_in_the_background() {
+    crate::testing::PRIVATE.set(true);
+    let core = TestCore::start();
+    crate::testing::PRIVATE.set(false);
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://a.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://a.example/"
+    });
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "privacy.lockPrivateWindows".into(),
+            value: json!(true),
+            token: None,
+        },
+    )
+    .expect("set");
+    let clock = |now: i64| {
+        core.handle
+            .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+                now,
+            ))));
+    };
+    let focus = |focused: bool| {
+        core.handle.send(Input::Engine(
+            mado_engine::EngineEvent::WindowFocusChanged { window: w, focused },
+        ));
+    };
+    let check = || {
+        core.handle.send(Input::Internal(Internal::Hook(
+            crate::TestHook::PrivateLockCheck,
+        )));
+    };
+    let locked = || state_of(&core).windows[&w].locked;
+    let visible = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tab_log
+            .iter()
+            .filter(|(t, _)| *t == tab)
+            .map(|(_, c)| *c)
+            .filter(|c| *c == "setVisible")
+            .count()
+    };
+    clock(1_000_000);
+    focus(false);
+    clock(1_000_000 + 299_000);
+    check();
+    assert!(!locked(), "not yet five minutes");
+    focus(true);
+    clock(1_000_000 + 600_000);
+    check();
+    assert!(!locked(), "back in front in time");
+    clock(2_000_000);
+    focus(false);
+    check();
+    assert!(!locked());
+    let shown = visible();
+    clock(2_000_000 + 300_000);
+    check();
+    eventually("locked", locked);
+    eventually("hidden", || visible() == shown + 1);
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Control {
+                client: ClientId::new()
+            },
+            Command::WindowUnlock { window_id: w }
+        )
+        .expect_err("only Mado's windows")
+        .code,
+        ErrorCode::Protected
+    );
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::WindowUnlock { window_id: w },
+    )
+    .expect("unlocked");
+    assert!(!locked());
+    eventually("shown", || visible() == shown + 2);
+}
+
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and
 /// Global Privacy Control reach the engine at start and when they change.
 #[test]
@@ -2988,4 +3083,18 @@ fn certificate_errors_offer_proceed_except_on_hsts_hosts() {
         .map(|p| p.2.clone())
         .expect("a page");
     assert!(!html.contains("a=proceed"));
+    // Both offer the certificate viewer.
+    core.page.page_navigates(
+        hsts,
+        &action_link(&html, "viewCertificate").expect("view"),
+        true,
+    );
+    eventually("the viewer", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tab_log
+            .iter()
+            .any(|(t, c)| *t == hsts && *c == "showCertificate")
+    });
 }

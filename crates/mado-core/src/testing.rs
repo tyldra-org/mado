@@ -90,6 +90,8 @@ thread_local! {
     /// The profile service the next `TestCore` on this thread uses.
     pub static PROFILES: std::cell::RefCell<std::sync::Arc<dyn crate::ui::Profiles>> =
         std::cell::RefCell::new(std::sync::Arc::new(crate::ui::NoProfiles));
+    /// Whether the next `TestCore` on this thread is a private profile.
+    pub static PRIVATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The captive portal probe the next `TestCore` on this thread uses.
     pub static CAPTIVE_PROBE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
@@ -149,6 +151,7 @@ impl TestCore {
         let (handle, thread) = crate::start(CoreConfig {
             profile: ProfileInfo {
                 name: "Test".into(),
+                is_private: PRIVATE.get(),
                 ..ProfileInfo::default()
             },
             app_db: Storage::start(&app).expect("app storage"),

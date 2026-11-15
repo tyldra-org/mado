@@ -293,6 +293,11 @@ pub enum EngineEvent {
     WindowCloseRequested {
         window: WindowId,
     },
+    /// The window became or stopped being the key window.
+    WindowFocusChanged {
+        window: WindowId,
+        focused: bool,
+    },
     TabCreated {
         tab: TabId,
     },
@@ -474,6 +479,7 @@ impl EngineEvent {
         match self {
             Self::WindowCreated { .. } => "windowCreated",
             Self::WindowCloseRequested { .. } => "windowCloseRequested",
+            Self::WindowFocusChanged { .. } => "windowFocusChanged",
             Self::TabCreated { .. } => "tabCreated",
             Self::NavigationStarted { .. } => "navigationStarted",
             Self::NavigationRedirected { .. } => "navigationRedirected",

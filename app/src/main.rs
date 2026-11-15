@@ -188,6 +188,42 @@ fn launch(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
     run_app(paths, app_db, args, owner, profiles.len())
 }
 
+/// A new private profile starts with the profile-scope settings of the
+/// profile used last, so it behaves like the browser its user knows (spec
+/// 12 §1.6). A guest starts with the defaults.
+fn seed_private_settings(
+    paths: &Paths,
+    app_db: &Storage,
+    temp: &Paths,
+    id: mado_types::ProfileId,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(last) = profiles::last_profile(app_db) else {
+        return Ok(());
+    };
+    let source = paths.profile_db(last);
+    if !source.exists() {
+        return Ok(());
+    }
+    // Creates the database with its schema, as `prepare` will find it.
+    drop(open(
+        &temp.profile_db(id),
+        Kind::Profile,
+        &temp.backups(id),
+        &temp.broken(id),
+    )?);
+    let conn = rusqlite::Connection::open(temp.profile_db(id))?;
+    conn.execute(
+        "ATTACH DATABASE ?1 AS source",
+        [source.to_string_lossy().as_ref()],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings SELECT * FROM source.settings",
+        [],
+    )?;
+    conn.execute("DETACH DATABASE source", [])?;
+    Ok(())
+}
+
 /// A private or guest window (spec 12 §1.6): a temporary profile in the
 /// temporary folder with an in-memory website data store, deleted on
 /// close. Private windows share one such profile while it runs.
@@ -235,6 +271,11 @@ fn launch_temporary(
                     "private"
                 },
             )?;
+            if kind == Temporary::Private
+                && let Err(e) = seed_private_settings(paths, &app_db, &temp, id)
+            {
+                tracing::warn!(error = %e, "the private profile starts with the default settings");
+            }
             id
         }
     };
@@ -604,6 +645,15 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
                 if method == "test.click" {
                     return test_click(&app, &params).await;
                 }
+                if method == "test.takeSheet" {
+                    let tab: Option<mado_types::TabId> =
+                        serde_json::from_value(params["tabId"].clone()).ok();
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = app.run_on_main_thread(move || {
+                        let _ = tx.send(tab.is_some_and(mado_engine_webkit::take_sheet));
+                    });
+                    return Ok(serde_json::json!(rx.await.unwrap_or(false)));
+                }
                 if method == "test.hasDataStore" {
                     return test_has_data_store(&app, &params).await;
                 }
@@ -875,6 +925,19 @@ fn run_app(
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Private windows lock after five minutes in the background (08 §6).
+            if let tauri::WindowEvent::Focused(focused) = event
+                && let Some(id) = window_of(window.label())
+                && let Some(shared) = window.try_state::<Shared>()
+                && let Some(core) = shared.core.get()
+            {
+                core.send(Input::Engine(
+                    mado_engine::EngineEvent::WindowFocusChanged {
+                        window: id,
+                        focused: *focused,
+                    },
+                ));
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
                 && let Some(id) = window_of(window.label())
                 && let Some(shared) = window.try_state::<Shared>()

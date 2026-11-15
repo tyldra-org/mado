@@ -77,6 +77,14 @@
   <div role="dialog" aria-labelledby="site-info-title">
     <h2 id="site-info-title">{new URL(origin).host}</h2>
     <p>{t(`address.security.${tab.security?.level ?? "internal"}`)}</p>
+    {#if origin.startsWith("https:")}
+      <button
+        type="button"
+        onclick={() =>
+          store.client.call({ type: "site.showCertificate", tabId: tab.id }).catch(() => {})}
+        >{t("siteInfo.certificate")}</button
+      >
+    {/if}
     {#each capturing as kind (kind)}
       <p>
         {t("siteInfo.using", { what: t(`permission.${kind}`) })}
