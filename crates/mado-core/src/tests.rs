@@ -1214,3 +1214,131 @@ fn display_urls_follow_the_spoof_checks_and_the_setting() {
     assert_eq!(full.text, "https://www.bücher.de/regal");
     assert_eq!((full.emphasis_start, full.emphasis_end), (12, 21));
 }
+
+fn nav_open(core: &TestCore, window: WindowId, input: &str) -> Result<Value, MadoError> {
+    ask(
+        core,
+        Origin::Ui { window },
+        Command::NavOpen {
+            window_id: window,
+            tab_id: None,
+            input: input.into(),
+            disposition: mado_types::command::NavDisposition::NewForegroundTab,
+            source: mado_types::command::NavSource::Typed,
+            ctrl_enter: false,
+        },
+    )
+}
+
+/// 05 §1 and §3: `nav.open` sends each class where it belongs.
+#[test]
+fn nav_open_follows_the_classifier() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    assert_eq!(
+        nav_open(&core, w, "rust book").expect("open"),
+        json!({ "needsEngine": true })
+    );
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "search.defaultEngine".into(),
+            value: json!("duckduckgo"),
+            token: None,
+        },
+    )
+    .expect("pick an engine");
+    let url_of = |v: Value| {
+        let id: mado_types::TabId = serde_json::from_value(v["tabId"].clone()).expect("a tab");
+        state_of(&core).tabs[&id].url.clone()
+    };
+    assert_eq!(
+        url_of(nav_open(&core, w, "rust book").expect("search")),
+        "https://duckduckgo.com/?q=rust+book"
+    );
+    assert_eq!(
+        url_of(nav_open(&core, w, "bing.com lifetimes").expect("keyword")),
+        "https://www.bing.com/search?q=lifetimes"
+    );
+    assert_eq!(
+        url_of(nav_open(&core, w, "example.com/a b").expect("url")),
+        "https://example.com/a%20b"
+    );
+    assert_eq!(
+        nav_open(&core, w, "2+2").expect("calc"),
+        json!({ "result": "4" })
+    );
+    assert_eq!(
+        nav_open(&core, w, "@tabs mail").expect("scope"),
+        json!({ "scope": "tabs", "query": "mail" })
+    );
+    let refused = nav_open(&core, w, "javascript:alert(1)").expect_err("refused");
+    assert_eq!(refused.message_key, "error.nav.refused");
+    let engines = ask(&core, Origin::System, Command::NavSearchEngines).expect("engines");
+    let list = engines.as_array().expect("a list");
+    assert_eq!(list.len(), 8);
+    assert!(
+        list.iter()
+            .any(|e| e["id"] == "duckduckgo" && e["isDefault"] == true)
+    );
+}
+
+/// 05 §2 and §12 check 2: local suggestions for a 50,000-URL history,
+/// with open tabs, the typed row and the inline completion, within 30 ms.
+#[test]
+fn suggestions_for_a_large_history_come_back_in_time() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    {
+        let mut conn =
+            rusqlite::Connection::open(core.dir.path().join("profile.sqlite")).expect("open");
+        let tx = conn.transaction().expect("tx");
+        for i in 0..50_000 {
+            tx.execute(
+                "INSERT INTO urls (url, host, title, visit_count, typed_count, last_visit_at, frecency)
+                 VALUES (?1, ?2, ?3, 1, 0, 0, ?4)",
+                rusqlite::params![
+                    format!("https://site{i}.example/page"),
+                    format!("site{i}.example"),
+                    format!("Page {i}"),
+                    f64::from(i % 1000)
+                ],
+            )
+            .expect("row");
+        }
+        tx.execute(
+            "INSERT INTO urls (url, host, title, visit_count, typed_count, last_visit_at, frecency)
+             VALUES ('https://github.com/', 'github.com', 'GitHub', 9, 4, 0, 2000)",
+            [],
+        )
+        .expect("github");
+        tx.commit().expect("commit");
+    }
+    let suggest = |input: &str| {
+        ask(
+            &core,
+            Origin::Ui { window: w },
+            Command::NavSuggest {
+                window_id: w,
+                input: input.into(),
+                cursor: 0,
+                deleted: false,
+                request_id: 7,
+            },
+        )
+        .expect("nav.suggest")
+    };
+    suggest("warm");
+    let started = std::time::Instant::now();
+    let out = suggest("git");
+    let took = started.elapsed();
+    assert_eq!(out["requestId"], 7);
+    assert_eq!(out["rows"][0]["url"], "https://github.com/");
+    assert_eq!(out["inline"], "hub.com");
+    let out = suggest("site12");
+    assert!(out["rows"].as_array().is_some_and(|r| r.len() > 1));
+    assert!(took < std::time::Duration::from_millis(30), "took {took:?}");
+}

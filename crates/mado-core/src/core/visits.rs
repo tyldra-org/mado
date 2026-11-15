@@ -48,6 +48,7 @@ impl Core {
             self.write_history(move |c| history::end_visit(c, visit, now));
         }
         let pending = self.pending_transition.remove(&tab);
+        let search = self.pending_search.remove(&tab);
         let info = self.navs.entry(tab).or_default();
         info.visit = None;
         let quick = previous.committed_at > 0 && now - previous.committed_at < REDIRECT_WINDOW;
@@ -75,10 +76,18 @@ impl Core {
             .unwrap_or_default();
         let from = previous.visit;
         let tab_text = tab.to_string();
-        let pending = self
-            .profile_db
-            .writer()
-            .write(move |c| history::record(c, &url, &title, transition, &tab_text, from, now));
+        let pending = self.profile_db.writer().write(move |c| {
+            let recorded = history::record(c, &url, &title, transition, &tab_text, from, now)?;
+            // A search from the address bar keeps its terms (spec 12 §2.1).
+            if let Some((term, engine)) = &search {
+                c.execute(
+                    "INSERT OR REPLACE INTO search_terms (url_id, term, engine_id)
+                     SELECT id, ?2, ?3 FROM urls WHERE url = ?1",
+                    rusqlite::params![url, term, engine],
+                )?;
+            }
+            Ok(recorded)
+        });
         let inputs = self.inputs.clone();
         tokio::task::spawn_local(async move {
             match pending.await {
@@ -118,6 +127,7 @@ impl Core {
             self.write_history(move |c| history::end_visit(c, visit, now));
         }
         self.pending_transition.remove(&tab);
+        self.pending_search.remove(&tab);
     }
 
     /// Page text from `status` (spec 12 §2.2).

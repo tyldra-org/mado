@@ -92,6 +92,16 @@ impl UiSink for TauriUi {
         }
     }
 
+    fn suggest(&mut self, window: WindowId, payload: &serde_json::Value) {
+        let label = format!("ui-{window}");
+        if let Err(e) = self
+            .app
+            .emit_to(EventTarget::AnyLabel { label }, "mado://suggest", payload)
+        {
+            tracing::warn!(error = %e, "suggestions were not delivered");
+        }
+    }
+
     fn quit(&mut self) {
         if let Some(shared) = tauri::Manager::try_state::<Shared>(&self.app) {
             shared

@@ -599,7 +599,7 @@ impl Core {
         }
     }
 
-    fn navigate(&mut self, tab: TabId, url: String) -> Result<(), MadoError> {
+    pub(super) fn navigate(&mut self, tab: TabId, url: String) -> Result<(), MadoError> {
         let t = self
             .model
             .tabs

@@ -5,7 +5,9 @@
 mod calc;
 mod classify;
 mod display;
+pub mod engines;
 mod idn;
+pub mod suggest;
 
 pub use calc::evaluate;
 pub use classify::{Context, Input, KNOWN_SCHEMES, Refusal, SCOPES, classify};
