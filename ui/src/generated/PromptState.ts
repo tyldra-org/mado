@@ -15,4 +15,4 @@ export type PromptState = { "type": "unsavedText", id: PromptId,
 /**
  * The window being closed; `None` when quitting.
  */
-windowId: WindowId | null, tabs: Array<UnsavedTab>, } | { "type": "unresponsive" } & UnresponsivePrompt | { "type": "openInSafari", id: PromptId, tabId: TabId, host: string, };
+windowId: WindowId | null, tabs: Array<UnsavedTab>, } | { "type": "unresponsive" } & UnresponsivePrompt | { "type": "permission", id: PromptId, tabId: TabId, origin: string, embedder: string | null, keys: Array<string>, createdAt: number, armedAt: number, } | { "type": "openInSafari", id: PromptId, tabId: TabId, host: string, };

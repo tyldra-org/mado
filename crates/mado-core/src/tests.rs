@@ -1103,8 +1103,45 @@ fn download_commands_follow_the_state() {
     let second = core
         .page
         .download(tab, 22, "https://files.example/b.zip", "b.zip", Some(10));
+    // 07 §1: the second download asks for `automaticDownloads`; its
+    // buttons do nothing for the first 500 ms (07 §10 check 2).
+    let prompt = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            mado_types::state::PromptState::Permission { id, keys, .. }
+                if keys == &["automaticDownloads".to_owned()] =>
+            {
+                Some(*id)
+            }
+            _ => None,
+        })
+    };
+    eventually("the prompt", || prompt().is_some());
+    let id = prompt().expect("a prompt");
+    let respond = |decision| {
+        ask(
+            &core,
+            Origin::Ui { window: w },
+            Command::PromptRespond { id, decision },
+        )
+    };
+    assert_eq!(
+        code(respond(mado_types::command::PromptDecision::Never)),
+        "error.prompt.notArmed"
+    );
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+            1_800_000_000_600,
+        ))));
+    respond(mado_types::command::PromptDecision::Never).expect("never");
     eventually("the second refused", || {
         destination(second) == Some(DownloadDestination::Cancel)
+    });
+    // Blocked now: the third asks nothing and shows a notice.
+    let third = core
+        .page
+        .download(tab, 25, "https://files.example/c.zip", "c.zip", Some(10));
+    eventually("the third refused", || {
+        destination(third) == Some(DownloadDestination::Cancel)
     });
     assert!(
         state_of(&core)
@@ -1735,4 +1772,242 @@ fn a_discovered_engine_is_added_inactive() {
         .expect("the engine");
     assert_eq!(found["active"], false);
     assert_eq!(found["source"], "opensearch");
+}
+
+/// Sends a permission request as the engine does; returns its answer.
+fn request_permission(
+    core: &TestCore,
+    tab: mado_types::TabId,
+    kind: mado_engine::PermissionKind,
+    origin: &str,
+) -> std::sync::mpsc::Receiver<mado_engine::event::PermissionDecision> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (reply, _expiry) =
+        mado_engine::Reply::new(mado_engine::event::PermissionDecision::Deny, move |d| {
+            let _ = tx.send(d);
+        });
+    core.page
+        .send(mado_engine::EngineEvent::PermissionRequested {
+            tab,
+            request: mado_engine::event::PermissionRequest {
+                kind,
+                origin: origin.into(),
+                embedder: None,
+            },
+            reply,
+        });
+    rx
+}
+
+fn permission_prompt(core: &TestCore, key: &str) -> Option<mado_types::PromptId> {
+    state_of(core).prompts.values().find_map(|p| match p {
+        mado_types::state::PromptState::Permission { id, keys, .. }
+            if keys.iter().any(|k| k == key) =>
+        {
+            Some(*id)
+        }
+        _ => None,
+    })
+}
+
+/// 07 §10 checks 1 to 3 on the fake engine: ask prompts, the answer
+/// persists across a relaunch, block denies without asking, three
+/// dismissals block, and a key macOS denied shows the infobar instead.
+#[test]
+fn permissions_ask_remember_and_respect_macos() {
+    use mado_engine::PermissionKind;
+    use mado_engine::event::PermissionDecision;
+    use mado_types::command::PromptDecision;
+    let wait = |rx: &std::sync::mpsc::Receiver<PermissionDecision>| {
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("an answer")
+    };
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://meet.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://meet.example/"
+    });
+    let site = "https://meet.example";
+    // Ask: a prompt that cannot be answered for 500 ms.
+    let rx = request_permission(&core, tab, PermissionKind::Microphone, site);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    eprintln!(
+        "DBG prompts={:?} answer={:?}",
+        state_of(&core).prompts,
+        rx.try_recv()
+    );
+    eventually("the prompt", || {
+        permission_prompt(&core, "microphone").is_some()
+    });
+    let id = permission_prompt(&core, "microphone").expect("prompt");
+    let respond = |id, decision| {
+        ask(
+            &core,
+            Origin::Ui { window: w },
+            Command::PromptRespond { id, decision },
+        )
+    };
+    assert_eq!(
+        respond(id, PromptDecision::AllowWhileVisiting)
+            .expect_err("not armed")
+            .message_key,
+        "error.prompt.notArmed"
+    );
+    // A control client may never answer a prompt.
+    let client = mado_types::ClientId::new();
+    assert!(
+        ask(
+            &core,
+            Origin::Control { client },
+            Command::PromptRespond {
+                id,
+                decision: PromptDecision::AllowWhileVisiting
+            }
+        )
+        .is_err()
+    );
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+            1_800_000_000_600,
+        ))));
+    respond(id, PromptDecision::AllowWhileVisiting).expect("allow");
+    assert_eq!(wait(&rx), PermissionDecision::Grant);
+    // Remembered: no prompt the second time.
+    assert_eq!(
+        wait(&request_permission(
+            &core,
+            tab,
+            PermissionKind::Microphone,
+            site
+        )),
+        PermissionDecision::Grant
+    );
+    // Block from Site settings denies without asking.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::PermissionSet {
+            origin: site.into(),
+            key: "notifications".into(),
+            value: mado_types::command::SiteValue::Block,
+            embedder: None,
+        },
+    )
+    .expect("set");
+    assert_eq!(
+        wait(&request_permission(
+            &core,
+            tab,
+            PermissionKind::Notifications,
+            site
+        )),
+        PermissionDecision::Deny
+    );
+    // Three dismissals in a week block the site.
+    let other = "https://ads.example";
+    for _ in 0..3 {
+        let rx = request_permission(&core, tab, PermissionKind::ClipboardRead, other);
+        eventually("a prompt", || {
+            permission_prompt(&core, "clipboardRead").is_some()
+        });
+        let id = permission_prompt(&core, "clipboardRead").expect("prompt");
+        ask(
+            &core,
+            Origin::Ui { window: w },
+            Command::PromptDismiss { id },
+        )
+        .expect("dismiss");
+        assert_eq!(wait(&rx), PermissionDecision::Deny);
+    }
+    let list = ask(
+        &core,
+        Origin::Settings,
+        Command::PermissionList {
+            origin: Some(other.into()),
+        },
+    )
+    .expect("list");
+    assert_eq!(list[0]["value"], "block");
+    assert_eq!(list[0]["source"], "default");
+    // Camera, denied in macOS: no prompt, the infobar instead (check 3).
+    assert_eq!(
+        wait(&request_permission(
+            &core,
+            tab,
+            PermissionKind::Camera,
+            site
+        )),
+        PermissionDecision::Deny
+    );
+    assert!(permission_prompt(&core, "camera").is_none());
+    assert!(
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.osPermissionDenied")
+    );
+    // The microphone grant survives a relaunch.
+    let dir = core.stop();
+    let core = TestCore::start_in(dir, true);
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://meet.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://meet.example/"
+    });
+    assert_eq!(
+        wait(&request_permission(
+            &core,
+            tab,
+            PermissionKind::Microphone,
+            site
+        )),
+        PermissionDecision::Grant
+    );
+}
+
+/// 07 §1.1: the notifications shim hears the site's answer.
+#[test]
+fn the_notification_shim_follows_the_site_setting() {
+    use mado_engine::page::{NotificationRequest, PageMessage};
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://news.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://news.example/"
+    });
+    ask(
+        &core,
+        Origin::Settings,
+        Command::PermissionSet {
+            origin: "https://news.example".into(),
+            key: "notifications".into(),
+            value: mado_types::command::SiteValue::Allow,
+            embedder: None,
+        },
+    )
+    .expect("set");
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Page,
+        frame: mado_engine::event::FrameInfo {
+            is_main_frame: true,
+            origin: "https://news.example".into(),
+            url: "https://news.example/".into(),
+        },
+        message: PageMessage::NotificationRequest(NotificationRequest {}),
+    });
+    eventually("granted", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .any(|(t, m)| {
+                *t == tab && m["type"] == "notificationPermission" && m["permission"] == "granted"
+            })
+    });
 }

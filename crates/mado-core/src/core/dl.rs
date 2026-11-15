@@ -196,26 +196,89 @@ impl Core {
     ) {
         let now = self.now();
         // A second download from the same page without a navigation asks
-        // for `automaticDownloads` (07); until the permission flow
-        // (M2-T07) it is refused, with a notice.
+        // for `automaticDownloads` (07 §1).
         if let Some(tab) = tab {
             let n = self.page_downloads.entry(tab).or_default();
             *n += 1;
             if *n > 1 {
-                reply.send(DownloadDestination::Cancel);
-                let notice = Notice {
-                    id: format!("n{}", self.next_notice),
-                    message_key: "notice.multipleDownloadsBlocked".into(),
-                    args: BTreeMap::new(),
-                    action: None,
-                    undo: None,
-                    expires_at: Some(now + 8000),
-                };
-                self.next_notice += 1;
-                self.add_notice(notice, rec);
-                return;
+                let origin = self
+                    .model
+                    .tabs
+                    .get(&tab)
+                    .and_then(|t| mado_permissions::origin_of(&t.url))
+                    .unwrap_or_default();
+                match self.site_value(&origin, "automaticDownloads", None) {
+                    mado_permissions::Value::Allow => {}
+                    mado_permissions::Value::Block => {
+                        reply.send(DownloadDestination::Cancel);
+                        let notice = Notice {
+                            id: format!("n{}", self.next_notice),
+                            message_key: "notice.multipleDownloadsBlocked".into(),
+                            args: BTreeMap::new(),
+                            action: None,
+                            undo: None,
+                            expires_at: Some(now + 8000),
+                        };
+                        self.next_notice += 1;
+                        self.add_notice(notice, rec);
+                        return;
+                    }
+                    mado_permissions::Value::Ask => {
+                        let token = self.next_held;
+                        self.next_held += 1;
+                        self.held_downloads.insert(token, (tab, d, reply));
+                        let inputs = self.inputs.clone();
+                        let (asked, _expiry) = mado_engine::Reply::new(
+                            mado_engine::event::PermissionDecision::Deny,
+                            move |dec: mado_engine::event::PermissionDecision| {
+                                let _ = inputs.send(super::Input::Internal(
+                                    Internal::DownloadAllowed {
+                                        token,
+                                        granted: dec
+                                            == mado_engine::event::PermissionDecision::Grant,
+                                    },
+                                ));
+                            },
+                        );
+                        self.permission_requested(
+                            tab,
+                            mado_engine::event::PermissionRequest {
+                                kind: mado_engine::PermissionKind::AutomaticDownloads,
+                                origin,
+                                embedder: None,
+                            },
+                            asked,
+                            rec,
+                        );
+                        return;
+                    }
+                }
             }
         }
+        self.begin_download(tab, d, reply, rec);
+    }
+
+    /// A held download's `automaticDownloads` answer.
+    pub(super) fn download_allowed(&mut self, token: u64, granted: bool, rec: &mut PatchRecorder) {
+        let Some((tab, d, reply)) = self.held_downloads.remove(&token) else {
+            return;
+        };
+        if granted {
+            self.begin_download(Some(tab), d, reply, rec);
+        } else {
+            reply.send(DownloadDestination::Cancel);
+        }
+    }
+
+    /// Spec 12 §4.2 steps 1 to 4 for a download the page may start.
+    fn begin_download(
+        &mut self,
+        tab: Option<TabId>,
+        d: EngineDownload,
+        reply: EngineReply<DownloadDestination>,
+        rec: &mut PatchRecorder,
+    ) {
+        let now = self.now();
         let folder = self
             .settings
             .value(lookup_def("downloads.folder"))

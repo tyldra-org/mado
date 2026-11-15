@@ -45,6 +45,7 @@ impl Core {
         if self.committed_page(tab, url) {
             return;
         }
+        self.site_committed(tab, url);
         let now = self.now();
         let previous = self.navs.get(&tab).copied().unwrap_or_default();
         if let Some(visit) = previous.visit {

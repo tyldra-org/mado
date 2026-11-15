@@ -429,6 +429,18 @@ pub enum PromptState {
         tabs: Vec<UnsavedTab>,
     },
     Unresponsive(UnresponsivePrompt),
+    /// A site asks for permissions (spec 07 §3). Answered with
+    /// `prompt.respond` or `prompt.dismiss`; buttons work from `armedAt`.
+    #[serde(rename_all = "camelCase")]
+    Permission {
+        id: PromptId,
+        tab_id: TabId,
+        origin: String,
+        embedder: Option<String>,
+        keys: Vec<String>,
+        created_at: i64,
+        armed_at: i64,
+    },
     /// The page's protected video does not play in WebKit here (spec 05
     /// §11). Answered with `nav.openExternally`.
     #[serde(rename_all = "camelCase")]

@@ -173,6 +173,40 @@ pub enum NavSource {
     Agent,
 }
 
+/// An answer to a permission prompt (spec 07 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum PromptDecision {
+    /// Writes `allow` for the site.
+    AllowWhileVisiting,
+    /// Grants for this document only; nothing is written.
+    AllowThisTime,
+    /// Writes `block`.
+    Never,
+}
+
+/// A site setting's value (spec 07 §1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SiteValue {
+    Allow,
+    Block,
+    Ask,
+}
+
+/// What a page captures, for `site.stopCapture` (spec 07 §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum CaptureKind {
+    Camera,
+    Microphone,
+    Screen,
+    Location,
+}
+
 /// The answer to "This site needs Safari to play" (spec 05 §11).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -578,6 +612,47 @@ pub enum Command {
     /// from history.
     #[serde(rename = "nav.removeSuggestion", rename_all = "camelCase")]
     NavRemoveSuggestion { url: String },
+    // Permissions (spec 07).
+    /// Refused before the prompt's `armedAt`.
+    #[serde(rename = "prompt.respond", rename_all = "camelCase")]
+    PromptRespond {
+        id: crate::PromptId,
+        decision: PromptDecision,
+    },
+    /// Escape, clicking away: denies this request only.
+    #[serde(rename = "prompt.dismiss", rename_all = "camelCase")]
+    PromptDismiss { id: crate::PromptId },
+    /// Returns the site settings, of one origin or all.
+    #[serde(rename = "permission.list", rename_all = "camelCase")]
+    PermissionList {
+        #[serde(default)]
+        origin: Option<String>,
+    },
+    /// Only from Mado's own UI and pages, never a control client or agent.
+    #[serde(rename = "permission.set", rename_all = "camelCase")]
+    PermissionSet {
+        origin: String,
+        key: String,
+        value: SiteValue,
+        #[serde(default)]
+        embedder: Option<String>,
+    },
+    /// Forgets `origin`'s setting for `key`, or all of them.
+    #[serde(rename = "permission.reset", rename_all = "camelCase")]
+    PermissionReset {
+        origin: String,
+        #[serde(default)]
+        key: Option<String>,
+    },
+    #[serde(rename = "site.stopCapture", rename_all = "camelCase")]
+    SiteStopCapture { tab_id: TabId, kind: CaptureKind },
+    /// Undoes an automatic revoke (the notice's Undo).
+    #[serde(rename = "permission.undoRevoke", rename_all = "camelCase")]
+    PermissionUndoRevoke { token: u64 },
+    /// Opens the macOS privacy pane for `pane` (`camera`, `microphone`,
+    /// `location`, `screen`, `speechRecognition`).
+    #[serde(rename = "app.openSystemSettings", rename_all = "camelCase")]
+    AppOpenSystemSettings { pane: String },
     /// Answers the `openInSafari` prompt of `tabId`.
     #[serde(rename = "nav.openExternally", rename_all = "camelCase")]
     NavOpenExternally {
@@ -738,6 +813,13 @@ impl Command {
             | Self::NavSearchEngines
             | Self::NavOpenExternally { .. }
             | Self::NavSetSearchEngineActive { .. } => CommandFamily::Nav,
+            Self::PromptRespond { .. } | Self::PromptDismiss { .. } => CommandFamily::Prompt,
+            Self::PermissionList { .. }
+            | Self::PermissionSet { .. }
+            | Self::PermissionReset { .. }
+            | Self::PermissionUndoRevoke { .. } => CommandFamily::Permission,
+            Self::AppOpenSystemSettings { .. } => CommandFamily::App,
+            Self::SiteStopCapture { .. } => CommandFamily::Site,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
             | Self::HistoryExclude { .. }
@@ -837,6 +919,14 @@ impl Command {
             Self::NavRemoveSuggestion { .. } => "nav.removeSuggestion",
             Self::NavSearchEngines => "nav.searchEngines",
             Self::NavOpenExternally { .. } => "nav.openExternally",
+            Self::PromptRespond { .. } => "prompt.respond",
+            Self::PromptDismiss { .. } => "prompt.dismiss",
+            Self::PermissionList { .. } => "permission.list",
+            Self::PermissionSet { .. } => "permission.set",
+            Self::PermissionReset { .. } => "permission.reset",
+            Self::SiteStopCapture { .. } => "site.stopCapture",
+            Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
+            Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",
             Self::NavSetSearchEngineActive { .. } => "nav.setSearchEngineActive",
             Self::HistoryQuery { .. } => "history.query",
             Self::HistoryDelete { .. } => "history.delete",
@@ -864,6 +954,7 @@ impl Command {
                 | Self::HistoryQuery { .. }
                 | Self::NavSuggest { .. }
                 | Self::NavSearchEngines
+                | Self::PermissionList { .. }
                 | Self::BookmarkTree { .. }
                 | Self::BookmarkSearch { .. }
                 | Self::BookmarkRecent { .. }

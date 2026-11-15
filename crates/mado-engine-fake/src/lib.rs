@@ -54,6 +54,8 @@ pub struct FakeTab {
     /// What the current page was loaded with.
     pub page_javascript: bool,
     pub focused: bool,
+    /// Camera, microphone and screen in use.
+    pub capture: (bool, bool, bool),
 }
 
 impl FakeTab {
@@ -93,6 +95,8 @@ pub struct FakeState {
     pub cleared: Vec<ClearDataRequest>,
     /// Downloads: where the core put them, and whether they run.
     pub downloads: BTreeMap<EngineDownloadId, FakeDownload>,
+    /// Messages posted to pages, in order.
+    pub posted: Vec<(TabId, serde_json::Value)>,
     /// Error pages shown: tab, URL and HTML.
     pub error_pages: Vec<(TabId, String, String)>,
     /// Origins (`https://host`) whose loads fail, with the error.
@@ -147,6 +151,19 @@ impl FakeControl {
             if decision == NavDecision::Allow {
                 control.commit(tab, &url, NavKind::Link, true);
             }
+        });
+    }
+
+    /// The page starts or stops using the camera, microphone or screen.
+    pub fn capture(&self, tab: TabId, camera: bool, microphone: bool, screen: bool) {
+        if let Some(t) = lock(&self.state).tabs.get_mut(&tab) {
+            t.capture = (camera, microphone, screen);
+        }
+        self.events.send(EngineEvent::CaptureChanged {
+            tab,
+            camera,
+            microphone,
+            screen,
         });
     }
 
@@ -526,6 +543,7 @@ impl Engine for FakeEngine {
                 javascript: spec.javascript,
                 page_javascript: spec.javascript,
                 focused: false,
+                capture: (false, false, false),
             },
         );
         self.control.send(EngineEvent::TabCreated { tab: spec.tab });
@@ -579,6 +597,19 @@ impl Engine for FakeEngine {
             TabCommand::Navigate { url, kind, .. } => {
                 drop(state);
                 control.navigate(tab, &url, None, true, false, kind);
+            }
+            TabCommand::PostToPage { message, .. } => {
+                state.posted.push((tab, message));
+            }
+            TabCommand::StopCapture(kind) => {
+                let (camera, microphone, screen) = t.capture;
+                drop(state);
+                control.capture(
+                    tab,
+                    camera && kind != mado_engine::PermissionKind::Camera,
+                    microphone && kind != mado_engine::PermissionKind::Microphone,
+                    screen,
+                );
             }
             TabCommand::ShowErrorPage { html, url } => {
                 state.error_pages.push((tab, url.clone(), html));
@@ -651,7 +682,6 @@ impl Engine for FakeEngine {
             | TabCommand::Print
             | TabCommand::SavePdf { .. }
             | TabCommand::SaveArchive { .. }
-            | TabCommand::PostToPage { .. }
             | TabCommand::ShowDevTools
             | TabCommand::ShowSource
             | TabCommand::SetReader(_)

@@ -20,6 +20,7 @@ base64 = "0.23"
 jiff = "0.2.44"
 mado-engine = { version = "0.0.0", path = "../mado-engine" }
 mado-navigation = { version = "0.0.0", path = "../mado-navigation" }
+mado-permissions = { version = "0.0.0", path = "../mado-permissions" }
 mado-platform = { version = "0.0.0", path = "../mado-platform" }
 mado-settings = { version = "0.0.0", path = "../mado-settings" }
 mado-storage = { version = "0.0.0", path = "../mado-storage" }
