@@ -296,6 +296,29 @@ run("WebKit adapter", () => {
     await tabWhere(popup, (t) => t.url === "http://pages.mado.test/nav/b.html?from=popup");
   }, 30_000);
 
+  test("a clicked zoommtg: link asks with Zoom's name and icon (07 §10 check 4)", async () => {
+    const { tab } = await open("http://pages.mado.test/links.html");
+    await tabWhere(tab, (t) => t.title === "Links" && t.life === "live");
+    await mado.control.call("test.click", { tabId: tab, x: 40, y: 340 });
+    type P = { type: string; id: string; tabId: string; appName?: string; appIcon?: string | null };
+    type N = { messageKey: string };
+    const found = await until("the prompt or the no-app notice", async () => {
+      const s = (await mado.control.call("state.get")) as {
+        state: { prompts: Record<string, P>; notices: N[] };
+      };
+      const p = Object.values(s.state.prompts).find((p) => p.type === "appLink" && p.tabId === tab);
+      if (p) return p;
+      return s.state.notices.some((n) => n.messageKey === "notice.noAppForLink") ? null : undefined;
+    });
+    if (found === null) {
+      console.warn("Zoom is not installed on this Mac: 07 §10 check 4 not shown");
+      return;
+    }
+    expect(found.appName ?? "").toMatch(/zoom/i);
+    expect(found.appIcon ?? "").toStartWith("data:image/png;base64,");
+    await mado.control.call("prompt.dismiss", { id: found.id });
+  }, 30_000);
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");

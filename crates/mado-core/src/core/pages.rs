@@ -146,9 +146,10 @@ impl Core {
                 );
             }
             PageMessage::NotificationShow(n) => self.show_notification(tab, &n),
-            PageMessage::NotificationClose(_)
-            | PageMessage::GeolocationClear(_)
-            | PageMessage::ProtocolHandlerRegister(_) => {}
+            PageMessage::ProtocolHandlerRegister(r) => {
+                self.protocol_handler_requested(tab, &r, rec)
+            }
+            PageMessage::NotificationClose(_) | PageMessage::GeolocationClear(_) => {}
             other => tracing::trace!(message = other.name(), "page message for a later task"),
         }
     }

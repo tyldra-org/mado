@@ -6,6 +6,7 @@
   import type { WindowId } from "../generated/WindowId";
   import { t } from "../i18n";
   import AddressBar from "./AddressBar.svelte";
+  import AppLinkPrompt from "./AppLinkPrompt.svelte";
   import BookmarksBar from "./BookmarksBar.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
   import Notices from "./Notices.svelte";
@@ -65,6 +66,7 @@
     <UnresponsivePrompt {store} {windowId} />
     <SafariPrompt {store} {windowId} />
     <PermissionPrompt {store} {windowId} />
+    <AppLinkPrompt {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}></main>
   <Notices {store} />

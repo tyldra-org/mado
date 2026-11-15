@@ -15,4 +15,8 @@ export type PromptState = { "type": "unsavedText", id: PromptId,
 /**
  * The window being closed; `None` when quitting.
  */
-windowId: WindowId | null, tabs: Array<UnsavedTab>, } | { "type": "unresponsive" } & UnresponsivePrompt | { "type": "permission", id: PromptId, tabId: TabId, origin: string, embedder: string | null, keys: Array<string>, createdAt: number, armedAt: number, } | { "type": "openInSafari", id: PromptId, tabId: TabId, host: string, };
+windowId: WindowId | null, tabs: Array<UnsavedTab>, } | { "type": "unresponsive" } & UnresponsivePrompt | { "type": "permission", id: PromptId, tabId: TabId, origin: string, embedder: string | null, keys: Array<string>, createdAt: number, armedAt: number, } | { "type": "appLink", id: PromptId, tabId: TabId, origin: string, scheme: string, appName: string, 
+/**
+ * A `data:image/png` URL of the app's icon.
+ */
+appIcon: string | null, createdAt: number, armedAt: number, } | { "type": "protocolHandler", id: PromptId, tabId: TabId, origin: string, scheme: string, createdAt: number, armedAt: number, } | { "type": "openInSafari", id: PromptId, tabId: TabId, host: string, };

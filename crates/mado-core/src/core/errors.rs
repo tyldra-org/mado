@@ -238,12 +238,16 @@ impl Core {
             http_fallback: &|u| self.http_fallback_allowed(u),
         };
         let decision = crate::navigation::decide(request, &context);
-        if let NavDecision::OpenExternal {
-            url,
-            reason: mado_engine::ExternalReason::EngineRule,
-        } = &decision
-        {
-            self.ui.open_in_safari(url);
+        match &decision {
+            NavDecision::OpenExternal {
+                url,
+                reason: mado_engine::ExternalReason::EngineRule,
+            } => self.ui.open_in_safari(url),
+            NavDecision::OpenExternal {
+                reason: mado_engine::ExternalReason::AppLink,
+                ..
+            } => self.app_link_requested(tab, request),
+            _ => {}
         }
         if request.is_main_frame {
             self.continue_once.remove(&request.url);
