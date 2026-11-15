@@ -1,0 +1,1283 @@
+# Address bar classifier table (spec 05 §12 check 1). Context for every row:
+# keywords g, w, yt, ddg; visited single labels intranet, nas, router;
+# existing paths /tmp, /etc/hosts, /Applications, ~/notes.txt, ~/Downloads,
+# /Users/test/My File.pdf; home /Users/test; now 2026-11-14T12:00:00Z (UTC).
+
+- input: "example.com"
+  expect:
+    class: "url"
+    url: "https://example.com/"
+- input: "github.com"
+  expect:
+    class: "url"
+    url: "https://github.com/"
+- input: "news.ycombinator.com"
+  expect:
+    class: "url"
+    url: "https://news.ycombinator.com/"
+- input: "bbc.co.uk"
+  expect:
+    class: "url"
+    url: "https://bbc.co.uk/"
+- input: "wikipedia.org"
+  expect:
+    class: "url"
+    url: "https://wikipedia.org/"
+- input: "en.wikipedia.org"
+  expect:
+    class: "url"
+    url: "https://en.wikipedia.org/"
+- input: "mail.google.com"
+  expect:
+    class: "url"
+    url: "https://mail.google.com/"
+- input: "amazon.co.jp"
+  expect:
+    class: "url"
+    url: "https://amazon.co.jp/"
+- input: "example.io"
+  expect:
+    class: "url"
+    url: "https://example.io/"
+- input: "startup.ai"
+  expect:
+    class: "url"
+    url: "https://startup.ai/"
+- input: "mado.app"
+  expect:
+    class: "url"
+    url: "https://mado.app/"
+- input: "docs.rs"
+  expect:
+    class: "url"
+    url: "https://docs.rs/"
+- input: "crates.io"
+  expect:
+    class: "url"
+    url: "https://crates.io/"
+- input: "rust-lang.org"
+  expect:
+    class: "url"
+    url: "https://rust-lang.org/"
+- input: "sub.domain.example.net"
+  expect:
+    class: "url"
+    url: "https://sub.domain.example.net/"
+- input: "www.apple.com"
+  expect:
+    class: "url"
+    url: "https://www.apple.com/"
+- input: "apple.com"
+  expect:
+    class: "url"
+    url: "https://apple.com/"
+- input: "kagi.com"
+  expect:
+    class: "url"
+    url: "https://kagi.com/"
+- input: "duckduckgo.com"
+  expect:
+    class: "url"
+    url: "https://duckduckgo.com/"
+- input: "x.com"
+  expect:
+    class: "url"
+    url: "https://x.com/"
+- input: "t.co"
+  expect:
+    class: "url"
+    url: "https://t.co/"
+- input: "ya.ru"
+  expect:
+    class: "url"
+    url: "https://ya.ru/"
+- input: "example.museum"
+  expect:
+    class: "url"
+    url: "https://example.museum/"
+- input: "shop.example.store"
+  expect:
+    class: "url"
+    url: "https://shop.example.store/"
+- input: "blog.example.dev"
+  expect:
+    class: "url"
+    url: "https://blog.example.dev/"
+- input: "my-site.org"
+  expect:
+    class: "url"
+    url: "https://my-site.org/"
+- input: "123.com"
+  expect:
+    class: "url"
+    url: "https://123.com/"
+- input: "example.com.au"
+  expect:
+    class: "url"
+    url: "https://example.com.au/"
+- input: "example.co.in"
+  expect:
+    class: "url"
+    url: "https://example.co.in/"
+- input: "foo.github.io"
+  expect:
+    class: "url"
+    url: "https://foo.github.io/"
+- input: "readme.md"
+  expect:
+    class: "url"
+    url: "https://readme.md/"
+- input: "example.travel"
+  expect:
+    class: "url"
+    url: "https://example.travel/"
+- input: "stackoverflow.com"
+  expect:
+    class: "url"
+    url: "https://stackoverflow.com/"
+- input: "developer.mozilla.org"
+  expect:
+    class: "url"
+    url: "https://developer.mozilla.org/"
+- input: "a.b.c.d.example.org"
+  expect:
+    class: "url"
+    url: "https://a.b.c.d.example.org/"
+- input: "Example.com"
+  expect:
+    class: "url"
+    url: "https://example.com/"
+- input: "WWW.Apple.COM"
+  expect:
+    class: "url"
+    url: "https://www.apple.com/"
+- input: "  example.com  "
+  expect:
+    class: "url"
+    url: "https://example.com/"
+- input: "example.com."
+  expect:
+    class: "url"
+    url: "https://example.com./"
+- input: "münchen.de"
+  expect:
+    class: "url"
+    url: "https://xn--mnchen-3ya.de/"
+- input: "bücher.de"
+  expect:
+    class: "url"
+    url: "https://xn--bcher-kva.de/"
+- input: "example.com/path"
+  expect:
+    class: "url"
+    url: "https://example.com/path"
+- input: "example.com/a b"
+  expect:
+    class: "url"
+    url: "https://example.com/a%20b"
+- input: "example.com/search?q=rust"
+  expect:
+    class: "url"
+    url: "https://example.com/search?q=rust"
+- input: "example.com#top"
+  expect:
+    class: "url"
+    url: "https://example.com/#top"
+- input: "example.com:8080"
+  expect:
+    class: "url"
+    url: "https://example.com:8080/"
+- input: "example.com:443"
+  expect:
+    class: "url"
+    url: "https://example.com/"
+- input: "example.com/a/b/c.html"
+  expect:
+    class: "url"
+    url: "https://example.com/a/b/c.html"
+- input: "github.com/tyldra-org/mado"
+  expect:
+    class: "url"
+    url: "https://github.com/tyldra-org/mado"
+- input: "example.com?x=1"
+  expect:
+    class: "url"
+    url: "https://example.com/?x=1"
+- input: "example.com/path with  two spaces"
+  expect:
+    class: "url"
+    url: "https://example.com/path%20with%20two%20spaces"
+- input: "docs.rs/serde/latest"
+  expect:
+    class: "url"
+    url: "https://docs.rs/serde/latest"
+- input: "example.com:8080/api/v1"
+  expect:
+    class: "url"
+    url: "https://example.com:8080/api/v1"
+- input: "EXAMPLE.com/CaseKept"
+  expect:
+    class: "url"
+    url: "https://example.com/CaseKept"
+- input: "example.org/~user"
+  expect:
+    class: "url"
+    url: "https://example.org/~user"
+- input: "en.wikipedia.org/wiki/Rust_(programming_language)"
+  expect:
+    class: "url"
+    url: "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+- input: "youtube.com/watch?v=abc&t=10"
+  expect:
+    class: "url"
+    url: "https://youtube.com/watch?v=abc&t=10"
+- input: "example.com/#/route"
+  expect:
+    class: "url"
+    url: "https://example.com/#/route"
+- input: "example.co.uk/shop"
+  expect:
+    class: "url"
+    url: "https://example.co.uk/shop"
+- input: "example.com:3000"
+  expect:
+    class: "url"
+    url: "https://example.com:3000/"
+- input: "mail.google.com/mail/u/0/"
+  expect:
+    class: "url"
+    url: "https://mail.google.com/mail/u/0/"
+- input: "192.168.1.1"
+  expect:
+    class: "url"
+    url: "https://192.168.1.1/"
+- input: "10.0.0.1:8080"
+  expect:
+    class: "url"
+    url: "https://10.0.0.1:8080/"
+- input: "127.0.0.1:3000/api"
+  expect:
+    class: "url"
+    url: "https://127.0.0.1:3000/api"
+- input: "8.8.8.8"
+  expect:
+    class: "url"
+    url: "https://8.8.8.8/"
+- input: "[::1]"
+  expect:
+    class: "url"
+    url: "https://[::1]/"
+- input: "[::1]:8080"
+  expect:
+    class: "url"
+    url: "https://[::1]:8080/"
+- input: "[2001:db8::1]/x"
+  expect:
+    class: "url"
+    url: "https://[2001:db8::1]/x"
+- input: "172.16.0.5/admin"
+  expect:
+    class: "url"
+    url: "https://172.16.0.5/admin"
+- input: "1.1.1.1"
+  expect:
+    class: "url"
+    url: "https://1.1.1.1/"
+- input: "169.254.1.2"
+  expect:
+    class: "url"
+    url: "https://169.254.1.2/"
+- input: "1.5"
+  expect:
+    class: "search"
+    terms: "1.5"
+- input: "256.1.1.1"
+  expect:
+    class: "search"
+    terms: "256.1.1.1"
+- input: "1.2.3"
+  expect:
+    class: "search"
+    terms: "1.2.3"
+- input: "[::zz]"
+  expect:
+    class: "search"
+    terms: "[::zz]"
+- input: "localhost"
+  expect:
+    class: "url"
+    url: "https://localhost/"
+- input: "localhost:3000"
+  expect:
+    class: "url"
+    url: "https://localhost:3000/"
+- input: "localhost:3000/app"
+  expect:
+    class: "url"
+    url: "https://localhost:3000/app"
+- input: "LOCALHOST:8080"
+  expect:
+    class: "url"
+    url: "https://localhost:8080/"
+- input: "app.localhost"
+  expect:
+    class: "url"
+    url: "https://app.localhost/"
+- input: "localhost/path"
+  expect:
+    class: "url"
+    url: "https://localhost/path"
+- input: "api.app.localhost:5173"
+  expect:
+    class: "url"
+    url: "https://api.app.localhost:5173/"
+- input: "localhost:99999"
+  expect:
+    class: "search"
+    terms: "localhost:99999"
+- input: "localhost:abc"
+  expect:
+    class: "search"
+    terms: "localhost:abc"
+- input: "intranet"
+  expect:
+    class: "url"
+    url: "https://intranet/"
+- input: "nas:5000"
+  expect:
+    class: "url"
+    url: "https://nas:5000/"
+- input: "router/admin"
+  expect:
+    class: "url"
+    url: "https://router/admin"
+- input: "Intranet/wiki"
+  expect:
+    class: "url"
+    url: "https://intranet/wiki"
+- input: "hello"
+  expect:
+    class: "search"
+    terms: "hello"
+- input: "printer:631"
+  expect:
+    class: "search"
+    terms: "printer:631"
+- input: "unknownhost/path"
+  expect:
+    class: "search"
+    terms: "unknownhost/path"
+- input: "rust"
+  expect:
+    class: "search"
+    terms: "rust"
+- input: "nas.local:8080"
+  expect:
+    class: "url"
+    url: "https://nas.local:8080/"
+- input: "printer.lan/"
+  expect:
+    class: "url"
+    url: "https://printer.lan/"
+- input: "site.test/page"
+  expect:
+    class: "url"
+    url: "https://site.test/page"
+- input: "dev.internal:9000"
+  expect:
+    class: "url"
+    url: "https://dev.internal:9000/"
+- input: "box.home/status"
+  expect:
+    class: "url"
+    url: "https://box.home/status"
+- input: "foo.bar"
+  expect:
+    class: "url"
+    url: "https://foo.bar/"
+- input: "file.txt"
+  expect:
+    class: "search"
+    terms: "file.txt"
+- input: "index.html"
+  expect:
+    class: "search"
+    terms: "index.html"
+- input: "node.js"
+  expect:
+    class: "search"
+    terms: "node.js"
+- input: "main.rs"
+  expect:
+    class: "url"
+    url: "https://main.rs/"
+- input: "my.local"
+  expect:
+    class: "search"
+    terms: "my.local"
+- input: "http://example.com"
+  expect:
+    class: "url"
+    url: "http://example.com/"
+- input: "HTTPS://Example.com/Path"
+  expect:
+    class: "url"
+    url: "https://example.com/Path"
+- input: "ftp://ftp.example.com/file"
+  expect:
+    class: "url"
+    url: "ftp://ftp.example.com/file"
+- input: "file:///etc/hosts"
+  expect:
+    class: "url"
+    url: "file:///etc/hosts"
+- input: "mado://settings"
+  expect:
+    class: "url"
+    url: "mado://settings"
+- input: "about:blank"
+  expect:
+    class: "url"
+    url: "about:blank"
+- input: "view-source:https://example.com"
+  expect:
+    class: "url"
+    url: "view-source:https://example.com/"
+- input: "view-source:example.com"
+  expect:
+    class: "url"
+    url: "view-source:https://example.com/"
+- input: "http://localhost:3000/a b"
+  expect:
+    class: "url"
+    url: "http://localhost:3000/a%20b"
+- input: "data:text/plain,hello"
+  expect:
+    class: "url"
+    url: "data:text/plain,hello"
+- input: "data:image/png;base64,iVBOR"
+  expect:
+    class: "url"
+    url: "data:image/png;base64,iVBOR"
+- input: "data:,hello"
+  expect:
+    class: "url"
+    url: "data:,hello"
+- input: "data:application/pdf;base64,JVBER"
+  expect:
+    class: "url"
+    url: "data:application/pdf;base64,JVBER"
+- input: "https://example.com:8443/x?y#z"
+  expect:
+    class: "url"
+    url: "https://example.com:8443/x?y#z"
+- input: "http://192.168.0.1"
+  expect:
+    class: "url"
+    url: "http://192.168.0.1/"
+- input: "mado://history"
+  expect:
+    class: "url"
+    url: "mado://history"
+- input: "about:version"
+  expect:
+    class: "url"
+    url: "about:version"
+- input: "https://xn--mnchen-3ya.de"
+  expect:
+    class: "url"
+    url: "https://xn--mnchen-3ya.de/"
+- input: "https://münchen.de"
+  expect:
+    class: "url"
+    url: "https://xn--mnchen-3ya.de/"
+- input: "http://intranet"
+  expect:
+    class: "url"
+    url: "http://intranet/"
+- input: "javascript:alert(1)"
+  expect:
+    class: "refused"
+    reason: "javascript"
+- input: "JavaScript:void(0)"
+  expect:
+    class: "refused"
+    reason: "javascript"
+- input: "javascript:/*x*/"
+  expect:
+    class: "refused"
+    reason: "javascript"
+- input: " javascript:alert(document.cookie)"
+  expect:
+    class: "refused"
+    reason: "javascript"
+- input: "data:text/html,<h1>x</h1>"
+  expect:
+    class: "refused"
+    reason: "data"
+- input: "data:text/html;base64,PGgxPg=="
+  expect:
+    class: "refused"
+    reason: "data"
+- input: "data:application/xhtml+xml,<x/>"
+  expect:
+    class: "refused"
+    reason: "data"
+- input: "DATA:TEXT/HTML,hi"
+  expect:
+    class: "refused"
+    reason: "data"
+- input: "data:text/javascript,alert(1)"
+  expect:
+    class: "refused"
+    reason: "data"
+- input: "data:image/svg+xml;base64,PHN2Zz4="
+  expect:
+    class: "refused"
+    reason: "data"
+- input: ""
+  expect:
+    class: "refused"
+    reason: "empty"
+- input: "   "
+  expect:
+    class: "refused"
+    reason: "empty"
+- input: "\t"
+  expect:
+    class: "refused"
+    reason: "empty"
+- input: "/tmp"
+  expect:
+    class: "filePath"
+    path: "/tmp"
+    url: "file:///tmp"
+- input: "/etc/hosts"
+  expect:
+    class: "filePath"
+    path: "/etc/hosts"
+    url: "file:///etc/hosts"
+- input: "~/notes.txt"
+  expect:
+    class: "filePath"
+    path: "/Users/test/notes.txt"
+    url: "file:///Users/test/notes.txt"
+- input: "~/Downloads"
+  expect:
+    class: "filePath"
+    path: "/Users/test/Downloads"
+    url: "file:///Users/test/Downloads"
+- input: "/Applications"
+  expect:
+    class: "filePath"
+    path: "/Applications"
+    url: "file:///Applications"
+- input: "/Users/test/My File.pdf"
+  expect:
+    class: "filePath"
+    path: "/Users/test/My File.pdf"
+    url: "file:///Users/test/My%20File.pdf"
+- input: "/nonexistent/thing"
+  expect:
+    class: "search"
+    terms: "/nonexistent/thing"
+- input: "~/missing"
+  expect:
+    class: "search"
+    terms: "~/missing"
+- input: "/"
+  expect:
+    class: "search"
+    terms: "/"
+- input: "g rust lifetimes"
+  expect:
+    class: "keyword"
+    keyword: "g"
+    query: "rust lifetimes"
+- input: "W Ada Lovelace"
+  expect:
+    class: "keyword"
+    keyword: "w"
+    query: "Ada Lovelace"
+- input: "yt lofi beats"
+  expect:
+    class: "keyword"
+    keyword: "yt"
+    query: "lofi beats"
+- input: "ddg privacy"
+  expect:
+    class: "keyword"
+    keyword: "ddg"
+    query: "privacy"
+- input: "@tabs mail"
+  expect:
+    class: "keyword"
+    keyword: "@tabs"
+    query: "mail"
+- input: "@bookmarks recipes"
+  expect:
+    class: "keyword"
+    keyword: "@bookmarks"
+    query: "recipes"
+- input: "@history yesterday"
+  expect:
+    class: "keyword"
+    keyword: "@history"
+    query: "yesterday"
+- input: "@TABS docs"
+  expect:
+    class: "keyword"
+    keyword: "@tabs"
+    query: "docs"
+- input: "g   spaced   out"
+  expect:
+    class: "keyword"
+    keyword: "g"
+    query: "spaced   out"
+- input: "w example.com"
+  expect:
+    class: "keyword"
+    keyword: "w"
+    query: "example.com"
+- input: "g 2+2"
+  expect:
+    class: "keyword"
+    keyword: "g"
+    query: "2+2"
+- input: "g"
+  expect:
+    class: "search"
+    terms: "g"
+- input: "@tabs"
+  expect:
+    class: "search"
+    terms: "@tabs"
+- input: "gg rust"
+  expect:
+    class: "search"
+    terms: "gg rust"
+- input: "@everything x"
+  expect:
+    class: "search"
+    terms: "@everything x"
+- input: "google rust"
+  expect:
+    class: "search"
+    terms: "google rust"
+- input: "google"
+  ctrlEnter: true
+  expect:
+    class: "url"
+    url: "https://www.google.com/"
+- input: "my-shop"
+  ctrlEnter: true
+  expect:
+    class: "url"
+    url: "https://www.my-shop.com/"
+- input: "Apple"
+  ctrlEnter: true
+  expect:
+    class: "url"
+    url: "https://www.apple.com/"
+- input: "two words"
+  ctrlEnter: true
+  expect:
+    class: "search"
+    terms: "two words"
+- input: "example.com"
+  ctrlEnter: true
+  expect:
+    class: "url"
+    url: "https://example.com/"
+- input: "2+2"
+  expect:
+    class: "calculation"
+    expression: "2+2"
+    result: "4"
+- input: "10/4"
+  expect:
+    class: "calculation"
+    expression: "10/4"
+    result: "2.5"
+- input: "2^10"
+  expect:
+    class: "calculation"
+    expression: "2^10"
+    result: "1024"
+- input: "(1+2)*3"
+  expect:
+    class: "calculation"
+    expression: "(1+2)*3"
+    result: "9"
+- input: "1/3"
+  expect:
+    class: "calculation"
+    expression: "1/3"
+    result: "0.3333333333"
+- input: "-5+3"
+  expect:
+    class: "calculation"
+    expression: "-5+3"
+    result: "-2"
+- input: "3.5*2"
+  expect:
+    class: "calculation"
+    expression: "3.5*2"
+    result: "7"
+- input: "2*(3+4)^2"
+  expect:
+    class: "calculation"
+    expression: "2*(3+4)^2"
+    result: "98"
+- input: "100-1"
+  expect:
+    class: "calculation"
+    expression: "100-1"
+    result: "99"
+- input: "2/3"
+  expect:
+    class: "calculation"
+    expression: "2/3"
+    result: "0.6666666667"
+- input: "1.5+1.5"
+  expect:
+    class: "calculation"
+    expression: "1.5+1.5"
+    result: "3"
+- input: "10 - 2 * 3"
+  expect:
+    class: "calculation"
+    expression: "10 - 2 * 3"
+    result: "4"
+- input: "-2^2"
+  expect:
+    class: "calculation"
+    expression: "-2^2"
+    result: "-4"
+- input: "2^-1"
+  expect:
+    class: "calculation"
+    expression: "2^-1"
+    result: "0.5"
+- input: "6×7"
+  expect:
+    class: "calculation"
+    expression: "6×7"
+    result: "42"
+- input: "9÷3"
+  expect:
+    class: "calculation"
+    expression: "9÷3"
+    result: "3"
+- input: "((2))+((3))"
+  expect:
+    class: "calculation"
+    expression: "((2))+((3))"
+    result: "5"
+- input: "0.1+0.2"
+  expect:
+    class: "calculation"
+    expression: "0.1+0.2"
+    result: "0.3"
+- input: "1000000*1000000"
+  expect:
+    class: "calculation"
+    expression: "1000000*1000000"
+    result: "1000000000000"
+- input: "4/20"
+  expect:
+    class: "calculation"
+    expression: "4/20"
+    result: "0.2"
+- input: "3-3"
+  expect:
+    class: "calculation"
+    expression: "3-3"
+    result: "0"
+- input: "7*-1"
+  expect:
+    class: "calculation"
+    expression: "7*-1"
+    result: "-7"
+- input: "5 km to mi"
+  expect:
+    class: "calculation"
+    expression: "5 km to mi"
+    result: "3.106855961 mi"
+- input: "1 mile in km"
+  expect:
+    class: "calculation"
+    expression: "1 mile in km"
+    result: "1.609344 km"
+- input: "100 f to c"
+  expect:
+    class: "calculation"
+    expression: "100 f to c"
+    result: "37.77777778 °C"
+- input: "0 c to f"
+  expect:
+    class: "calculation"
+    expression: "0 c to f"
+    result: "32 °F"
+- input: "1 lb in kg"
+  expect:
+    class: "calculation"
+    expression: "1 lb in kg"
+    result: "0.45359237 kg"
+- input: "1 gal to l"
+  expect:
+    class: "calculation"
+    expression: "1 gal to l"
+    result: "3.785411784 L"
+- input: "2 h to min"
+  expect:
+    class: "calculation"
+    expression: "2 h to min"
+    result: "120 min"
+- input: "1 GiB to MB"
+  expect:
+    class: "calculation"
+    expression: "1 GiB to MB"
+    result: "1073.741824 MB"
+- input: "60 mph to km/h"
+  expect:
+    class: "calculation"
+    expression: "60 mph to km/h"
+    result: "96.56064 km/h"
+- input: "10 ft to m"
+  expect:
+    class: "calculation"
+    expression: "10 ft to m"
+    result: "3.048 m"
+- input: "5 in to cm"
+  expect:
+    class: "calculation"
+    expression: "5 in to cm"
+    result: "12.7 cm"
+- input: "5km to mi"
+  expect:
+    class: "calculation"
+    expression: "5km to mi"
+    result: "3.106855961 mi"
+- input: "300 k to c"
+  expect:
+    class: "calculation"
+    expression: "300 k to c"
+    result: "26.85 °C"
+- input: "16 oz to lb"
+  expect:
+    class: "calculation"
+    expression: "16 oz to lb"
+    result: "1 lb"
+- input: "1 week to days"
+  expect:
+    class: "calculation"
+    expression: "1 week to days"
+    result: "7 days"
+- input: "2 cups to ml"
+  expect:
+    class: "calculation"
+    expression: "2 cups to ml"
+    result: "473.176473 mL"
+- input: "1 kg to g"
+  expect:
+    class: "calculation"
+    expression: "1 kg to g"
+    result: "1000 g"
+- input: "5 km to kg"
+  expect:
+    class: "search"
+    terms: "5 km to kg"
+- input: "5 parsecs to km"
+  expect:
+    class: "search"
+    terms: "5 parsecs to km"
+- input: "3pm PST in Berlin"
+  expect:
+    class: "calculation"
+    expression: "3pm PST in Berlin"
+    result: "00:00 Berlin (+1 day)"
+- input: "9am EST in London"
+  expect:
+    class: "calculation"
+    expression: "9am EST in London"
+    result: "14:00 London"
+- input: "10:30 CET in New York"
+  expect:
+    class: "calculation"
+    expression: "10:30 CET in New York"
+    result: "04:30 New York"
+- input: "8pm IST to UTC"
+  expect:
+    class: "calculation"
+    expression: "8pm IST to UTC"
+    result: "14:30 UTC"
+- input: "3 pm PST in Tokyo"
+  expect:
+    class: "calculation"
+    expression: "3 pm PST in Tokyo"
+    result: "08:00 Tokyo (+1 day)"
+- input: "12am UTC in Los Angeles"
+  expect:
+    class: "calculation"
+    expression: "12am UTC in Los Angeles"
+    result: "16:00 Los Angeles (-1 day)"
+- input: "15:00 GMT in Europe/Paris"
+  expect:
+    class: "calculation"
+    expression: "15:00 GMT in Europe/Paris"
+    result: "16:00 Europe/Paris"
+- input: "noon PST in Berlin"
+  expect:
+    class: "search"
+    terms: "noon PST in Berlin"
+- input: "days until 2026-12-25"
+  expect:
+    class: "calculation"
+    expression: "days until 2026-12-25"
+    result: "41 days"
+- input: "days since 2026-01-01"
+  expect:
+    class: "calculation"
+    expression: "days since 2026-01-01"
+    result: "317 days"
+- input: "2026-01-01 to 2026-03-01"
+  expect:
+    class: "calculation"
+    expression: "2026-01-01 to 2026-03-01"
+    result: "59 days"
+- input: "days until 2026-11-15"
+  expect:
+    class: "calculation"
+    expression: "days until 2026-11-15"
+    result: "1 day"
+- input: "2026-11-14 to 2026-11-14"
+  expect:
+    class: "calculation"
+    expression: "2026-11-14 to 2026-11-14"
+    result: "0 days"
+- input: "2026-03-01 to 2026-01-01"
+  expect:
+    class: "calculation"
+    expression: "2026-03-01 to 2026-01-01"
+    result: "-59 days"
+- input: "days until 2027-01-01"
+  expect:
+    class: "calculation"
+    expression: "days until 2027-01-01"
+    result: "48 days"
+- input: "days until christmas"
+  expect:
+    class: "search"
+    terms: "days until christmas"
+- input: "rust lifetimes"
+  expect:
+    class: "search"
+    terms: "rust lifetimes"
+- input: "how to bake bread"
+  expect:
+    class: "search"
+    terms: "how to bake bread"
+- input: "what is 2+2"
+  expect:
+    class: "search"
+    terms: "what is 2+2"
+- input: "example.com is down"
+  expect:
+    class: "search"
+    terms: "example.com is down"
+- input: "c++"
+  expect:
+    class: "search"
+    terms: "c++"
+- input: "node.js tutorial"
+  expect:
+    class: "search"
+    terms: "node.js tutorial"
+- input: "1984"
+  expect:
+    class: "search"
+    terms: "1984"
+- input: "-5"
+  expect:
+    class: "search"
+    terms: "-5"
+- input: "covid-19"
+  expect:
+    class: "search"
+    terms: "covid-19"
+- input: "weather tomorrow"
+  expect:
+    class: "search"
+    terms: "weather tomorrow"
+- input: "best laptops 2026"
+  expect:
+    class: "search"
+    terms: "best laptops 2026"
+- input: "python list comprehension"
+  expect:
+    class: "search"
+    terms: "python list comprehension"
+- input: "who wrote hamlet"
+  expect:
+    class: "search"
+    terms: "who wrote hamlet"
+- input: "translate hello to french"
+  expect:
+    class: "search"
+    terms: "translate hello to french"
+- input: "nearest coffee"
+  expect:
+    class: "search"
+    terms: "nearest coffee"
+- input: "is it going to rain"
+  expect:
+    class: "search"
+    terms: "is it going to rain"
+- input: "margherita pizza recipe"
+  expect:
+    class: "search"
+    terms: "margherita pizza recipe"
+- input: "taylor swift tour dates"
+  expect:
+    class: "search"
+    terms: "taylor swift tour dates"
+- input: "flight status"
+  expect:
+    class: "search"
+    terms: "flight status"
+- input: "stock price aapl"
+  expect:
+    class: "search"
+    terms: "stock price aapl"
+- input: "how many ounces in a cup"
+  expect:
+    class: "search"
+    terms: "how many ounces in a cup"
+- input: "define serendipity"
+  expect:
+    class: "search"
+    terms: "define serendipity"
+- input: "the quick brown fox"
+  expect:
+    class: "search"
+    terms: "the quick brown fox"
+- input: "why is the sky blue"
+  expect:
+    class: "search"
+    terms: "why is the sky blue"
+- input: "sunset time"
+  expect:
+    class: "search"
+    terms: "sunset time"
+- input: "alpha beta gamma"
+  expect:
+    class: "search"
+    terms: "alpha beta gamma"
+- input: "hello world"
+  expect:
+    class: "search"
+    terms: "hello world"
+- input: "!important css"
+  expect:
+    class: "search"
+    terms: "!important css"
+- input: "what's my ip"
+  expect:
+    class: "search"
+    terms: "what's my ip"
+- input: "e=mc^2"
+  expect:
+    class: "search"
+    terms: "e=mc^2"
+- input: "a/b testing"
+  expect:
+    class: "search"
+    terms: "a/b testing"
+- input: "50% off"
+  expect:
+    class: "search"
+    terms: "50% off"
+- input: "#hashtag"
+  expect:
+    class: "search"
+    terms: "#hashtag"
+- input: '"exact phrase"'
+  expect:
+    class: "search"
+    terms: '"exact phrase"'
+- input: "site:example.com rust"
+  expect:
+    class: "search"
+    terms: "site:example.com rust"
+- input: "rust OR go"
+  expect:
+    class: "search"
+    terms: "rust OR go"
+- input: "password manager"
+  expect:
+    class: "search"
+    terms: "password manager"
+- input: "mado browser"
+  expect:
+    class: "search"
+    terms: "mado browser"
+- input: "tyldra"
+  expect:
+    class: "search"
+    terms: "tyldra"
+- input: "3 idiots"
+  expect:
+    class: "search"
+    terms: "3 idiots"
+- input: "10 things i hate about you"
+  expect:
+    class: "search"
+    terms: "10 things i hate about you"
+- input: "route 66"
+  expect:
+    class: "search"
+    terms: "route 66"
+- input: "area 51"
+  expect:
+    class: "search"
+    terms: "area 51"
+- input: "pi"
+  expect:
+    class: "search"
+    terms: "pi"
+- input: "sqrt(2)"
+  expect:
+    class: "search"
+    terms: "sqrt(2)"
+- input: "log 10"
+  expect:
+    class: "search"
+    terms: "log 10"
+- input: "sin(30)"
+  expect:
+    class: "search"
+    terms: "sin(30)"
+- input: "2 + two"
+  expect:
+    class: "search"
+    terms: "2 + two"
+- input: "five plus five"
+  expect:
+    class: "search"
+    terms: "five plus five"
+- input: "1,000 + 1"
+  expect:
+    class: "search"
+    terms: "1,000 + 1"
+- input: "$100 to eur"
+  expect:
+    class: "search"
+    terms: "$100 to eur"
+- input: "100 usd in eur"
+  expect:
+    class: "search"
+    terms: "100 usd in eur"
+- input: "x+y"
+  expect:
+    class: "search"
+    terms: "x+y"
+- input: "f(x)"
+  expect:
+    class: "search"
+    terms: "f(x)"
+- input: ".."
+  expect:
+    class: "search"
+    terms: ".."
+- input: "./run.sh"
+  expect:
+    class: "search"
+    terms: "./run.sh"
+- input: "C:\\Windows"
+  expect:
+    class: "search"
+    terms: "C:\\Windows"
+- input: "\\\\server\\share"
+  expect:
+    class: "search"
+    terms: "\\\\server\\share"
+- input: "mailto:someone@example.com"
+  expect:
+    class: "search"
+    terms: "mailto:someone@example.com"
+- input: "tel:+15551234567"
+  expect:
+    class: "search"
+    terms: "tel:+15551234567"
+- input: "magnet:?xt=urn"
+  expect:
+    class: "search"
+    terms: "magnet:?xt=urn"
+- input: "chrome://settings"
+  expect:
+    class: "search"
+    terms: "chrome://settings"
+- input: "edge://flags"
+  expect:
+    class: "search"
+    terms: "edge://flags"
+- input: "user@example.com"
+  expect:
+    class: "search"
+    terms: "user@example.com"
+- input: "email me at x@y.com"
+  expect:
+    class: "search"
+    terms: "email me at x@y.com"
+- input: "foo..bar.com"
+  expect:
+    class: "search"
+    terms: "foo..bar.com"
+- input: "foo.notatld"
+  expect:
+    class: "search"
+    terms: "foo.notatld"
+- input: "facebook.com/login"
+  expect:
+    class: "url"
+    url: "https://facebook.com/login"
+- input: "reddit.com/r/rust"
+  expect:
+    class: "url"
+    url: "https://reddit.com/r/rust"
+- input: "go.dev"
+  expect:
+    class: "url"
+    url: "https://go.dev/"
+- input: "pkg.go.dev/net/http"
+  expect:
+    class: "url"
+    url: "https://pkg.go.dev/net/http"
+- input: "web.dev"
+  expect:
+    class: "url"
+    url: "https://web.dev/"
+- input: "localhost:8080/#/x"
+  expect:
+    class: "url"
+    url: "https://localhost:8080/#/x"
+- input: "50*2"
+  expect:
+    class: "calculation"
+    expression: "50*2"
+    result: "100"
+- input: "2 kg to lb"
+  expect:
+    class: "calculation"
+    expression: "2 kg to lb"
+    result: "4.409245244 lb"
+- input: "days since 2026-11-01"
+  expect:
+    class: "calculation"
+    expression: "days since 2026-11-01"
+    result: "13 days"
+- input: "amazon.com/dp/B000"
+  expect:
+    class: "url"
+    url: "https://amazon.com/dp/B000"
