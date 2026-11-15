@@ -90,6 +90,8 @@ thread_local! {
     /// The profile service the next `TestCore` on this thread uses.
     pub static PROFILES: std::cell::RefCell<std::sync::Arc<dyn crate::ui::Profiles>> =
         std::cell::RefCell::new(std::sync::Arc::new(crate::ui::NoProfiles));
+    /// The home folder the next `TestCore` imports from.
+    pub static IMPORT_HOME: std::cell::RefCell<std::path::PathBuf> = std::cell::RefCell::new(std::path::PathBuf::from("/nonexistent"));
     /// Whether the next `TestCore` on this thread is a private profile.
     pub static PRIVATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The captive portal probe the next `TestCore` on this thread uses.
@@ -162,6 +164,7 @@ impl TestCore {
             captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
             profiles: PROFILES.with_borrow(Clone::clone),
             hsts_extra: ["hsts.example".to_owned()].into(),
+            home: IMPORT_HOME.with_borrow(Clone::clone),
             // Camera denied at the OS, everything else answered yes.
             os: crate::OsPermissions {
                 status: |p| match p {

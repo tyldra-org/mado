@@ -1,0 +1,42 @@
+{
+  "roots": {
+    "bookmark_bar": {
+      "type": "folder",
+      "name": "Bookmarks bar",
+      "children": [
+        {
+          "type": "url",
+          "name": "Rust",
+          "url": "https://www.rust-lang.org/"
+        },
+        {
+          "type": "folder",
+          "name": "News",
+          "children": [
+            {
+              "type": "url",
+              "name": "Hacker News",
+              "url": "https://news.ycombinator.com/"
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "type": "folder",
+      "name": "Other bookmarks",
+      "children": [
+        {
+          "type": "url",
+          "name": "Other",
+          "url": "https://example.com/other"
+        }
+      ]
+    },
+    "synced": {
+      "type": "folder",
+      "children": []
+    }
+  },
+  "version": 1
+}

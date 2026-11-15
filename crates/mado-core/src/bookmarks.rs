@@ -618,6 +618,71 @@ pub fn parse_html(html: &str) -> Vec<Item> {
     stack.pop().unwrap_or_default()
 }
 
+/// Merges another browser's bookmarks into `parent` (spec 12 §5.3): a
+/// folder joins the folder of the same title there, and a link whose URL is
+/// already in that folder is skipped, so importing twice adds nothing.
+/// Returns how many links were added.
+pub fn merge(
+    conn: &Connection,
+    parent: &str,
+    items: &[mado_import::Bookmark],
+    now: i64,
+) -> rusqlite::Result<usize> {
+    let mut added = 0;
+    for item in items {
+        match &item.url {
+            Some(url) => {
+                if url::Url::parse(url).is_err() {
+                    continue;
+                }
+                let exists = conn
+                    .query_row(
+                        "SELECT 1 FROM bookmarks WHERE parent_id = ?1 AND kind = 'link' AND url = ?2",
+                        params![parent, url],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some();
+                if !exists {
+                    add(
+                        conn,
+                        Some(parent),
+                        Kind::Link,
+                        &item.title,
+                        Some(url),
+                        None,
+                        now,
+                    )?;
+                    added += 1;
+                }
+            }
+            None => {
+                let folder: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM bookmarks WHERE parent_id = ?1 AND kind = 'folder' AND title = ?2 ORDER BY sort LIMIT 1",
+                        params![parent, item.title],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                let folder = match folder {
+                    Some(f) => f,
+                    None => add(
+                        conn,
+                        Some(parent),
+                        Kind::Folder,
+                        &item.title,
+                        None,
+                        None,
+                        now,
+                    )?,
+                };
+                added += merge(conn, &folder, &item.children, now)?;
+            }
+        }
+    }
+    Ok(added)
+}
+
 /// Whether only the two empty roots exist.
 pub fn is_empty(conn: &Connection) -> rusqlite::Result<bool> {
     let n: i64 = conn.query_row(

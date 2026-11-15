@@ -10,3 +10,17 @@ publish = false
 
 [lints]
 workspace = true
+
+[features]
+# The fixture homes of tests/import/, for this crate's and the core's tests.
+fixtures = []
+
+[dependencies]
+lz4_flex = "0.14.2"
+plist = "1.10.3"
+rusqlite = { version = "0.42.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"
