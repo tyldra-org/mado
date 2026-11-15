@@ -1,7 +1,7 @@
 // `reader` (spec 08 §10): Mozilla Readability on a clone of the page.
 // Mado world, on demand. The answer is `{ title, byline, content, length,
 // siteName }` or null; the core sanitises `content` before showing it.
-import { Readability } from "@mozilla/readability";
+import Readability from "../vendor/readability/Readability.js";
 
 const article = (() => {
   try {

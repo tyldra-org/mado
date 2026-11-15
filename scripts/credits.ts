@@ -30,6 +30,16 @@ export const DATA: Credit[] = [
   },
 ];
 
+/** JavaScript copied into the repository rather than installed. */
+export const VENDORED: Credit[] = [
+  {
+    name: "@mozilla/readability",
+    version: "0.6.0",
+    license: "Apache-2.0",
+    source: "javascript",
+  },
+];
+
 const root = join(import.meta.dir, "..");
 
 /** The SPDX identifiers about.toml accepts. */
@@ -83,14 +93,10 @@ async function locate(name: string, from: string): Promise<string> {
   }
 }
 
-/** Production dependencies of ui/ and inject/ (bundled into the page
- * scripts), and theirs, from node_modules. */
+/** Production dependencies of ui/, and theirs, from node_modules. */
 async function javascript(ok: Set<string>): Promise<Credit[]> {
   const seen = new Map<string, Credit>();
-  const queue: [string, string][] = [
-    [join(root, "ui"), ""],
-    [join(root, "inject"), ""],
-  ];
+  const queue: [string, string][] = [[join(root, "ui"), ""]];
   for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
     const [dir, name] = next;
     const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8")) as {
@@ -115,8 +121,8 @@ async function javascript(ok: Set<string>): Promise<Credit[]> {
 
 if (import.meta.main) {
   const ok = await allowed();
-  const credits = [...(await rust()), ...(await javascript(ok))].sort((a, b) =>
-    a.name.localeCompare(b.name),
+  const credits = [...(await rust()), ...(await javascript(ok)), ...VENDORED, ...DATA].sort(
+    (a, b) => a.name.localeCompare(b.name),
   );
   await mkdir(join(root, "app/resources"), { recursive: true });
   await writeFile(
