@@ -194,6 +194,27 @@ pub enum ImageFormat {
     Jpeg,
 }
 
+/// Pages the core renders and a tab shows at `mado://<name>?tab=<id>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeneratedPage {
+    Reader,
+    Source,
+}
+
+impl GeneratedPage {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Reader => "reader",
+            Self::Source => "source",
+        }
+    }
+
+    /// The page's URL in `tab`.
+    pub fn url(self, tab: mado_types::TabId) -> String {
+        format!("mado://{}?tab={tab}", self.name())
+    }
+}
+
 /// What the core asks of one tab view (spec 02 §1, mapped in §4.4).
 pub enum TabCommand {
     Navigate {
@@ -247,14 +268,14 @@ pub enum TabCommand {
         reply: Callback<Result<SessionBlob, EngineError>>,
     },
     ShowDevTools,
-    ShowSource,
     /// The certificate of the page, or of the load that failed on it
     /// (spec 08 §3).
     ShowCertificate,
-    /// Loads `mado://reader?tab=<id>` as a new history entry showing
-    /// `html`, a page with no script (spec 08 §10). Back returns to the
-    /// article's page.
-    ShowReader {
+    /// Loads `mado://<page>?tab=<id>` as a new history entry showing
+    /// `html`, a page the core rendered with no script: Reader (spec 08
+    /// §10) or View Source. Back returns to the page before it.
+    ShowPage {
+        page: GeneratedPage,
         html: String,
     },
     /// Stored; applies from the next navigation (spec 02 §4.4).
@@ -301,8 +322,7 @@ impl TabCommand {
             Self::SaveSession { .. } => "saveSession",
             Self::ShowDevTools => "showDevTools",
             Self::ShowCertificate => "showCertificate",
-            Self::ShowSource => "showSource",
-            Self::ShowReader { .. } => "showReader",
+            Self::ShowPage { .. } => "showPage",
             Self::SetJavaScriptEnabled(_) => "setJavaScriptEnabled",
             Self::SetImagesEnabled(_) => "setImagesEnabled",
             Self::ExitFullscreen => "exitFullscreen",

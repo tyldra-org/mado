@@ -2884,9 +2884,9 @@ fn reader_mode_shows_the_article_and_remembers_sites() {
         .engine
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .reader_pages
+        .generated_pages
         .last()
-        .map(|p| p.1.clone())
+        .map(|p| p.2.clone())
         .expect("a page");
     assert!(
         html.contains("A long read") && html.contains("<p>Text</p>") && !html.contains("alert")
@@ -3271,6 +3271,187 @@ fn internal_pages_invoke_through_their_allow_lists() {
     assert!(
         !posted().iter().any(|m| m["type"] == "patch"),
         "the history page reads no state"
+    );
+}
+
+/// 01 §5.4: every menu item runs its command in the key window, the UI
+/// carries out its own, and enabled and checked states follow the state.
+#[test]
+fn every_menu_item_runs_its_command() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let first = new_tab(&core, w, "https://a.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&first].url == "https://a.example/"
+    });
+    let menu = |id: &str| {
+        core.handle.send(Input::Internal(Internal::Menu {
+            id: id.into(),
+            window: Some(w),
+        }));
+        let _ = ask(&core, Origin::System, Command::StateGet);
+    };
+    let sent = || core.sent.lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(
+        sent().shortcuts.get("newTab").map(String::as_str),
+        Some("Cmd+T")
+    );
+    assert_eq!(
+        sent().shortcuts.len(),
+        mado_types::menu::command_ids().len()
+    );
+    let tabs = || state_of(&core).windows[&w].tab_order.len();
+    let before = tabs();
+    menu("newTab");
+    assert_eq!(tabs(), before + 1);
+    menu("closeTab");
+    assert_eq!(tabs(), before);
+    menu("reopenClosedTab");
+    assert_eq!(tabs(), before + 1);
+    menu("selectTab1");
+    let active = || state_of(&core).windows[&w].active_tab_id;
+    let first_tab = state_of(&core).windows[&w].tab_order[0];
+    assert_eq!(active(), Some(first_tab));
+    menu("selectLastTab");
+    assert_eq!(
+        active(),
+        state_of(&core).windows[&w].tab_order.last().copied()
+    );
+    menu("zoomIn");
+    let a = active().expect("active");
+    assert!((state_of(&core).tabs[&a].zoom - 1.1).abs() < 1e-9);
+    menu("actualSize");
+    assert!((state_of(&core).tabs[&a].zoom - 1.0).abs() < 1e-9);
+    menu("pinTab");
+    assert!(state_of(&core).tabs[&a].pinned);
+    eventually("checked", || {
+        sent().menu_state.get("pinTab") == Some(&(true, true))
+    });
+    menu("pinTab");
+    assert!(!state_of(&core).tabs[&a].pinned);
+    assert_eq!(
+        sent().menu_state.get("back"),
+        Some(&(false, false)),
+        "nothing to go back to"
+    );
+    menu("toggleBookmarksBar");
+    eventually("bar checked", || {
+        sent()
+            .menu_state
+            .get("toggleBookmarksBar")
+            .is_some_and(|s| s.1)
+    });
+    menu("showHistory");
+    assert!(
+        state_of(&core)
+            .tabs
+            .values()
+            .any(|t| t.url == "mado://history")
+    );
+    menu("openLocation");
+    menu("find");
+    assert_eq!(
+        sent().window_actions,
+        vec![(w, "openLocation".to_owned()), (w, "find".to_owned())]
+    );
+    menu("settings");
+    assert_eq!(sent().settings_opened, 1);
+    let windows = state_of(&core).windows.len();
+    menu("newWindow");
+    assert_eq!(state_of(&core).windows.len(), windows + 1);
+    // Every ID is handled by something.
+    for id in mado_types::menu::command_ids() {
+        let known = [
+            "about",
+            "settings",
+            "quit",
+            "importBrowserData",
+            "developerTools",
+            "viewSource",
+            "openLocation",
+            "focusAddressBar",
+            "find",
+            "findNext",
+            "findPrevious",
+            "bookmarkTab",
+            "bookmarkAllTabs",
+            "newTab",
+            "newWindow",
+            "newPrivateWindow",
+            "reopenClosedTab",
+            "closeWindow",
+            "closeTab",
+            "print",
+            "stop",
+            "reload",
+            "forceReload",
+            "actualSize",
+            "zoomIn",
+            "zoomOut",
+            "reader",
+            "back",
+            "forward",
+            "home",
+            "showHistory",
+            "bookmarkManager",
+            "downloads",
+            "nextTab",
+            "previousTab",
+            "selectLastTab",
+            "duplicateTab",
+            "pinTab",
+            "muteSite",
+            "moveTabToNewWindow",
+            "toggleBookmarksBar",
+        ];
+        assert!(
+            known.contains(&id) || id.starts_with("selectTab"),
+            "{id} has no action"
+        );
+    }
+    // View Source: the page's document, escaped, in a new tab beside it.
+    core.engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .eval_answers = vec![(
+        "return { url".into(),
+        json!({ "url": "https://a.example/", "html": "<p>hi</p>" }),
+    )];
+    menu("selectTab1");
+    let source_of = active().expect("active");
+    menu("viewSource");
+    eventually("the source tab", || {
+        state_of(&core)
+            .tabs
+            .values()
+            .any(|t| t.url.starts_with("mado://source?tab=") && t.opener_id == Some(source_of))
+    });
+    let page = core
+        .engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .generated_pages
+        .last()
+        .map(|p| p.2.clone())
+        .expect("a page");
+    assert!(
+        page.contains("&lt;p&gt;hi&lt;/p&gt;") && page.contains("view-source:https://a.example/")
+    );
+    // A changed shortcut reaches the app.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "shortcuts.duplicateTab".into(),
+            value: json!("Cmd+Shift+K"),
+            token: None,
+        },
+    )
+    .expect("set");
+    assert_eq!(
+        sent().shortcuts.get("duplicateTab").map(String::as_str),
+        Some("Cmd+Shift+K")
     );
 }
 

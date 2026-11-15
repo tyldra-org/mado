@@ -27,11 +27,36 @@ pub struct Sent {
     pub temporary: Vec<(bool, Vec<String>)>,
     /// How many times the core asked the app to quit.
     pub quits: usize,
+    /// Menu commands the UI was asked to carry out, per window.
+    pub window_actions: Vec<(mado_types::WindowId, String)>,
+    /// The last menu state and shortcuts the app was given.
+    pub menu_state: std::collections::BTreeMap<String, (bool, bool)>,
+    pub shortcuts: std::collections::BTreeMap<String, String>,
+    pub settings_opened: usize,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
 
 impl UiSink for Collect {
+    fn window_action(&mut self, window: mado_types::WindowId, action: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .window_actions
+            .push((window, action.to_owned()));
+    }
+    fn menu_state(&mut self, state: &std::collections::BTreeMap<String, (bool, bool)>) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).menu_state = state.clone();
+    }
+    fn shortcuts(&mut self, keys: &std::collections::BTreeMap<String, String>) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).shortcuts = keys.clone();
+    }
+    fn open_settings(&mut self) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .settings_opened += 1;
+    }
     fn quit(&mut self) {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).quits += 1;
     }

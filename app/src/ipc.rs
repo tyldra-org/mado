@@ -80,6 +80,45 @@ pub struct TauriUi {
 }
 
 impl UiSink for TauriUi {
+    fn open_settings(&mut self) {
+        let app = self.app.clone();
+        let _ = self.app.run_on_main_thread(move || {
+            if let Err(e) = crate::open_settings(&app) {
+                tracing::error!(error = %e, "the settings window did not open");
+            }
+        });
+    }
+
+    fn window_action(&mut self, window: mado_types::WindowId, action: &str) {
+        let label = mado_engine::window::ui_label(window);
+        if let Some(w) =
+            tauri::Manager::get_window(&self.app, &crate::windows::window_label(window))
+        {
+            let _ = w.set_focus();
+        }
+        if let Err(e) = self.app.emit_to(
+            tauri::EventTarget::webview(label),
+            "mado://action",
+            serde_json::json!({ "action": action }),
+        ) {
+            tracing::warn!(error = %e, "a menu action did not reach the window");
+        }
+    }
+
+    fn menu_state(&mut self, state: &std::collections::BTreeMap<String, (bool, bool)>) {
+        let (app, state) = (self.app.clone(), state.clone());
+        let _ = self
+            .app
+            .run_on_main_thread(move || crate::menu::apply_state(&app, &state));
+    }
+
+    fn shortcuts(&mut self, keys: &std::collections::BTreeMap<String, String>) {
+        let (app, keys) = (self.app.clone(), keys.clone());
+        let _ = self
+            .app
+            .run_on_main_thread(move || crate::menu::apply_shortcuts(&app, &keys));
+    }
+
     fn patch(&mut self, patch: &Patch) {
         if let Err(e) = self.app.emit_filter("mado://patch", patch, listens) {
             tracing::error!(error = %e, "a patch was not delivered");

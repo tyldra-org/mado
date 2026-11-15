@@ -34,6 +34,12 @@ pub enum SettingsError {
     UnknownSection(String),
     #[error("file: {0}")]
     File(String),
+    /// Another command already has these keys (spec 06 §8).
+    #[error("{keys} already runs {other}")]
+    ShortcutTaken { keys: String, other: String },
+    /// macOS keeps these keys for itself.
+    #[error("{0} is reserved by macOS")]
+    ShortcutReserved(String),
 }
 
 impl From<SettingsError> for MadoError {
@@ -60,6 +66,14 @@ impl From<SettingsError> for MadoError {
             SettingsError::UnknownSection(section) => {
                 MadoError::new(ErrorCode::NotFound, "error.settings.unknownSection")
                     .arg("section", section)
+            }
+            SettingsError::ShortcutTaken { keys, other } => {
+                MadoError::new(ErrorCode::Conflict, "error.shortcut.conflict")
+                    .arg("keys", keys)
+                    .arg("other", other)
+            }
+            SettingsError::ShortcutReserved(keys) => {
+                MadoError::new(ErrorCode::InvalidInput, "error.shortcut.reserved").arg("keys", keys)
             }
             SettingsError::File(reason) => {
                 MadoError::new(ErrorCode::InvalidInput, "error.settings.file").arg("reason", reason)
@@ -161,6 +175,30 @@ fn requires_auth(def: &SettingDef, new: &Value) -> bool {
 
 fn may_change(def: &SettingDef, origin: &Origin) -> bool {
     !def.opts.protected || matches!(origin, Origin::Settings | Origin::System)
+}
+
+/// Keys macOS keeps for itself, which no command may take.
+const OS_RESERVED: &[&str] = &[
+    "Cmd+Tab",
+    "Cmd+Space",
+    "Cmd+H",
+    "Cmd+M",
+    "Cmd+`",
+    "Cmd+Alt+Esc",
+    "Cmd+Shift+3",
+    "Cmd+Shift+4",
+    "Cmd+Shift+5",
+];
+
+/// A shortcut with its modifiers in one order, to compare two of them.
+pub fn normalize_shortcut(keys: &str) -> String {
+    let mut parts: Vec<&str> = keys.split('+').collect();
+    let Some(key) = parts.pop() else {
+        return String::new();
+    };
+    parts.sort_by_key(|m| ["Ctrl", "Alt", "Shift", "Cmd"].iter().position(|o| o == m));
+    parts.push(key);
+    parts.join("+").to_ascii_lowercase()
 }
 
 fn origin_name(origin: &Origin) -> String {
@@ -428,6 +466,27 @@ impl Settings {
                 key: key.to_owned(),
                 reason,
             })?;
+        if def.ty == crate::types::SettingType::Shortcut
+            && let Some(keys) = value.as_str().filter(|k| !k.is_empty())
+        {
+            let wanted = normalize_shortcut(keys);
+            if OS_RESERVED.iter().any(|r| normalize_shortcut(r) == wanted) {
+                return Err(SettingsError::ShortcutReserved(keys.to_owned()));
+            }
+            if let Some(other) = REGISTRY.iter().find(|d| {
+                d.key != def.key
+                    && d.ty == crate::types::SettingType::Shortcut
+                    && self
+                        .value(d)
+                        .as_str()
+                        .is_some_and(|v| normalize_shortcut(v) == wanted)
+            }) {
+                return Err(SettingsError::ShortcutTaken {
+                    keys: keys.to_owned(),
+                    other: self.strings.get(other.label).to_owned(),
+                });
+            }
+        }
         if value != self.value(def)
             && requires_auth(def, &value)
             && !token.is_some_and(|t| auth.consume(t))

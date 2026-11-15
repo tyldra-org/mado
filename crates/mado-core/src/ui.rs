@@ -29,6 +29,16 @@ pub trait UiSink: Send {
     /// The core decided to quit (spec 04 §9): the app exits, running the
     /// shutdown that writes the clean-quit marker.
     fn quit(&mut self) {}
+    /// Opens the settings window (spec 06 §9).
+    fn open_settings(&mut self) {}
+    /// A menu command the window's UI carries out itself: `openLocation`,
+    /// `find`, `findNext`, `findPrevious`, `bookmarkTab`,
+    /// `bookmarkAllTabs` (spec 01 §5.3, §5.4).
+    fn window_action(&mut self, _window: mado_types::WindowId, _action: &str) {}
+    /// Enabled and checked per menu command, after a change (spec 01 §5.4).
+    fn menu_state(&mut self, _state: &std::collections::BTreeMap<String, (bool, bool)>) {}
+    /// The key equivalent of each menu command, `""` for none (spec 06 §8).
+    fn shortcuts(&mut self, _keys: &std::collections::BTreeMap<String, String>) {}
     /// Hands `url` to the process of `profile`, starting it if needed
     /// (`tab.moveToProfile`, spec 04 §2).
     fn open_in_profile(&mut self, _profile: mado_types::ProfileId, _url: &str) {}

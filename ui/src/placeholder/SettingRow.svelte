@@ -18,6 +18,7 @@
       error =
         e instanceof CoreError
           ? t(e.error.messageKey, {
+              ...Object.fromEntries(Object.entries(e.error.args).map(([k, v]) => [k, String(v)])),
               key: t(entry.label),
               reason: String(e.error.args.reason ?? ""),
             })
@@ -26,6 +27,46 @@
   }
 
   const MINUTE = 60_000;
+
+  const KEYS: Record<string, string> = {
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    BracketLeft: "[",
+    BracketRight: "]",
+    Comma: ",",
+    Period: ".",
+    Equal: "=",
+    Minus: "-",
+    Slash: "/",
+    Backslash: "\\",
+    Semicolon: ";",
+    Quote: "'",
+    Backquote: "`",
+    Space: "Space",
+    Tab: "Tab",
+  };
+
+  /** A pressed key as a shortcut setting, `Cmd+Shift+T`, by key position. */
+  function recorded(e: KeyboardEvent): string | null {
+    const key = e.code.startsWith("Key")
+      ? e.code.slice(3)
+      : e.code.startsWith("Digit")
+        ? e.code.slice(5)
+        : /^F\d+$/.test(e.code)
+          ? e.code
+          : KEYS[e.code];
+    if (!key) return null;
+    const mods = [
+      e.ctrlKey && "Ctrl",
+      e.altKey && "Alt",
+      e.shiftKey && "Shift",
+      e.metaKey && "Cmd",
+    ];
+    const held = mods.filter((m): m is string => typeof m === "string");
+    return held.length ? [...held, key].join("+") : null;
+  }
   const lines = (text: string) =>
     text
       .split("\n")
@@ -64,6 +105,31 @@
       onchange={(e) => set(Math.round(e.currentTarget.valueAsNumber * MINUTE))}
     />
     <span>{t("settings.minutes")}</span>
+  {:else if entry.renderer === "shortcut"}
+    <input
+      {id}
+      type="text"
+      readonly
+      value={String(value ?? "")}
+      placeholder={t("settings.shortcut.press")}
+      onkeydown={(e) => {
+        if (e.key === "Backspace" || e.key === "Delete") {
+          e.preventDefault();
+          void set("");
+          return;
+        }
+        const keys = recorded(e);
+        if (keys) {
+          e.preventDefault();
+          void set(keys);
+        }
+      }}
+    />
+    <button
+      type="button"
+      onclick={() => client.call({ type: "settings.reset", key: entry.key }).catch(() => {})}
+      >{t("settings.shortcut.reset")}</button
+    >
   {:else if entry.renderer === "list" && entry.options}
     <fieldset {id}>
       {#each entry.options as option (option)}

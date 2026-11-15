@@ -16,6 +16,9 @@ mod convert;
 mod delegate;
 mod download;
 mod fullscreen;
+mod keys;
+
+pub use keys::{set_reserved as set_reserved_shortcuts, synthesize as synthesize_key};
 mod menu;
 mod scheme;
 mod timeouts;

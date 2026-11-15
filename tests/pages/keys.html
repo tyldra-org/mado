@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>keys:</title>
+<script>
+  // Records the shortcuts the page receives (05 §10): reserved ones never
+  // arrive; others do.
+  addEventListener("keydown", (e) => {
+    const mods = [e.metaKey && "Cmd", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean);
+    document.title += " " + [...mods, e.key.toUpperCase()].join("+");
+  }, true);
+</script>
+<p>Press keys.</p>

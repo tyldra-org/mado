@@ -339,6 +339,101 @@ fn undo_puts_back_the_previous_value_and_risky_changes_offer_it() {
     );
 }
 
+/// 06 §8: one shortcut setting per menu command; a shortcut another command
+/// has, or one macOS keeps, is refused; freeing it lets another take it.
+#[test]
+fn shortcuts_are_one_setting_per_command_and_never_collide() {
+    let ids = mado_types::menu::command_ids();
+    let keys: Vec<&str> = REGISTRY
+        .iter()
+        .filter(|d| d.key.starts_with("shortcuts."))
+        .map(|d| d.key.trim_start_matches("shortcuts."))
+        .collect();
+    assert_eq!(keys, ids, "the registry follows the menus, in order");
+    let mut s = Settings::new(Strings::english());
+    let mut auth = no_tokens();
+    let set = |s: &mut Settings, k: &str, v: &str, auth: &mut Tokens| {
+        s.set(k, json!(v), &Origin::Settings, None, auth, 1)
+    };
+    let err = set(&mut s, "shortcuts.duplicateTab", "Shift+Cmd+T", &mut auth).expect_err("taken");
+    assert_eq!(
+        err,
+        SettingsError::ShortcutTaken {
+            keys: "Shift+Cmd+T".into(),
+            other: "Reopen Closed Tab".into()
+        }
+    );
+    assert_eq!(
+        set(&mut s, "shortcuts.duplicateTab", "Cmd+H", &mut auth).map(|_| ()),
+        Err(SettingsError::ShortcutReserved("Cmd+H".into()))
+    );
+    set(&mut s, "shortcuts.reopenClosedTab", "", &mut auth).expect("freed");
+    set(&mut s, "shortcuts.duplicateTab", "Cmd+Shift+T", &mut auth).expect("now free");
+    assert!(
+        s.search("duplicate")
+            .iter()
+            .any(|h| h.key == "shortcuts.duplicateTab")
+    );
+}
+
+/// 05 §10: `docs/shortcuts.md` is the default table, generated from the
+/// registry and the menus; run with `MADO_UPDATE_DOCS=1` to rewrite it.
+#[test]
+fn the_committed_shortcut_table_matches_the_registry() {
+    use std::fmt::Write as _;
+    let strings = Strings::english();
+    let mut doc = String::from(
+        "# Keyboard shortcuts\n\nMado's default shortcuts on macOS, generated from the settings registry by `cargo test -p mado-settings` (run with `MADO_UPDATE_DOCS=1` to rewrite this file). They follow Chrome's macOS shortcuts; commands Chrome has no shortcut for have none. Every one can be changed in Settings › Keyboard shortcuts. Reserved shortcuts reach the menu before the page.\n",
+    );
+    for menu in mado_types::menu::MENU_BAR {
+        let key = format!("menu.title.{}", menu.id);
+        let title = if menu.id == "app" {
+            "Mado"
+        } else {
+            strings.get(&key)
+        };
+        let _ = write!(
+            doc,
+            "\n## {title}\n\n| Command | Shortcut | Reserved |\n| --- | --- | --- |\n"
+        );
+        for entry in menu.entries {
+            let (mado_types::menu::MenuEntry::Item(id) | mado_types::menu::MenuEntry::Check(id)) =
+                entry
+            else {
+                continue;
+            };
+            let keys = mado_settings::lookup(&format!("shortcuts.{id}"))
+                .and_then(|d| d.default_value().as_str().map(str::to_owned))
+                .unwrap_or_default()
+                .replace('|', "\\|");
+            let keys = if keys.is_empty() {
+                "—".to_owned()
+            } else {
+                format!("`{keys}`")
+            };
+            let reserved = if mado_types::menu::RESERVED.contains(id) {
+                "yes"
+            } else {
+                ""
+            };
+            let _ = writeln!(
+                doc,
+                "| {} | {keys} | {reserved} |",
+                strings.get(&format!("menu.{id}"))
+            );
+        }
+    }
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/shortcuts.md");
+    if std::env::var_os("MADO_UPDATE_DOCS").is_some() {
+        std::fs::write(&path, &doc).expect("write");
+    }
+    let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        committed == doc,
+        "docs/shortcuts.md is out of date: run MADO_UPDATE_DOCS=1 cargo test -p mado-settings"
+    );
+}
+
 #[test]
 fn search_finds_settings_by_what_people_type() {
     let s = Settings::new(Strings::english());

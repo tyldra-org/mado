@@ -10,6 +10,7 @@ mod import;
 mod internal;
 mod lock;
 mod marks;
+mod menus;
 mod nav;
 mod pages;
 mod profiles;
@@ -150,6 +151,18 @@ pub enum Internal {
         tab: TabId,
         id: u64,
         result: Result<Value, MadoError>,
+    },
+    /// A menu bar, Dock menu or key equivalent item was chosen (spec 01
+    /// §5.4), in the key window when there is one.
+    Menu {
+        id: String,
+        window: Option<WindowId>,
+    },
+    /// The document a View Source asked for.
+    SourceRead {
+        tab: TabId,
+        url: String,
+        html: String,
     },
     /// Another browser's data was read for `import.run` (spec 12 §5).
     BrowserImportRead {
@@ -429,6 +442,8 @@ pub struct Core {
     drm_failed: BTreeSet<TabId>,
     /// `privacy.clearOnExit` is clearing before the app quits.
     clearing_on_exit: bool,
+    /// The menu states the app shows (spec 01 §5.4).
+    menu_shown: menus::MenuState,
     /// The user's home folder, for importing (spec 12 §5.1).
     home: PathBuf,
     /// Hosts that always open in Reader (`reader_sites`).
@@ -629,6 +644,7 @@ impl Core {
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             clearing_on_exit: false,
+            menu_shown: menus::MenuState::new(),
             home: config.home,
             reader_always,
             reader_sources: BTreeMap::new(),
@@ -644,6 +660,8 @@ impl Core {
             hooks: Hooks::default(),
         };
         core.mirror_all_settings();
+        let shortcuts = core.shortcuts();
+        core.ui.shortcuts(&shortcuts);
         for (state, info) in downloads {
             core.dls.insert(state.id, info);
             core.state.downloads.insert(state.id, state);
@@ -785,6 +803,7 @@ impl Core {
     fn settle(&mut self, model_before: &Model, rec: &mut PatchRecorder) {
         let (first, last) = self.reconcile(model_before, rec);
         self.emit(rec);
+        self.refresh_menu_state();
         let queued = std::mem::take(&mut self.outbox);
         for op in first.into_iter().chain(queued).chain(last) {
             self.engine.send(op);
@@ -1099,6 +1118,8 @@ impl Core {
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
             Internal::ClearedOnExit => self.cleared_on_exit(),
             Internal::InvokeAnswered { tab, id, result } => self.invoke_answered(tab, id, result),
+            Internal::Menu { id, window } => self.menu_action(&id, window, rec),
+            Internal::SourceRead { tab, url, html } => self.source_read(tab, url, html),
             Internal::BrowserImportRead {
                 browser,
                 result,
@@ -1339,6 +1360,10 @@ impl Core {
             )
         }) {
             self.outbox.push(EngineOp::SetPrivacy(self.privacy()));
+        }
+        if out.changes.iter().any(|c| c.key.starts_with("shortcuts.")) {
+            let shortcuts = self.shortcuts();
+            self.ui.shortcuts(&shortcuts);
         }
         if out.changes.iter().any(|c| c.key == "privacy.gpc") {
             self.outbox.push(EngineOp::SetPageScripts(self.scripts()));

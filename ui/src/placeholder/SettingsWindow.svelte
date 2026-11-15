@@ -76,6 +76,14 @@
     {#if hits === null && section === "profiles"}
       <ProfilesSection client={store.client} />
     {/if}
+    {#if hits === null && section === "shortcuts"}
+      <button
+        type="button"
+        onclick={() =>
+          store.client.call({ type: "settings.reset", section: "shortcuts" }).catch(() => {})}
+        >{t("settings.shortcut.resetAll")}</button
+      >
+    {/if}
     {#if hits === null && section === "general"}
       <ImportSheet client={store.client} />
     {/if}

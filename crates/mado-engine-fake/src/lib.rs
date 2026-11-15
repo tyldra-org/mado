@@ -104,8 +104,8 @@ pub struct FakeState {
     /// Answers to `EvaluateInWorld`: the first whose marker starts the
     /// source; null otherwise.
     pub eval_answers: Vec<(String, Value)>,
-    /// Reader pages shown: tab and HTML.
-    pub reader_pages: Vec<(TabId, String)>,
+    /// Pages the core rendered (Reader, View Source): tab, page and HTML.
+    pub generated_pages: Vec<(TabId, mado_engine::tab::GeneratedPage, String)>,
     /// Error pages shown: tab, URL and HTML.
     pub error_pages: Vec<(TabId, String, String)>,
     /// Origins (`https://host`) whose loads fail, with the error.
@@ -692,15 +692,10 @@ impl Engine for FakeEngine {
                 drop(state);
                 reply(Ok(answer));
             }
-            TabCommand::ShowReader { html } => {
-                state.reader_pages.push((tab, html));
+            TabCommand::ShowPage { page, html } => {
+                state.generated_pages.push((tab, page, html));
                 drop(state);
-                control.commit(
-                    tab,
-                    &format!("mado://reader?tab={tab}"),
-                    NavKind::Other,
-                    true,
-                );
+                control.commit(tab, &page.url(tab), NavKind::Other, true);
             }
             TabCommand::SaveSession { reply } => {
                 let blob = serde_json::to_vec(&Session {
@@ -719,7 +714,6 @@ impl Engine for FakeEngine {
             | TabCommand::SaveArchive { .. }
             | TabCommand::ShowDevTools
             | TabCommand::ShowCertificate
-            | TabCommand::ShowSource
             | TabCommand::SetImagesEnabled(_)
             | TabCommand::ExitFullscreen
             | TabCommand::MediaControl(_) => {}
