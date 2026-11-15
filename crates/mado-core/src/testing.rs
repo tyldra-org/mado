@@ -21,6 +21,8 @@ pub struct Sent {
     pub launched: Vec<String>,
     /// Text put on the pasteboard.
     pub copied: Vec<String>,
+    /// URLs handed to other profiles.
+    pub other_profiles: Vec<(mado_types::ProfileId, String)>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -39,6 +41,13 @@ impl UiSink for Collect {
             .unwrap_or_else(|e| e.into_inner())
             .notices
             .push(notice.clone());
+    }
+    fn open_in_profile(&mut self, profile: mado_types::ProfileId, url: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .other_profiles
+            .push((profile, url.to_owned()));
     }
     fn copy_text(&mut self, text: &str) {
         self.0
@@ -64,6 +73,9 @@ impl UiSink for Collect {
 }
 
 thread_local! {
+    /// The profile service the next `TestCore` on this thread uses.
+    pub static PROFILES: std::cell::RefCell<std::sync::Arc<dyn crate::ui::Profiles>> =
+        std::cell::RefCell::new(std::sync::Arc::new(crate::ui::NoProfiles));
     /// The captive portal probe the next `TestCore` on this thread uses.
     pub static CAPTIVE_PROBE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
@@ -131,6 +143,7 @@ impl TestCore {
             settings: Settings::new(Strings::english()),
             engine,
             captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
+            profiles: PROFILES.with_borrow(Clone::clone),
             // Camera denied at the OS, everything else answered yes.
             os: crate::OsPermissions {
                 status: |p| match p {

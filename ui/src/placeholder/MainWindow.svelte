@@ -12,6 +12,7 @@
   import DownloadsBubble from "./DownloadsBubble.svelte";
   import Notices from "./Notices.svelte";
   import PermissionPrompt from "./PermissionPrompt.svelte";
+  import ProfileMenu from "./ProfileMenu.svelte";
   import SafariPrompt from "./SafariPrompt.svelte";
   import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
@@ -59,7 +60,7 @@
 
 <div class="window" data-theme={theme} data-layout={layout}>
   <header>
-    <h1>{store.state?.profile.name ?? t("app.name")}</h1>
+    <ProfileMenu {store} />
     <TabStrip {store} {windowId} />
     <SiteInfo {store} {windowId} />
     <AddressBar {store} {windowId} />

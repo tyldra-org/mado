@@ -143,6 +143,23 @@ export class Mado {
     return (await this.process?.exited) ?? null;
   }
 
+  /** A control session with another profile's running owner. */
+  async connect(profileId: string): Promise<Control> {
+    const entry = join(this.dir, "Control", `${profileId}.json`);
+    for (let i = 0; i < 300; i++) {
+      const text = await readFile(entry, "utf8").catch(() => "");
+      if (text) {
+        const { endpoint } = JSON.parse(text) as { endpoint: string };
+        const control = new Control();
+        await control.open(endpoint);
+        await control.call("hello", { client: { name: "e2e", version: "0" }, token: this.token });
+        return control;
+      }
+      await sleep(50);
+    }
+    throw new Error(`profile ${profileId} did not start within 15 seconds`);
+  }
+
   kill(): Promise<number> | undefined {
     this.control.close();
     this.process?.kill("SIGKILL");

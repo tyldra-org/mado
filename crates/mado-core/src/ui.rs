@@ -15,6 +15,8 @@ pub trait UiSink: Send {
     fn show_notification(&mut self, _id: &str, _title: &str, _body: &str) {}
     /// Opens a macOS privacy pane (spec 07 §4).
     fn open_system_settings(&mut self, _pane: &str) {}
+    /// The running profile's name, colour or avatar changed (Dock badge).
+    fn profile_changed(&mut self, _info: &mado_types::state::ProfileInfo) {}
     /// Puts text on the pasteboard (context menu copies, spec 07 §8).
     fn copy_text(&mut self, _text: &str) {}
     /// Opens a link in the app that handles its scheme (spec 07 §6).
@@ -37,6 +39,90 @@ pub trait Updates: Send {
     fn check(&mut self);
     /// Installs the ready update and relaunches.
     fn relaunch(&mut self);
+}
+
+/// The app's profiles (spec 12 §1). They live in the app database and in
+/// other processes, so the app owns them; the core calls these off its
+/// thread, except `route`, which must be quick.
+pub trait Profiles: Send + Sync {
+    /// `[{ id, name, color, avatar, current, running }]`.
+    fn list(&self) -> Result<serde_json::Value, mado_types::MadoError>;
+    /// Returns `{ id }` after starting the new profile's process.
+    fn create(
+        &self,
+        name: &str,
+        color: &str,
+        avatar: &str,
+    ) -> Result<serde_json::Value, mado_types::MadoError>;
+    fn update(
+        &self,
+        id: mado_types::ProfileId,
+        name: Option<String>,
+        color: Option<String>,
+        avatar: Option<String>,
+    ) -> Result<mado_types::state::ProfileInfo, mado_types::MadoError>;
+    /// Quits the profile's process and deletes its data (spec 12 §1.4).
+    fn delete(&self, id: mado_types::ProfileId) -> Result<(), mado_types::MadoError>;
+    fn open(&self, id: mado_types::ProfileId) -> Result<(), mado_types::MadoError>;
+    fn link_rules(&self) -> Result<Vec<mado_types::command::LinkRule>, mado_types::MadoError>;
+    fn set_link_rules(
+        &self,
+        rules: Vec<mado_types::command::LinkRule>,
+    ) -> Result<(), mado_types::MadoError>;
+    /// The profile a link from another app belongs in, by the link rules.
+    fn route(&self, url: &str) -> Option<mado_types::ProfileId>;
+}
+
+/// No profile service: tests that do not exercise profiles.
+#[derive(Debug, Default)]
+pub struct NoProfiles;
+
+fn unavailable() -> mado_types::MadoError {
+    mado_types::MadoError::new(
+        mado_types::ErrorCode::EngineUnavailable,
+        "error.profile.unavailable",
+    )
+}
+
+impl Profiles for NoProfiles {
+    fn list(&self) -> Result<serde_json::Value, mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn create(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<serde_json::Value, mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn update(
+        &self,
+        _: mado_types::ProfileId,
+        _: Option<String>,
+        _: Option<String>,
+        _: Option<String>,
+    ) -> Result<mado_types::state::ProfileInfo, mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn delete(&self, _: mado_types::ProfileId) -> Result<(), mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn open(&self, _: mado_types::ProfileId) -> Result<(), mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn link_rules(&self) -> Result<Vec<mado_types::command::LinkRule>, mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn set_link_rules(
+        &self,
+        _: Vec<mado_types::command::LinkRule>,
+    ) -> Result<(), mado_types::MadoError> {
+        Err(unavailable())
+    }
+    fn route(&self, _: &str) -> Option<mado_types::ProfileId> {
+        None
+    }
 }
 
 /// No updater: tests and builds without the plugin.

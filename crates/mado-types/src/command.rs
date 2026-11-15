@@ -146,6 +146,30 @@ pub struct LaunchRequest {
     pub new_window: bool,
     pub private: bool,
     pub source: LaunchSource,
+    /// Another Mado process asks the owner to act (spec 12 §1.2, §1.4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<OwnerAction>,
+}
+
+/// What one Mado process asks another profile's owner to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum OwnerAction {
+    /// Quit, as before the profile is deleted.
+    Quit,
+    /// The profile's name, colour or avatar changed: reload them.
+    ProfileChanged,
+}
+
+/// A link rule (spec 12 §1.3): URLs from other apps matching `pattern` open
+/// in `profileId`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LinkRule {
+    pub pattern: String,
+    pub profile_id: crate::ids::ProfileId,
 }
 
 /// Where `nav.open` opens (spec 05 §1).
@@ -577,6 +601,39 @@ pub enum Command {
     /// Returns `{ imported }`, the number of links.
     #[serde(rename = "bookmark.import", rename_all = "camelCase")]
     BookmarkImport { path: String },
+    // Profiles (spec 12 §1).
+    /// Returns `[{ id, name, color, avatar, current, running }]`.
+    #[serde(rename = "profile.list")]
+    ProfileList,
+    /// Returns `{ id }`; the new profile opens in its own process.
+    #[serde(rename = "profile.create", rename_all = "camelCase")]
+    ProfileCreate {
+        name: String,
+        color: String,
+        #[serde(default)]
+        avatar: String,
+    },
+    #[serde(rename = "profile.update", rename_all = "camelCase")]
+    ProfileUpdate {
+        id: crate::ids::ProfileId,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        color: Option<String>,
+        #[serde(default)]
+        avatar: Option<String>,
+    },
+    /// Quits the profile's process and deletes its folder, website data and
+    /// Keychain items. Not the profile asking.
+    #[serde(rename = "profile.delete", rename_all = "camelCase")]
+    ProfileDelete { id: crate::ids::ProfileId },
+    /// Starts the profile, or opens a window in its running process.
+    #[serde(rename = "profile.open", rename_all = "camelCase")]
+    ProfileOpen { id: crate::ids::ProfileId },
+    #[serde(rename = "profile.linkRules")]
+    ProfileLinkRules,
+    #[serde(rename = "profile.linkRules.set", rename_all = "camelCase")]
+    ProfileLinkRulesSet { rules: Vec<LinkRule> },
     // Navigation (spec 05).
     /// Opens what was typed or chosen. Returns `{ tabId }` when a page
     /// opens, `{ needsEngine: true }` for a search before an engine is
@@ -850,6 +907,13 @@ impl Command {
             | Self::PermissionReset { .. }
             | Self::PermissionUndoRevoke { .. } => CommandFamily::Permission,
             Self::AppOpenSystemSettings { .. } => CommandFamily::App,
+            Self::ProfileList
+            | Self::ProfileCreate { .. }
+            | Self::ProfileUpdate { .. }
+            | Self::ProfileDelete { .. }
+            | Self::ProfileOpen { .. }
+            | Self::ProfileLinkRules
+            | Self::ProfileLinkRulesSet { .. } => CommandFamily::Profile,
             Self::SiteStopCapture { .. } => CommandFamily::Site,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
@@ -961,6 +1025,13 @@ impl Command {
             Self::SiteStopCapture { .. } => "site.stopCapture",
             Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
             Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",
+            Self::ProfileList => "profile.list",
+            Self::ProfileCreate { .. } => "profile.create",
+            Self::ProfileUpdate { .. } => "profile.update",
+            Self::ProfileDelete { .. } => "profile.delete",
+            Self::ProfileOpen { .. } => "profile.open",
+            Self::ProfileLinkRules => "profile.linkRules",
+            Self::ProfileLinkRulesSet { .. } => "profile.linkRules.set",
             Self::NavSetSearchEngineActive { .. } => "nav.setSearchEngineActive",
             Self::HistoryQuery { .. } => "history.query",
             Self::HistoryDelete { .. } => "history.delete",
@@ -989,6 +1060,8 @@ impl Command {
                 | Self::NavSuggest { .. }
                 | Self::NavSearchEngines
                 | Self::PermissionList { .. }
+                | Self::ProfileList
+                | Self::ProfileLinkRules
                 | Self::BookmarkTree { .. }
                 | Self::BookmarkSearch { .. }
                 | Self::BookmarkRecent { .. }
@@ -1140,6 +1213,7 @@ mod tests {
             new_window: true,
             private: false,
             source: LaunchSource::Cli,
+            control: None,
         });
         let json = serde_json::to_value(&cmd).expect("serialises");
         assert_eq!(json["type"], cmd.name());
@@ -1164,6 +1238,7 @@ mod tests {
                 new_window: false,
                 private: false,
                 source: LaunchSource::Dock,
+                control: None,
             }),
             Command::SettingsGet { keys: None },
             Command::SettingsSet {

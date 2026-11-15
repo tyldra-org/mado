@@ -148,3 +148,56 @@ pub fn download(
 pub fn shutdown() {
     delegate::answer_all_pending();
 }
+
+/// Removes the persistent website data store of `profile` (spec 12 §1.4).
+/// No tab view of this process may use it. Main thread; `done` runs once.
+pub fn remove_data_store(profile: ProfileId, done: Callback<Result<(), EngineError>>) {
+    use objc2_foundation::{NSError, NSUUID};
+    use objc2_web_kit::WKWebsiteDataStore;
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        done(Err(EngineError::Failed("not on the main thread".into())));
+        return;
+    };
+    let uuid = NSUUID::from_bytes(*profile.as_uuid().as_bytes());
+    let done = std::cell::Cell::new(Some(done));
+    let block = block2::RcBlock::new(move |error: *mut NSError| {
+        // SAFETY: nil or a live error for the call.
+        let error = unsafe { error.as_ref() };
+        if let Some(done) = done.take() {
+            done(match error {
+                // WebKit reports a store that never existed as an error.
+                Some(e) if e.code() != 1 => {
+                    Err(EngineError::Failed(e.localizedDescription().to_string()))
+                }
+                _ => Ok(()),
+            });
+        }
+    });
+    // SAFETY: a completion block WebKit calls once on the main thread.
+    unsafe {
+        WKWebsiteDataStore::removeDataStoreForIdentifier_completionHandler(&uuid, &block, mtm)
+    };
+}
+
+/// Whether a persistent website data store exists for `profile`. Main
+/// thread; `done` runs once.
+pub fn has_data_store(profile: ProfileId, done: Callback<bool>) {
+    use objc2_foundation::{NSArray, NSUUID};
+    use objc2_web_kit::WKWebsiteDataStore;
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        done(false);
+        return;
+    };
+    let wanted = *profile.as_uuid().as_bytes();
+    let done = std::cell::Cell::new(Some(done));
+    let block = block2::RcBlock::new(move |ids: std::ptr::NonNull<NSArray<NSUUID>>| {
+        // SAFETY: WebKit hands a live array.
+        let ids = unsafe { ids.as_ref() };
+        let found = ids.iter().any(|u| u.as_bytes() == wanted);
+        if let Some(done) = done.take() {
+            done(found);
+        }
+    });
+    // SAFETY: as above.
+    unsafe { WKWebsiteDataStore::fetchAllDataStoreIdentifiers(&block, mtm) };
+}

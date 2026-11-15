@@ -164,6 +164,7 @@ fn a_forwarded_launch_opens_a_window_or_focuses_the_newest() {
         new_window,
         private: false,
         source: LaunchSource::Dock,
+        control: None,
     };
     ask(
         &core,
@@ -2499,4 +2500,112 @@ fn a_muted_site_stays_muted_in_new_tabs() {
     .expect("mute site");
     let tab = new_tab(&core, w, "https://www.noisy.example/video");
     eventually("muted", || state_of(&core).tabs[&tab].audio.muted);
+}
+
+/// Routes `*.acme.com` to one profile; everything else unavailable.
+struct RoutingProfiles(mado_types::ProfileId);
+
+impl crate::Profiles for RoutingProfiles {
+    fn list(&self) -> Result<Value, MadoError> {
+        Ok(json!([]))
+    }
+    fn create(&self, _: &str, _: &str, _: &str) -> Result<Value, MadoError> {
+        Ok(json!({}))
+    }
+    fn update(
+        &self,
+        id: mado_types::ProfileId,
+        name: Option<String>,
+        color: Option<String>,
+        _: Option<String>,
+    ) -> Result<mado_types::state::ProfileInfo, MadoError> {
+        Ok(mado_types::state::ProfileInfo {
+            id,
+            name: name.unwrap_or_default(),
+            color: color.unwrap_or_default(),
+            ..mado_types::state::ProfileInfo::default()
+        })
+    }
+    fn delete(&self, _: mado_types::ProfileId) -> Result<(), MadoError> {
+        Ok(())
+    }
+    fn open(&self, _: mado_types::ProfileId) -> Result<(), MadoError> {
+        Ok(())
+    }
+    fn link_rules(&self) -> Result<Vec<mado_types::command::LinkRule>, MadoError> {
+        Ok(Vec::new())
+    }
+    fn set_link_rules(&self, _: Vec<mado_types::command::LinkRule>) -> Result<(), MadoError> {
+        Ok(())
+    }
+    fn route(&self, url: &str) -> Option<mado_types::ProfileId> {
+        url.contains("acme.com").then_some(self.0)
+    }
+}
+
+/// 12 §1.3: links from other apps that a rule sends to another profile go
+/// there; the rest open here. Profile commands come only from Mado's UI.
+#[test]
+fn links_from_other_apps_follow_link_rules() {
+    use mado_types::command::{LaunchRequest, LaunchSource};
+    let work = mado_types::ProfileId::new();
+    crate::testing::PROFILES.with_borrow_mut(|p| *p = std::sync::Arc::new(RoutingProfiles(work)));
+    let core = TestCore::start();
+    crate::testing::PROFILES.with_borrow_mut(|p| *p = std::sync::Arc::new(crate::NoProfiles));
+    startup(&core);
+    ask(
+        &core,
+        Origin::System,
+        Command::LaunchForward(LaunchRequest {
+            urls: vec![
+                "https://docs.acme.com/x".into(),
+                "https://news.example/".into(),
+            ],
+            files: vec![],
+            new_window: false,
+            private: false,
+            source: LaunchSource::Link,
+            control: None,
+        }),
+    )
+    .expect("forward");
+    let handed = core
+        .sent
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .other_profiles
+        .clone();
+    assert_eq!(handed, vec![(work, "https://docs.acme.com/x".to_owned())]);
+    let urls: Vec<String> = state_of(&core)
+        .tabs
+        .values()
+        .map(|t| t.url.clone())
+        .collect();
+    assert!(urls.contains(&"https://news.example/".to_owned()));
+    assert!(!urls.iter().any(|u| u.contains("acme")));
+    let client = mado_types::ClientId::new();
+    let refused = ask(
+        &core,
+        Origin::Control { client },
+        Command::ProfileDelete { id: work },
+    )
+    .expect_err("control clients may not");
+    assert_eq!(refused.message_key, "error.profile.notAllowed");
+    let own = state_of(&core).profile.id;
+    let me =
+        ask(&core, Origin::Settings, Command::ProfileDelete { id: own }).expect_err("not itself");
+    assert_eq!(me.message_key, "error.profile.current");
+    // Renaming this profile updates the document.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ProfileUpdate {
+            id: own,
+            name: Some("Home".into()),
+            color: Some("green".into()),
+            avatar: None,
+        },
+    )
+    .expect("update");
+    eventually("renamed", || state_of(&core).profile.name == "Home");
 }
