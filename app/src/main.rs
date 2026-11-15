@@ -510,6 +510,9 @@ fn start_owner(
         captive_probe: captive_probe(),
         os: mado_core::OsPermissions::system(),
         hsts_extra: hsts_extra(),
+        home: std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default(),
         profiles: Arc::new(profile_service::AppProfiles {
             app_db: Arc::clone(&owner.app_db),
             paths: owner.paths.clone(),

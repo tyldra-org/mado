@@ -1,0 +1,40 @@
+{
+  "version": 9,
+  "engines": [
+    {
+      "id": "google@search.mozilla.orgdefault",
+      "_name": "Google",
+      "_urls": [
+        {
+          "template": "https://www.google.com/search",
+          "params": [
+            {
+              "name": "q",
+              "value": "{searchTerms}"
+            }
+          ]
+        },
+        {
+          "template": "https://www.google.com/complete/search?q={searchTerms}",
+          "type": "application/x-suggestions+json"
+        }
+      ]
+    },
+    {
+      "id": "marginalia",
+      "_name": "Marginalia",
+      "_metaData": {
+        "alias": "@m"
+      },
+      "_urls": [
+        {
+          "template": "https://search.marginalia.nu/search?query={searchTerms}",
+          "type": "text/html"
+        }
+      ]
+    }
+  ],
+  "metaData": {
+    "defaultEngineId": "marginalia"
+  }
+}

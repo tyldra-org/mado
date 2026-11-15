@@ -6,6 +6,7 @@ mod clear;
 mod dialogs;
 mod dl;
 mod errors;
+mod import;
 mod lock;
 mod marks;
 mod nav;
@@ -143,6 +144,18 @@ pub enum Internal {
     UpdateStatus(mado_types::state::UpdateState),
     /// Clearing on quit is done (spec 08 §7).
     ClearedOnExit,
+    /// Another browser's data was read for `import.run` (spec 12 §5).
+    BrowserImportRead {
+        browser: mado_import::Browser,
+        result: Box<Result<mado_import::Imported, MadoError>>,
+        reply: Reply,
+    },
+    /// The import's database work is done.
+    BrowserImportApplied {
+        browser: mado_import::Browser,
+        result: Result<import::Counts, String>,
+        reply: Reply,
+    },
     /// The `reader` probe answered for the page at `url` (spec 08 §10).
     ReaderProbed { tab: TabId, url: String, ok: bool },
     /// Readability's article for the page at `url`, or none.
@@ -219,6 +232,9 @@ pub struct CoreConfig {
     pub profiles: std::sync::Arc<dyn crate::ui::Profiles>,
     /// Hosts treated as HSTS-preloaded besides the bundled list; tests only.
     pub hsts_extra: std::collections::BTreeSet<String>,
+    /// The user's home folder, where other browsers keep their data (spec
+    /// 12 §5.1). Tests pass a fixture home.
+    pub home: PathBuf,
 }
 
 /// How the core asks macOS about its own permissions.
@@ -406,6 +422,8 @@ pub struct Core {
     drm_failed: BTreeSet<TabId>,
     /// `privacy.clearOnExit` is clearing before the app quits.
     clearing_on_exit: bool,
+    /// The user's home folder, for importing (spec 12 §5.1).
+    home: PathBuf,
     /// Hosts that always open in Reader (`reader_sites`).
     reader_always: BTreeSet<String>,
     /// The article page each tab's reader page came from.
@@ -604,6 +622,7 @@ impl Core {
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             clearing_on_exit: false,
+            home: config.home,
             reader_always,
             reader_sources: BTreeMap::new(),
             background_since: BTreeMap::new(),
@@ -1000,6 +1019,9 @@ impl Core {
             cmd @ (Command::TabReader { .. } | Command::SiteSetReaderAlways { .. }) => {
                 self.reader_command(cmd)
             }
+            cmd @ (Command::ImportDetect | Command::ImportRun { .. }) => {
+                self.import_command(origin, cmd, reply_to)
+            }
             cmd @ (Command::DataClear { .. } | Command::SiteClearData { .. }) => {
                 self.data_command(origin, cmd, rec, reply_to)
             }
@@ -1068,6 +1090,16 @@ impl Core {
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
             Internal::ClearedOnExit => self.cleared_on_exit(),
+            Internal::BrowserImportRead {
+                browser,
+                result,
+                reply,
+            } => self.import_read(browser, *result, reply),
+            Internal::BrowserImportApplied {
+                browser,
+                result,
+                reply,
+            } => self.import_applied(browser, result, reply, rec),
             Internal::ReaderProbed { tab, url, ok } => self.reader_probed(tab, &url, ok),
             Internal::ReaderExtracted { tab, url, article } => {
                 self.reader_extracted(tab, url, article);

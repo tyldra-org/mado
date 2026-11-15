@@ -1,0 +1,16 @@
+{
+  "roots": {
+    "bookmark_bar": {
+      "children": []
+    },
+    "other": {
+      "children": [
+        {
+          "type": "url",
+          "name": "Arc",
+          "url": "https://arc.net/"
+        }
+      ]
+    }
+  }
+}

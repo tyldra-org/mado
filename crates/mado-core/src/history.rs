@@ -193,6 +193,70 @@ pub fn record(
     Ok(Some(Recorded { url_id, visit_id }))
 }
 
+/// Another browser's visits (spec 12 §5.2): transition `imported`, the
+/// URL's counts, last visit and frecency recomputed. A visit already here
+/// with the same URL and time is skipped, so importing twice adds nothing.
+/// Returns how many visits were added.
+pub fn import_visits(
+    conn: &Connection,
+    visits: &[mado_import::Visit],
+    now: i64,
+) -> rusqlite::Result<usize> {
+    let mut added = 0;
+    let mut touched = std::collections::BTreeSet::new();
+    for v in visits {
+        if !recordable(&v.url) {
+            continue;
+        }
+        let url = key(&v.url);
+        let host = host_of(url);
+        let excluded = conn
+            .query_row(
+                "SELECT 1 FROM history_exclusions WHERE host = ?1",
+                [&host],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if excluded {
+            continue;
+        }
+        conn.execute(
+            "INSERT INTO urls (url, host, title, visit_count, last_visit_at) VALUES (?1, ?2, NULLIF(?3, ''), 0, ?4)
+             ON CONFLICT(url) DO UPDATE SET title = COALESCE(title, NULLIF(?3, ''))",
+            params![url, host, v.title.chars().take(1024).collect::<String>(), v.at],
+        )?;
+        let url_id: i64 =
+            conn.query_row("SELECT id FROM urls WHERE url = ?1", [url], |r| r.get(0))?;
+        let seen = conn
+            .query_row(
+                "SELECT 1 FROM visits WHERE url_id = ?1 AND visited_at = ?2",
+                params![url_id, v.at],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if seen {
+            continue;
+        }
+        conn.execute(
+            "INSERT INTO visits (url_id, visited_at, transition) VALUES (?1, ?2, ?3)",
+            params![url_id, v.at, Transition::Imported.as_str()],
+        )?;
+        added += 1;
+        touched.insert(url_id);
+    }
+    for id in touched {
+        conn.execute(
+            "UPDATE urls SET visit_count = (SELECT COUNT(*) FROM visits WHERE url_id = ?1),
+               last_visit_at = (SELECT MAX(visited_at) FROM visits WHERE url_id = ?1) WHERE id = ?1",
+            [id],
+        )?;
+        recompute(conn, id, now)?;
+    }
+    Ok(added)
+}
+
 pub fn set_title(conn: &Connection, url: &str, title: &str) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE urls SET title = ?2 WHERE url = ?1",

@@ -108,6 +108,7 @@ impl UiSink for TauriUi {
             "location" => "Privacy_LocationServices",
             "screen" => "Privacy_ScreenCapture",
             "speechRecognition" => "Privacy_SpeechRecognition",
+            "fullDiskAccess" => "Privacy_AllFiles",
             _ => "Privacy",
         };
         let url = format!("x-apple.systempreferences:com.apple.preference.security?{anchor}");

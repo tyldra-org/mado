@@ -753,6 +753,22 @@ pub enum Command {
     /// (spec 08 §6). Only from Mado's own windows.
     #[serde(rename = "window.unlock", rename_all = "camelCase")]
     WindowUnlock { window_id: WindowId },
+    /// Returns `[{ browser, profile, name }]`: installed browsers and their
+    /// profiles (spec 12 §5.1).
+    #[serde(rename = "import.detect")]
+    ImportDetect,
+    /// Imports `types` from one browser profile; answers
+    /// `{ bookmarks, visits, engines, tabs, extensions }` counts once done.
+    /// History is the last 90 days unless `allHistory`. Only from Mado's
+    /// own windows.
+    #[serde(rename = "import.run", rename_all = "camelCase")]
+    ImportRun {
+        browser: ImportBrowser,
+        profile: String,
+        types: Vec<ImportType>,
+        #[serde(default)]
+        all_history: bool,
+    },
     /// Clears browsing data of `types` from the last `range` (spec 08 §7).
     /// Only from Mado's own windows. Answers once everything is gone.
     #[serde(rename = "data.clear", rename_all = "camelCase")]
@@ -966,6 +982,7 @@ impl Command {
             | Self::SiteSetReaderAlways { .. } => CommandFamily::Site,
             Self::TabReader { .. } => CommandFamily::Tab,
             Self::DataClear { .. } => CommandFamily::Data,
+            Self::ImportDetect | Self::ImportRun { .. } => CommandFamily::Import,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
             | Self::HistoryExclude { .. }
@@ -1080,6 +1097,8 @@ impl Command {
             Self::SiteSetReaderAlways { .. } => "site.setReaderAlways",
             Self::TabReader { .. } => "tab.reader",
             Self::DataClear { .. } => "data.clear",
+            Self::ImportDetect => "import.detect",
+            Self::ImportRun { .. } => "import.run",
             Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
             Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",
             Self::ProfileList => "profile.list",
@@ -1126,6 +1145,7 @@ impl Command {
                 | Self::BookmarkSearch { .. }
                 | Self::BookmarkRecent { .. }
                 | Self::BookmarkOfUrl { .. }
+                | Self::ImportDetect
         )
     }
 }
@@ -1167,6 +1187,31 @@ pub enum OpenDisposition {
 pub struct TimeRange {
     pub from: i64,
     pub to: i64,
+}
+
+/// A browser to import from (spec 12 §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ImportBrowser {
+    Chrome,
+    Edge,
+    Brave,
+    Arc,
+    Firefox,
+    Safari,
+}
+
+/// What `import.run` brings over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ImportType {
+    Bookmarks,
+    History,
+    SearchEngines,
+    Tabs,
+    Extensions,
 }
 
 /// How far back `data.clear` reaches (spec 08 §7).

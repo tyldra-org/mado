@@ -1,0 +1,50 @@
+{
+  "windows": [
+    {
+      "id": 1,
+      "tabs": [
+        {
+          "id": 10,
+          "index": 0,
+          "pinned": true,
+          "pages": [["https://mail.example/", "Mail"]],
+          "selected": 0
+        },
+        {
+          "id": 11,
+          "index": 1,
+          "pages": [["https://a.example/", "A"], ["https://b.example/", "B — ünïcode"]],
+          "selected": 1,
+          "group": [1, 2]
+        },
+        {
+          "id": 12,
+          "index": 2,
+          "pages": [["https://closed.example/", "Closed"]],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "closed": true,
+      "tabs": [
+        {
+          "id": 20,
+          "index": 0,
+          "pages": [["https://gone.example/", "Gone"]]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "tabs": [
+        {
+          "id": 30,
+          "index": 0,
+          "pages": [["https://second.example/", "Second"]]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "default_search_provider_data": {
+    "template_url_data": {
+      "short_name": "Wikipedia",
+      "keyword": "w"
+    }
+  },
+  "extensions": {
+    "settings": {
+      "cjpalhdlnbpafiamejdnhcphjbkeiagm": {
+        "from_webstore": true,
+        "manifest": {
+          "name": "uBlock Origin"
+        }
+      },
+      "abcdefghijklmnopabcdefghijklmnop": {
+        "from_webstore": false,
+        "manifest": {
+          "name": "Unpacked"
+        }
+      }
+    }
+  }
+}

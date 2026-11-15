@@ -1,0 +1,20 @@
+{
+  "addons": [
+    {
+      "id": "uBlock0@raymondhill.net",
+      "type": "extension",
+      "location": "app-profile",
+      "defaultLocale": {
+        "name": "uBlock Origin"
+      }
+    },
+    {
+      "id": "default-theme@mozilla.org",
+      "type": "theme",
+      "location": "app-builtin",
+      "defaultLocale": {
+        "name": "System theme"
+      }
+    }
+  ]
+}

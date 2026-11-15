@@ -2941,6 +2941,172 @@ fn reader_mode_shows_the_article_and_remembers_sites() {
     );
 }
 
+/// 12 §7 check 6: each fixture browser imports its bookmarks, history,
+/// search engines and tabs; a second run adds nothing, and Arc's spaces
+/// become saved groups.
+#[test]
+fn importing_from_each_browser_is_complete_and_idempotent() {
+    use mado_types::command::{ImportBrowser, ImportType};
+    let all = vec![
+        ImportType::Bookmarks,
+        ImportType::History,
+        ImportType::SearchEngines,
+        ImportType::Tabs,
+        ImportType::Extensions,
+    ];
+    // (browser, fixture, bar + other links, visits in 90 days, engines, tabs)
+    let cases = [
+        // Google is built in already; only Wikipedia is new.
+        (ImportBrowser::Chrome, "chrome", "Default", 3, 3, 1, 3),
+        (
+            ImportBrowser::Firefox,
+            "firefox",
+            "Profiles/abcd1234.default-release",
+            3,
+            2,
+            1,
+            2,
+        ),
+        (ImportBrowser::Safari, "safari", "", 3, 2, 0, 0),
+        (ImportBrowser::Arc, "arc", "Default", 1, 0, 0, 1),
+    ];
+    for (browser, fixture, profile, links, visits, engines, tabs) in cases {
+        let home = mado_import::fixtures::home(fixture);
+        crate::testing::IMPORT_HOME.with_borrow_mut(|h| *h = home.path().to_owned());
+        let core = TestCore::start();
+        crate::testing::IMPORT_HOME.with_borrow_mut(|h| *h = "/nonexistent".into());
+        startup(&core);
+        // 2026-11-15: the fixtures' recent visits are within 90 days.
+        core.handle
+            .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+                1_794_700_800_000,
+            ))));
+        let found = ask(&core, Origin::Settings, Command::ImportDetect).expect("detect");
+        assert_eq!(found[0]["profile"], profile, "{fixture}: {found}");
+        let run = Command::ImportRun {
+            browser,
+            profile: profile.into(),
+            types: all.clone(),
+            all_history: false,
+        };
+        assert_eq!(
+            ask(
+                &core,
+                Origin::Control {
+                    client: ClientId::new()
+                },
+                run.clone()
+            )
+            .expect_err("only Mado's windows")
+            .code,
+            ErrorCode::Protected
+        );
+        let windows_before = state_of(&core).windows.len();
+        let counts = ask(&core, Origin::Settings, run.clone()).expect("import");
+        assert_eq!(counts["bookmarks"], links, "{fixture}: {counts}");
+        assert_eq!(counts["visits"], visits, "{fixture}: {counts}");
+        assert_eq!(counts["engines"], engines, "{fixture}: {counts}");
+        assert_eq!(counts["tabs"], tabs, "{fixture}: {counts}");
+        let st = state_of(&core);
+        assert!(st.windows.len() >= windows_before);
+        let again = ask(
+            &core,
+            Origin::Settings,
+            Command::ImportRun {
+                browser,
+                profile: profile.into(),
+                types: vec![
+                    ImportType::Bookmarks,
+                    ImportType::History,
+                    ImportType::SearchEngines,
+                ],
+                all_history: false,
+            },
+        )
+        .expect("again");
+        assert_eq!(
+            (
+                again["bookmarks"].as_u64(),
+                again["visits"].as_u64(),
+                again["engines"].as_u64()
+            ),
+            (Some(0), Some(0), Some(0)),
+            "{fixture}: idempotent"
+        );
+        let conn =
+            rusqlite::Connection::open(core.dir.path().join("profile.sqlite")).expect("open");
+        let n = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).expect(sql) };
+        assert_eq!(
+            n("SELECT COUNT(*) FROM bookmarks WHERE kind = 'link'"),
+            links
+        );
+        assert_eq!(
+            n("SELECT COUNT(*) FROM visits WHERE transition = 'imported'"),
+            visits
+        );
+        match browser {
+            ImportBrowser::Chrome => {
+                assert_eq!(n("SELECT COUNT(*) FROM imported_extensions"), 1);
+                let engines =
+                    ask(&core, Origin::Settings, Command::NavSearchEngines).expect("engines");
+                let wiki = engines
+                    .as_array()
+                    .and_then(|a| a.iter().find(|e| e["name"] == "Wikipedia"))
+                    .expect("Wikipedia");
+                assert_eq!(wiki["active"], true, "the default is on: {wiki}");
+                let pinned = st
+                    .tabs
+                    .values()
+                    .filter(|t| t.pinned && t.url == "https://mail.example/")
+                    .count();
+                assert_eq!(pinned, 1);
+                assert_eq!(st.groups.len(), 1, "the tab group came along");
+            }
+            ImportBrowser::Arc => {
+                let saved = st
+                    .saved_groups
+                    .iter()
+                    .find(|g| g.title == "Work")
+                    .expect("the space");
+                assert_eq!(saved.tab_count, 2);
+                assert!(!saved.open);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Safari without Full Disk Access gets an error the sheet explains.
+#[test]
+fn an_import_without_full_disk_access_says_so() {
+    use mado_types::command::{ImportBrowser, ImportType};
+    use std::os::unix::fs::PermissionsExt;
+    let home = mado_import::fixtures::home("safari");
+    std::fs::set_permissions(
+        home.path().join("Library/Safari/Bookmarks.plist"),
+        std::fs::Permissions::from_mode(0o000),
+    )
+    .expect("chmod");
+    crate::testing::IMPORT_HOME.with_borrow_mut(|h| *h = home.path().to_owned());
+    let core = TestCore::start();
+    crate::testing::IMPORT_HOME.with_borrow_mut(|h| *h = "/nonexistent".into());
+    let err = ask(
+        &core,
+        Origin::Settings,
+        Command::ImportRun {
+            browser: ImportBrowser::Safari,
+            profile: String::new(),
+            types: vec![ImportType::Bookmarks],
+            all_history: false,
+        },
+    )
+    .expect_err("refused");
+    assert_eq!(
+        (err.code, err.message_key.as_str()),
+        (ErrorCode::PermissionDenied, "error.import.fullDiskAccess")
+    );
+}
+
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and
 /// Global Privacy Control reach the engine at start and when they change.
 #[test]

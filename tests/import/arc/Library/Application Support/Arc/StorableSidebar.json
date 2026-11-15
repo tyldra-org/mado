@@ -1,0 +1,90 @@
+{
+  "sidebar": {
+    "containers": [
+      {
+        "global": {}
+      },
+      {
+        "topAppsContainerIDs": ["default", {}, "fav-root"],
+        "spaces": [
+          "space-1",
+          {
+            "id": "space-1",
+            "title": "Work",
+            "containerIDs": ["unpinned", "work-unpinned", "pinned", "work-pinned"]
+          },
+          "space-2",
+          {
+            "id": "space-2",
+            "title": "Empty",
+            "containerIDs": ["pinned", "empty-pinned"]
+          }
+        ],
+        "items": [
+          "fav-root",
+          {
+            "id": "fav-root",
+            "childrenIds": ["fav-1"]
+          },
+          "fav-1",
+          {
+            "id": "fav-1",
+            "title": "Calendar",
+            "data": {
+              "tab": {
+                "savedURL": "https://calendar.example/",
+                "savedTitle": "Calendar"
+              }
+            }
+          },
+          "work-pinned",
+          {
+            "id": "work-pinned",
+            "childrenIds": ["w-1", "w-folder"]
+          },
+          "w-1",
+          {
+            "id": "w-1",
+            "title": null,
+            "data": {
+              "tab": {
+                "savedURL": "https://jira.example/",
+                "savedTitle": "Jira"
+              }
+            }
+          },
+          "w-folder",
+          {
+            "id": "w-folder",
+            "title": "Docs",
+            "childrenIds": ["w-2"],
+            "data": {
+              "list": {}
+            }
+          },
+          "w-2",
+          {
+            "id": "w-2",
+            "title": "Spec",
+            "data": {
+              "tab": {
+                "savedURL": "https://spec.example/",
+                "savedTitle": "Spec page"
+              }
+            }
+          },
+          "empty-pinned",
+          {
+            "id": "empty-pinned",
+            "childrenIds": []
+          },
+          "work-unpinned",
+          {
+            "id": "work-unpinned",
+            "childrenIds": []
+          }
+        ]
+      }
+    ]
+  }
+}
