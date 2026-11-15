@@ -1,6 +1,9 @@
 // The WebKit adapter end to end (spec 02 §8, roadmap M2-T02): real tab
 // views load fixture pages through the fixture server's proxy.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Subprocess, spawn } from "bun";
 import { bin, Mado } from "./harness";
 
@@ -210,6 +213,26 @@ run("WebKit adapter", () => {
     const all = await search("");
     expect(all).toContain("http://pages.mado.test/history/login.html");
   }, 30_000);
+
+  test("a .dmg from a new site waits for Keep, then has the quarantine mark (08 §12 check 3)", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "mado-dl-"));
+    await mado.control.call("settings.set", { key: "downloads.folder", value: folder });
+    await open("http://dl.mado.test/__download?name=Setup.dmg&bytes=2048");
+    type D = { id: string; state: string; filename: string };
+    const downloads = async () =>
+      Object.values(
+        (await mado.control.call<{ state: { downloads: Record<string, D> } }>("state.get")).state
+          .downloads,
+      );
+    const held = await until("the held download", async () =>
+      (await downloads()).find((d) => d.filename === "Setup.dmg" && d.state === "dangerous"),
+    );
+    await mado.control.call("download.keep", { downloadId: held.id });
+    const file = join(folder, "Setup.dmg");
+    expect((await readFile(file)).length).toBe(2048);
+    const xattr = spawn(["/usr/bin/xattr", "-p", "com.apple.quarantine", file], { stdout: "pipe" });
+    expect(await new Response(xattr.stdout).text()).toStartWith("0081;");
+  });
 
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");

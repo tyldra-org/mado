@@ -2258,6 +2258,7 @@ name = "mado-fixture-server"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "futures-util",
  "hyper-util",
  "rcgen",
  "rustls",
@@ -2287,12 +2288,14 @@ version = "0.0.0"
 dependencies = [
  "block2",
  "getrandom 0.4.3",
+ "libc",
  "mado-types",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
  "security-framework",
  "serde",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

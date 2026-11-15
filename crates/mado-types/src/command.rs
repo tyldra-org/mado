@@ -395,6 +395,37 @@ pub enum Command {
         #[serde(default)]
         window_id: Option<WindowId>,
     },
+    // Downloads (spec 12 §4.3).
+    #[serde(rename = "download.pause", rename_all = "camelCase")]
+    DownloadPause { download_id: crate::ids::DownloadId },
+    #[serde(rename = "download.resume", rename_all = "camelCase")]
+    DownloadResume { download_id: crate::ids::DownloadId },
+    #[serde(rename = "download.cancel", rename_all = "camelCase")]
+    DownloadCancel { download_id: crate::ids::DownloadId },
+    /// Keeps a dangerous or insecure download.
+    #[serde(rename = "download.keep", rename_all = "camelCase")]
+    DownloadKeep { download_id: crate::ids::DownloadId },
+    /// Deletes a dangerous or insecure download.
+    #[serde(rename = "download.discard", rename_all = "camelCase")]
+    DownloadDiscard { download_id: crate::ids::DownloadId },
+    /// Opens with the default app; refused while dangerous.
+    #[serde(rename = "download.open", rename_all = "camelCase")]
+    DownloadOpen { download_id: crate::ids::DownloadId },
+    #[serde(rename = "download.reveal", rename_all = "camelCase")]
+    DownloadReveal { download_id: crate::ids::DownloadId },
+    #[serde(rename = "download.copyFile", rename_all = "camelCase")]
+    DownloadCopyFile { download_id: crate::ids::DownloadId },
+    #[serde(rename = "download.copyPath", rename_all = "camelCase")]
+    DownloadCopyPath { download_id: crate::ids::DownloadId },
+    /// From the list only; the file stays.
+    #[serde(rename = "download.remove", rename_all = "camelCase")]
+    DownloadRemove { download_id: crate::ids::DownloadId },
+    /// Opens the page the download came from.
+    #[serde(rename = "download.openSource", rename_all = "camelCase")]
+    DownloadOpenSource { download_id: crate::ids::DownloadId },
+    /// Removes every finished download from the list.
+    #[serde(rename = "download.clearList")]
+    DownloadClearList,
     // Bookmarks (spec 12 §3.2). Queries return nodes `{ id, parentId,
     // kind, title, url, index, root, createdAt, children? }`.
     #[serde(rename = "bookmark.tree", rename_all = "camelCase")]
@@ -589,6 +620,18 @@ impl Command {
             | Self::GroupUndoDelete { .. }
             | Self::GroupSetSaved { .. }
             | Self::GroupMoveToWindow { .. } => CommandFamily::Group,
+            Self::DownloadPause { .. }
+            | Self::DownloadResume { .. }
+            | Self::DownloadCancel { .. }
+            | Self::DownloadKeep { .. }
+            | Self::DownloadDiscard { .. }
+            | Self::DownloadOpen { .. }
+            | Self::DownloadReveal { .. }
+            | Self::DownloadCopyFile { .. }
+            | Self::DownloadCopyPath { .. }
+            | Self::DownloadRemove { .. }
+            | Self::DownloadOpenSource { .. }
+            | Self::DownloadClearList => CommandFamily::Download,
             Self::BookmarkTree { .. }
             | Self::BookmarkSearch { .. }
             | Self::BookmarkAdd { .. }
@@ -671,6 +714,18 @@ impl Command {
             Self::GroupUndoDelete { .. } => "group.undoDelete",
             Self::GroupSetSaved { .. } => "group.setSaved",
             Self::GroupMoveToWindow { .. } => "group.moveToWindow",
+            Self::DownloadPause { .. } => "download.pause",
+            Self::DownloadResume { .. } => "download.resume",
+            Self::DownloadCancel { .. } => "download.cancel",
+            Self::DownloadKeep { .. } => "download.keep",
+            Self::DownloadDiscard { .. } => "download.discard",
+            Self::DownloadOpen { .. } => "download.open",
+            Self::DownloadReveal { .. } => "download.reveal",
+            Self::DownloadCopyFile { .. } => "download.copyFile",
+            Self::DownloadCopyPath { .. } => "download.copyPath",
+            Self::DownloadRemove { .. } => "download.remove",
+            Self::DownloadOpenSource { .. } => "download.openSource",
+            Self::DownloadClearList => "download.clearList",
             Self::BookmarkTree { .. } => "bookmark.tree",
             Self::BookmarkSearch { .. } => "bookmark.search",
             Self::BookmarkAdd { .. } => "bookmark.add",

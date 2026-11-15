@@ -7,7 +7,6 @@ use std::ffi::CString;
 use std::ptr::NonNull;
 
 use block2::RcBlock;
-use mado_engine::event::EngineDownloadId;
 use mado_engine::tab::{Image, ImageFormat, MediaAction, SessionBlob};
 use mado_engine::{
     Callback, ClearDataRequest, EngineError, InjectAt, PageScriptSet, ProxyConfig, TabCommand,
@@ -16,7 +15,7 @@ use mado_engine::{
 use mado_types::{TabId, WindowId};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{MainThreadMarker, MainThreadOnly, Message, msg_send};
+use objc2::{MainThreadMarker, MainThreadOnly, msg_send};
 use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSImage, NSPrintInfo, NSView, NSWindowOrderingMode,
 };
@@ -25,9 +24,9 @@ use objc2_foundation::{
     NSObjectNSKeyValueObserverRegistration, NSSet, NSString, NSUUID, ns_string,
 };
 use objc2_web_kit::{
-    WKAudiovisualMediaTypes, WKContentWorld, WKDownload, WKSnapshotConfiguration,
-    WKUserContentController, WKUserScript, WKUserScriptInjectionTime, WKWebView,
-    WKWebViewConfiguration, WKWebsiteDataRecord, WKWebsiteDataStore,
+    WKAudiovisualMediaTypes, WKContentWorld, WKSnapshotConfiguration, WKUserContentController,
+    WKUserScript, WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration,
+    WKWebsiteDataRecord, WKWebsiteDataStore,
 };
 
 use crate::delegate::{self, INFO, Observer, TabDelegate, TabInfo};
@@ -72,8 +71,6 @@ impl std::fmt::Debug for Adapter {
 
 thread_local! {
     static HOST: std::cell::RefCell<Option<Box<dyn WindowHost>>> = const { std::cell::RefCell::new(None) };
-    static DOWNLOADS: std::cell::RefCell<BTreeMap<EngineDownloadId, Retained<WKDownload>>> =
-        const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 fn content_view(window: WindowId) -> Option<Retained<NSView>> {
@@ -459,13 +456,10 @@ pub fn drop_popup(tab: TabId) {
     crate::with(|a| a.destroy_tab(tab));
 }
 
-pub fn keep_download(id: EngineDownloadId, download: &WKDownload) {
-    DOWNLOADS.with_borrow_mut(|d| d.insert(id, download.retain()));
-}
-
-/// The WebKit download for `id`, for the download manager (M2-T12).
-pub fn download(id: EngineDownloadId) -> Option<Retained<WKDownload>> {
-    DOWNLOADS.with_borrow(|d| d.get(&id).cloned())
+/// Any live tab view, for resuming a download (WebKit resumes through a
+/// web view).
+pub fn any_view() -> Option<Retained<WKWebView>> {
+    crate::with(|a| a.tabs.values().next().map(|t| t.view.clone())).flatten()
 }
 
 fn failed(e: Option<&NSError>) -> EngineError {

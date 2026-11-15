@@ -7,6 +7,7 @@
 pub mod auth;
 pub mod default_browser;
 pub mod dock;
+pub mod files;
 pub mod keychain;
 pub mod login;
 pub mod notify;

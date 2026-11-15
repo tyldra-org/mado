@@ -11,8 +11,8 @@ use std::ptr::NonNull;
 use block2::RcBlock;
 use mado_engine::event::{
     AuthChallenge, AuthResponse, ClientCertRequest, ClientCertResponse, DialogKind, DialogResponse,
-    EngineDownload, EngineDownloadId, EngineSecurity, FileChooserRequest, FrameInfo, GoneReason,
-    JsDialog, PermissionDecision, PermissionRequest,
+    EngineDownloadId, EngineSecurity, FileChooserRequest, FrameInfo, GoneReason, JsDialog,
+    PermissionDecision, PermissionRequest,
 };
 use mado_engine::page::{DropCounts, Nonce};
 use mado_engine::tab::{Modifiers, PopupDecision, PopupFeatures, PopupRequest};
@@ -102,6 +102,7 @@ enum Pending {
     Auth(RcBlock<dyn Fn(NSURLSessionAuthChallengeDisposition, *mut NSURLCredential)>),
     Files(RcBlock<dyn Fn(*mut NSArray<NSURL>)>),
     Popup(TabId),
+    Download(EngineDownloadId, RcBlock<dyn Fn(*mut NSURL)>),
 }
 
 /// A decision the core made, delivered on the main thread.
@@ -113,6 +114,7 @@ pub enum Answer {
     ClientCert(ClientCertResponse),
     Files(Vec<PathBuf>),
     Popup(PopupDecision),
+    Download(mado_engine::event::DownloadDestination),
 }
 
 thread_local! {
@@ -126,7 +128,7 @@ pub fn set_context(events: EventSink, runner: MainRunner) {
     CONTEXT.with_borrow_mut(|c| *c = Some((events, runner)));
 }
 
-fn send(event: EngineEvent) {
+pub(crate) fn send(event: EngineEvent) {
     let sink = CONTEXT.with_borrow(|c| c.as_ref().map(|c| c.0.clone()));
     if let Some(sink) = sink {
         sink.send(event);
@@ -263,6 +265,9 @@ fn answer_pending(pending: Pending, answer: Answer) {
                 handler.call((Retained::as_ptr(&list).cast_mut(),));
             }
         }
+        (Pending::Download(id, handler), Answer::Download(d)) => {
+            crate::download::answer_destination(id, &handler, d);
+        }
         (Pending::Popup(tab), Answer::Popup(decision)) => {
             if decision == PopupDecision::Block {
                 crate::view::drop_popup(tab);
@@ -289,6 +294,10 @@ fn answer_default(pending: Pending) {
         }
         Pending::Auth(_) => answer_pending(pending, Answer::Auth(AuthResponse::Cancel)),
         Pending::Files(_) => answer_pending(pending, Answer::Files(Vec::new())),
+        Pending::Download(..) => answer_pending(
+            pending,
+            Answer::Download(mado_engine::event::DownloadDestination::Cancel),
+        ),
         Pending::Popup(_) => answer_pending(pending, Answer::Popup(PopupDecision::Block)),
     }
 }
@@ -995,24 +1004,21 @@ fn dialog(tab: TabId, kind: DialogKind, message: &NSString, frame: &WKFrameInfo,
 fn became_download(tab: TabId, download: &WKDownload) {
     static NEXT_DOWNLOAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = EngineDownloadId(NEXT_DOWNLOAD.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    // SAFETY: reading the download's request on the main thread.
-    let url = unsafe {
-        download
-            .originalRequest()
-            .map(|r| convert::url_string(r.URL()))
-            .unwrap_or_default()
-    };
-    crate::view::keep_download(id, download);
-    send(EngineEvent::DownloadStarted {
-        tab: Some(tab),
-        download: EngineDownload {
-            id,
-            url,
-            suggested_filename: String::new(),
-            mime: None,
-            total: None,
-        },
-    });
+    if let Some(mtm) = MainThreadMarker::new() {
+        crate::download::track(mtm, id, Some(tab), download);
+    }
+}
+
+/// Parks a download's destination question for the core.
+pub(crate) fn park_download(
+    id: EngineDownloadId,
+    handler: RcBlock<dyn Fn(*mut NSURL)>,
+) -> Option<Reply<mado_engine::event::DownloadDestination>> {
+    park(
+        Pending::Download(id, handler),
+        mado_engine::event::DownloadDestination::Cancel,
+        Answer::Download,
+    )
 }
 
 /// The key paths every tab view is observed for (spec 02 §4.3).

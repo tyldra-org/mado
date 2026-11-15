@@ -138,6 +138,8 @@ pub trait Engine {
     fn clear_data(&mut self, req: ClearDataRequest, done: Callback<Result<(), EngineError>>);
     /// Takes effect for new tab views.
     fn set_proxy(&mut self, proxy: ProxyConfig);
+    /// Pauses, cancels or resumes a download (spec 12 §4.2).
+    fn download(&mut self, id: event::EngineDownloadId, cmd: event::DownloadCommand);
 }
 
 /// One call on the engine, queued from the core for the main thread.
@@ -149,6 +151,7 @@ pub enum EngineOp {
     SetPageScripts(PageScriptSet),
     ClearData(ClearDataRequest, Callback<Result<(), EngineError>>),
     SetProxy(ProxyConfig),
+    Download(event::EngineDownloadId, event::DownloadCommand),
 }
 
 impl std::fmt::Debug for EngineOp {
@@ -161,6 +164,15 @@ impl std::fmt::Debug for EngineOp {
             Self::SetPageScripts(s) => write!(f, "SetPageScripts({} scripts)", s.scripts.len()),
             Self::ClearData(req, _) => write!(f, "ClearData({:?})", req.kinds),
             Self::SetProxy(_) => f.write_str("SetProxy"),
+            Self::Download(id, cmd) => write!(
+                f,
+                "Download({id:?}, {})",
+                match cmd {
+                    event::DownloadCommand::Pause => "pause",
+                    event::DownloadCommand::Cancel => "cancel",
+                    event::DownloadCommand::Resume { .. } => "resume",
+                }
+            ),
         }
     }
 }
@@ -192,6 +204,7 @@ impl EngineOp {
             Self::SetPageScripts(scripts) => engine.set_page_scripts(scripts),
             Self::ClearData(req, done) => engine.clear_data(req, done),
             Self::SetProxy(proxy) => engine.set_proxy(proxy),
+            Self::Download(id, cmd) => engine.download(id, cmd),
         }
     }
 }

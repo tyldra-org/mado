@@ -882,3 +882,183 @@ fn reading_the_bookmark_tree_leaves_bookmarks_rev_alone() {
     .expect("bookmarks.add");
     eventually("the rev to go up", || rev(&core) == 1);
 }
+
+fn downloads_into(core: &TestCore) -> std::path::PathBuf {
+    let dir = core.dir.path().join("Downloads");
+    std::fs::create_dir_all(&dir).expect("dir");
+    ask(
+        core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "downloads.folder".into(),
+            value: json!(dir.to_string_lossy()),
+            token: None,
+        },
+    )
+    .expect("folder");
+    dir
+}
+
+fn download_state(core: &TestCore) -> mado_types::state::DownloadState {
+    state_of(core)
+        .downloads
+        .values()
+        .next()
+        .cloned()
+        .expect("a download")
+}
+
+/// 12 §4.2 and 08 §12 check 3: a download goes to a temporary name,
+/// completes under its own name with the quarantine mark.
+#[test]
+fn a_download_completes_renamed_and_marked() {
+    use mado_types::state::DownloadStatus;
+    let core = TestCore::start();
+    let dir = downloads_into(&core);
+    std::fs::write(dir.join("report.pdf"), b"older").expect("clash");
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://files.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].life == mado_types::state::TabLife::Live
+    });
+    let id = core.page.download(
+        tab,
+        7,
+        "https://files.example/report.pdf",
+        "report.pdf",
+        Some(5),
+    );
+    let temp = dir.join("report (1).pdf.madodownload");
+    eventually("the destination", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .downloads
+            .get(&id)
+            .and_then(|d| d.destination.clone())
+            == Some(mado_engine::event::DownloadDestination::Path(temp.clone()))
+    });
+    std::fs::write(&temp, b"hello").expect("bytes");
+    core.page.download_progress(id, 5);
+    core.page.download_done(id);
+    eventually("complete", || {
+        download_state(&core).state == DownloadStatus::Complete
+    });
+    let s = download_state(&core);
+    assert_eq!(s.filename, "report (1).pdf");
+    let done = dir.join("report (1).pdf");
+    assert!(done.exists() && !temp.exists());
+    let out = std::process::Command::new("/usr/bin/xattr")
+        .arg("-p")
+        .arg("com.apple.quarantine")
+        .arg(&done)
+        .output()
+        .expect("xattr");
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("0081;"));
+}
+
+/// 08 §4: a dangerous type from a site never visited before waits for
+/// Keep; an insecure download is blocked until kept.
+#[test]
+fn dangerous_and_insecure_downloads_wait_for_keep() {
+    use mado_types::state::DownloadStatus;
+    let core = TestCore::start();
+    let dir = downloads_into(&core);
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://new.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].life == mado_types::state::TabLife::Live
+    });
+    let id = core
+        .page
+        .download(tab, 8, "https://new.example/Setup.dmg", "Setup.dmg", None);
+    let temp = dir.join("Setup.dmg.madodownload");
+    eventually("the destination", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .downloads
+            .get(&id)
+            .and_then(|d| d.destination.clone())
+            .is_some()
+    });
+    std::fs::write(&temp, b"app").expect("bytes");
+    core.page.download_done(id);
+    eventually("held", || {
+        download_state(&core).state == DownloadStatus::Dangerous
+    });
+    let did = download_state(&core).id;
+    assert!(
+        ask(
+            &core,
+            Origin::System,
+            Command::DownloadOpen { download_id: did }
+        )
+        .is_err(),
+        "not openable while dangerous"
+    );
+    ask(
+        &core,
+        Origin::System,
+        Command::DownloadKeep { download_id: did },
+    )
+    .expect("keep");
+    assert_eq!(download_state(&core).state, DownloadStatus::Complete);
+    assert!(dir.join("Setup.dmg").exists());
+}
+
+/// 12 §4.2 step 7: pause keeps resume data; resume continues under the
+/// same download; quitting pauses running downloads first.
+#[test]
+fn pause_resume_and_quit_keep_resume_data() {
+    use mado_types::state::DownloadStatus;
+    let core = TestCore::start();
+    downloads_into(&core);
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://big.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].life == mado_types::state::TabLife::Live
+    });
+    let id = core
+        .page
+        .download(tab, 9, "https://big.example/big.iso", "big.iso", Some(1000));
+    eventually("started", || state_of(&core).downloads.len() == 1);
+    core.page.download_progress(id, 400);
+    let did = download_state(&core).id;
+    ask(
+        &core,
+        Origin::System,
+        Command::DownloadPause { download_id: did },
+    )
+    .expect("pause");
+    eventually("paused", || {
+        download_state(&core).state == DownloadStatus::Paused
+    });
+    ask(
+        &core,
+        Origin::System,
+        Command::DownloadResume { download_id: did },
+    )
+    .expect("resume");
+    assert_eq!(download_state(&core).state, DownloadStatus::InProgress);
+    // Quit: the running download is paused with resume data first.
+    core.handle
+        .send(Input::Internal(Internal::QuitRequested { shortcut: false }));
+    eventually("stored for the next launch", || {
+        let s = download_state(&core);
+        s.state == DownloadStatus::Failed && s.error.as_deref() == Some("interrupted")
+    });
+    let dir = core.stop();
+    let core = TestCore::start_in(dir, true);
+    let s = download_state(&core);
+    assert_eq!(s.state, DownloadStatus::Failed);
+    ask(
+        &core,
+        Origin::System,
+        Command::DownloadResume { download_id: s.id },
+    )
+    .expect("resumes after relaunch");
+}

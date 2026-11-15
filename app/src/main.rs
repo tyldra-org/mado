@@ -598,7 +598,8 @@ fn run_app(
         })
         .setup(move |app| {
             // SIGTERM (kill, logout tools) quits like ⌘Q, so the clean-quit
-            // marker and the database checkpoint still happen.
+            // marker and the database checkpoint still happen. The core first
+            // pauses running downloads, without asking about typed text.
             let handle = app.handle().clone();
             let flag = Arc::clone(&term_flag);
             tauri::async_runtime::spawn(async move {
@@ -606,8 +607,14 @@ fn run_app(
                     tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
                     && term.recv().await.is_some()
                 {
-                    flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                    handle.exit(0);
+                    let core = handle
+                        .try_state::<Shared>()
+                        .and_then(|s| s.core.get().cloned());
+                    let asked = core.is_some_and(|c| c.send(Input::Internal(Internal::Terminate)));
+                    if !asked {
+                        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                        handle.exit(0);
+                    }
                 }
             });
             let guard = setup_owner.lock().map_err(|_| "owner lock poisoned")?;
