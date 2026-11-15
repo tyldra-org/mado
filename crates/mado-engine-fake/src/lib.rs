@@ -698,6 +698,7 @@ impl Engine for FakeEngine {
             | TabCommand::SavePdf { .. }
             | TabCommand::SaveArchive { .. }
             | TabCommand::ShowDevTools
+            | TabCommand::ShowCertificate
             | TabCommand::ShowSource
             | TabCommand::SetReader(_)
             | TabCommand::SetImagesEnabled(_)

@@ -26,6 +26,7 @@ async function until<T>(
 type S = {
   state: {
     profile: { isPrivate: boolean };
+    settings: { values: Record<string, unknown> };
     windows: Record<string, unknown>;
     tabs: Record<string, { url: string }>;
   };
@@ -52,6 +53,8 @@ run("private windows", () => {
 
   test("a private window runs in a temporary profile that is deleted on close (12 §1.6)", async () => {
     const own = (await mado.control.call<{ id: string }[]>("profile.list"))[0]?.id ?? "";
+    // The private profile starts with this profile's settings.
+    await mado.control.call("settings.set", { key: "privacy.lockPrivateWindows", value: true });
     const entries = () => readdir(join(mado.dir, "Control")).catch(() => [] as string[]);
     await mado.control.call("window.new", {
       private: true,
@@ -67,6 +70,7 @@ run("private windows", () => {
     const control = await mado.connect(id);
     const state = () => control.call<S>("state.get").then((s) => s.state);
     expect((await state()).profile.isPrivate).toBe(true);
+    expect((await state()).settings.values["privacy.lockPrivateWindows"]).toBe(true);
     await until("the private tab", async () =>
       Object.values((await state()).tabs).some((t) =>
         t.url.startsWith("https://private.mado.test/"),

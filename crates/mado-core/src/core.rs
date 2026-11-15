@@ -6,6 +6,7 @@ mod clear;
 mod dialogs;
 mod dl;
 mod errors;
+mod lock;
 mod marks;
 mod nav;
 mod pages;
@@ -141,6 +142,12 @@ pub enum Internal {
     UpdateStatus(mado_types::state::UpdateState),
     /// Clearing on quit is done (spec 08 §7).
     ClearedOnExit,
+    /// The answer to `window.unlock`'s authentication (spec 08 §6).
+    UnlockAnswered {
+        window: WindowId,
+        ok: bool,
+        reply: Reply,
+    },
     /// Stops the loop after the queued writes (spec 01 §1.6).
     Shutdown { done: oneshot::Sender<()> },
     /// Marks a tab as holding typed text, as the `forms` page script will
@@ -168,6 +175,8 @@ pub enum TestHook {
     FakeAuthSuccess,
     /// Presses a button of the error page on `tab`, as a click would.
     ErrorAction { tab: TabId, action: String },
+    /// Runs the private window lock check now, as its timer would.
+    PrivateLockCheck,
 }
 
 /// How long a notice with Undo stays (spec 06 §3).
@@ -388,6 +397,8 @@ pub struct Core {
     drm_failed: BTreeSet<TabId>,
     /// `privacy.clearOnExit` is clearing before the app quits.
     clearing_on_exit: bool,
+    /// Private windows in the background, since when (spec 08 §6).
+    background_since: BTreeMap<WindowId, i64>,
     /// The bundled page scripts; `gpc` joins them while `privacy.gpc` is on.
     page_scripts: mado_engine::PageScriptSet,
     ui: Box<dyn UiSink>,
@@ -575,6 +586,7 @@ impl Core {
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             clearing_on_exit: false,
+            background_since: BTreeMap::new(),
             page_scripts,
             ui: config.ui,
             updates: config.updates,
@@ -954,6 +966,17 @@ impl Core {
             | Command::PermissionReset { .. }
             | Command::SiteStopCapture { .. }) => self.prompt_command(origin, cmd, rec, reply_to),
             Command::PermissionUndoRevoke { token } => self.undo_revoke(token),
+            Command::SiteShowCertificate { tab_id } => {
+                if !self.model.tabs.contains_key(&tab_id) {
+                    return Err(MadoError::new(ErrorCode::NotFound, "error.tab.notFound"));
+                }
+                self.outbox.push(EngineOp::Apply(
+                    tab_id,
+                    mado_engine::TabCommand::ShowCertificate,
+                ));
+                Ok(Value::Null)
+            }
+            Command::WindowUnlock { window_id } => self.unlock_command(origin, window_id, reply_to),
             cmd @ (Command::DataClear { .. } | Command::SiteClearData { .. }) => {
                 self.data_command(origin, cmd, rec, reply_to)
             }
@@ -1022,6 +1045,9 @@ impl Core {
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
             Internal::ClearedOnExit => self.cleared_on_exit(),
+            Internal::UnlockAnswered { window, ok, reply } => {
+                self.unlock_answered(window, ok, reply);
+            }
             Internal::Terminate => self.terminate(),
             #[cfg(test)]
             Internal::TestUnsavedInput { tab } => {
@@ -1146,6 +1172,7 @@ impl Core {
                 TestHook::FakeClock(now) => self.hooks.clock = Some(now),
                 TestHook::FakeAuthSuccess => self.hooks.auth_success = true,
                 TestHook::ErrorAction { tab, action } => self.press_error_action(tab, &action),
+                TestHook::PrivateLockCheck => self.private_lock_check(),
             },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {
@@ -1329,6 +1356,7 @@ impl Core {
                 }
             }
             Timer::ClearOnExitLimit => self.cleared_on_exit(),
+            Timer::PrivateLock(_) => self.private_lock_check(),
             Timer::ForgetDeletedBookmarks(token) => {
                 self.deleted_bookmarks.remove(&token);
             }

@@ -248,6 +248,9 @@ pub enum TabCommand {
     },
     ShowDevTools,
     ShowSource,
+    /// The certificate of the page, or of the load that failed on it
+    /// (spec 08 §3).
+    ShowCertificate,
     SetReader(bool),
     /// Stored; applies from the next navigation (spec 02 §4.4).
     SetJavaScriptEnabled(bool),
@@ -292,6 +295,7 @@ impl TabCommand {
             Self::PostToPage { .. } => "postToPage",
             Self::SaveSession { .. } => "saveSession",
             Self::ShowDevTools => "showDevTools",
+            Self::ShowCertificate => "showCertificate",
             Self::ShowSource => "showSource",
             Self::SetReader(_) => "setReader",
             Self::SetJavaScriptEnabled(_) => "setJavaScriptEnabled",

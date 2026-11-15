@@ -329,6 +329,7 @@ impl Adapter {
 
     pub fn destroy_tab(&mut self, tab: TabId) {
         crate::menu::forget(tab);
+        crate::certificate::forget(tab);
         let Some(t) = self.tabs.remove(&tab) else {
             return;
         };
@@ -858,6 +859,7 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 );
             }
             TabCommand::ShowDevTools => show_inspector(&view)?,
+            TabCommand::ShowCertificate => crate::certificate::show(tab, &view)?,
             TabCommand::StopCapture(kind) => {
                 let none = objc2_web_kit::WKMediaCaptureState::None;
                 match kind {

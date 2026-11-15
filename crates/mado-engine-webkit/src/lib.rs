@@ -11,9 +11,11 @@
 
 #![cfg(target_os = "macos")]
 
+mod certificate;
 mod convert;
 mod delegate;
 mod download;
+mod fullscreen;
 mod menu;
 mod scheme;
 mod timeouts;
@@ -133,6 +135,24 @@ pub fn clear_data(req: ClearDataRequest, done: Callback<Result<(), EngineError>>
 
 pub fn set_proxy(proxy: ProxyConfig) {
     with(|a| a.set_proxy(&proxy));
+}
+
+/// Whether the tab's window shows a sheet (the certificate viewer), and
+/// closes it, for end-to-end tests.
+pub fn take_sheet(tab: TabId) -> bool {
+    let Some(view) = with(|a| a.view(tab)).flatten() else {
+        return false;
+    };
+    let Some(window) = view.window() else {
+        return false;
+    };
+    match window.attachedSheet() {
+        Some(sheet) => {
+            window.endSheet(&sheet);
+            true
+        }
+        None => false,
+    }
 }
 
 /// Applies the profile's safety and privacy settings (spec 08 §1, §8).

@@ -38,6 +38,13 @@ pub fn set_labels(labels: Labels) {
     LABELS.with_borrow_mut(|l| *l = Some(labels));
 }
 
+/// The `en.json` text for `key`.
+pub(crate) fn label(key: &str) -> String {
+    LABELS
+        .with_borrow(|l| l.as_ref().map(|f| f(key)))
+        .unwrap_or_else(|| key.to_owned())
+}
+
 pub fn remember_target(tab: TabId, target: &ContextTarget) {
     TARGETS.with_borrow_mut(|t| t.insert(tab, target.clone()));
 }

@@ -211,6 +211,8 @@ pub struct WindowState {
     /// Status bubble text.
     pub hover_link: Option<String>,
     pub is_private: bool,
+    /// A private window hidden behind "Unlock with Touch ID" (spec 08 §6).
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]

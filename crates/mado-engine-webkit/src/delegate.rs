@@ -1057,7 +1057,8 @@ fn current_nav(tab: TabId) -> u64 {
     INFO.with_borrow(|i| i.get(&tab).map_or(0, |t| t.nav))
 }
 
-fn failed(tab: TabId, view: &WKWebView, error: &NSError) {
+fn failed(tab: TabId, view: &WKWebView, error_ref: &NSError) {
+    let error = error_ref;
     // SAFETY: URL of a live view on the main thread.
     let mut url = convert::url_string(unsafe { view.URL() });
     let info = error.userInfo();
@@ -1073,11 +1074,15 @@ fn failed(tab: TabId, view: &WKWebView, error: &NSError) {
         // Certificate errors carry the URL only as an NSURL.
         url = convert::url_string(Some(u));
     }
+    let error = NetError::from_nsurl_code(convert::error_code(error_ref));
+    if error == NetError::Certificate {
+        crate::certificate::remember_failure(tab, error_ref);
+    }
     send(EngineEvent::NavigationFailed {
         tab,
         nav_id: current_nav(tab),
         url,
-        error: NetError::from_nsurl_code(convert::error_code(error)),
+        error,
     });
 }
 
@@ -1208,11 +1213,14 @@ fn observed(tab: TabId, key: &str, view: &WKWebView) {
                 microphone: view.microphoneCaptureState() != WKMediaCaptureState::None,
                 screen: false,
             },
-            "fullscreenState" => EngineEvent::FullscreenChanged {
-                tab,
-                fullscreen: view.fullscreenState()
-                    != objc2_web_kit::WKFullscreenState::NotInFullscreen,
-            },
+            "fullscreenState" => {
+                crate::fullscreen::changed(view);
+                EngineEvent::FullscreenChanged {
+                    tab,
+                    fullscreen: view.fullscreenState()
+                        != objc2_web_kit::WKFullscreenState::NotInFullscreen,
+                }
+            }
             AUDIO_KEY => {
                 let playing: bool = msg_send![view, _isPlayingAudio];
                 EngineEvent::AudioChanged { tab, playing }

@@ -749,6 +749,10 @@ pub enum Command {
     },
     #[serde(rename = "site.stopCapture", rename_all = "camelCase")]
     SiteStopCapture { tab_id: TabId, kind: CaptureKind },
+    /// Unlocks a locked private window after Touch ID or the password
+    /// (spec 08 §6). Only from Mado's own windows.
+    #[serde(rename = "window.unlock", rename_all = "camelCase")]
+    WindowUnlock { window_id: WindowId },
     /// Clears browsing data of `types` from the last `range` (spec 08 §7).
     /// Only from Mado's own windows. Answers once everything is gone.
     #[serde(rename = "data.clear", rename_all = "camelCase")]
@@ -756,6 +760,9 @@ pub enum Command {
         range: ClearRange,
         types: Vec<DataType>,
     },
+    /// Shows the certificate of the tab's page (spec 08 §3).
+    #[serde(rename = "site.showCertificate", rename_all = "camelCase")]
+    SiteShowCertificate { tab_id: TabId },
     /// Removes the cookies and storage of `origin`'s site (spec 08 §7).
     #[serde(rename = "site.clearData", rename_all = "camelCase")]
     SiteClearData { origin: String },
@@ -852,6 +859,7 @@ impl Command {
             | Self::SettingsImport { .. } => CommandFamily::Settings,
             Self::WindowReportContentRect { .. }
             | Self::WindowNew { .. }
+            | Self::WindowUnlock { .. }
             | Self::WindowClose { .. }
             | Self::WindowSetLayout { .. } => CommandFamily::Window,
             Self::TabNew { .. }
@@ -946,7 +954,9 @@ impl Command {
             | Self::ProfileExport { .. }
             | Self::ProfileImport { .. }
             | Self::ProfileLinkRulesSet { .. } => CommandFamily::Profile,
-            Self::SiteStopCapture { .. } | Self::SiteClearData { .. } => CommandFamily::Site,
+            Self::SiteStopCapture { .. }
+            | Self::SiteClearData { .. }
+            | Self::SiteShowCertificate { .. } => CommandFamily::Site,
             Self::DataClear { .. } => CommandFamily::Data,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
@@ -974,6 +984,7 @@ impl Command {
             Self::SettingsImport { .. } => "settings.import",
             Self::WindowReportContentRect { .. } => "window.reportContentRect",
             Self::WindowNew { .. } => "window.new",
+            Self::WindowUnlock { .. } => "window.unlock",
             Self::WindowClose { .. } => "window.close",
             Self::WindowSetLayout { .. } => "window.setLayout",
             Self::TabNew { .. } => "tab.new",
@@ -1057,6 +1068,7 @@ impl Command {
             Self::PermissionReset { .. } => "permission.reset",
             Self::SiteStopCapture { .. } => "site.stopCapture",
             Self::SiteClearData { .. } => "site.clearData",
+            Self::SiteShowCertificate { .. } => "site.showCertificate",
             Self::DataClear { .. } => "data.clear",
             Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
             Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",

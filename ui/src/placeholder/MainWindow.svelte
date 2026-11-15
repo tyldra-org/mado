@@ -24,6 +24,17 @@
   const settings = $derived(store.state?.settings.values ?? {});
   const theme = $derived(String(settings["appearance.theme"] ?? "system"));
   const layout = $derived(store.state?.windows[windowId]?.layout ?? "vertical");
+  const locked = $derived(store.state?.windows[windowId]?.locked ?? false);
+  let unlockFailed = $state(false);
+
+  async function unlock() {
+    unlockFailed = false;
+    try {
+      await store.client.call({ type: "window.unlock", windowId });
+    } catch {
+      unlockFailed = true;
+    }
+  }
 
   let page: HTMLElement | undefined = $state();
 
@@ -73,7 +84,16 @@
     <AppLinkPrompt {store} {windowId} />
     <DialogSheet {store} {windowId} />
   </header>
-  <main bind:this={page} aria-label={t("window.pageArea")}></main>
+  <main bind:this={page} aria-label={t("window.pageArea")}>
+    {#if locked}
+      <!-- The page is hidden while the private window is locked (08 §6). -->
+      <div class="locked" role="dialog" aria-labelledby="lock-title">
+        <h1 id="lock-title">{t("lock.title")}</h1>
+        <button type="button" onclick={unlock}>{t("lock.unlock")}</button>
+        {#if unlockFailed}<p role="alert">{t("lock.failed")}</p>{/if}
+      </div>
+    {/if}
+  </main>
   <Notices {store} />
 </div>
 
@@ -89,6 +109,13 @@
   }
   main {
     flex: 1;
+  }
+  .locked {
+    display: grid;
+    place-content: center;
+    gap: 1em;
+    height: 100%;
+    text-align: center;
   }
   .window[data-theme="dark"] {
     color-scheme: dark;
