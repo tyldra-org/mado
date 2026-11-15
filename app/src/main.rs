@@ -468,6 +468,7 @@ fn start_owner(
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
         os: mado_core::OsPermissions::system(),
+        hsts_extra: hsts_extra(),
         profiles: Arc::new(profile_service::AppProfiles {
             app_db: Arc::clone(&owner.app_db),
             paths: owner.paths.clone(),
@@ -609,6 +610,13 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
                 let hook = match method.as_str() {
                     "test.dropNextPatch" => Some(TestHook::DropNextPatch),
                     "test.fakeAuthSuccess" => Some(TestHook::FakeAuthSuccess),
+                    "test.errorAction" => serde_json::from_value(params["tabId"].clone())
+                        .ok()
+                        .zip(params["action"].as_str())
+                        .map(|(tab, action)| TestHook::ErrorAction {
+                            tab,
+                            action: action.to_owned(),
+                        }),
                     "test.fakeClock" => params
                         .get("now")
                         .and_then(serde_json::Value::as_i64)
@@ -918,6 +926,20 @@ fn run_app(
         _ => {}
     });
     Ok(ExitCode::SUCCESS)
+}
+
+/// Hosts treated as HSTS-preloaded for end-to-end tests
+/// (`MADO_HSTS_HOSTS`, comma-separated); none in release builds.
+fn hsts_extra() -> std::collections::BTreeSet<String> {
+    #[cfg(feature = "test-hooks")]
+    if let Ok(hosts) = std::env::var("MADO_HSTS_HOSTS") {
+        return hosts
+            .split(',')
+            .map(|h| h.trim().to_ascii_lowercase())
+            .filter(|h| !h.is_empty())
+            .collect();
+    }
+    std::collections::BTreeSet::new()
 }
 
 /// Links that arrived before the core started.

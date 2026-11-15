@@ -94,6 +94,8 @@ export class Mado {
       MADO_TEST_HEADLESS: "1",
       // Tests never reach Apple's captive portal probe.
       MADO_CAPTIVE_PROBE: "",
+      // A fixture host treated as HSTS-preloaded (spec 08 §12 check 2).
+      MADO_HSTS_HOSTS: "hsts.mado.test",
     } as Record<string, string>;
   }
 

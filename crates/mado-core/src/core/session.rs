@@ -594,6 +594,7 @@ impl Core {
     }
 
     pub(super) fn navigate(&mut self, tab: TabId, url: String) -> Result<(), MadoError> {
+        self.leave_error_page(tab);
         let t = self
             .model
             .tabs
@@ -1461,7 +1462,14 @@ impl Core {
             }
             EngineEvent::SecurityChanged { tab, state } => {
                 if let Some(t) = self.model.tabs.get_mut(&tab) {
-                    t.security.level = security_of(&t.url, Some(&state));
+                    // A site the user proceeded to despite its certificate
+                    // stays marked (spec 08 §3).
+                    let proceeded = self.proceeded.contains(&host_of(&t.url));
+                    t.security.level = if proceeded && t.url.starts_with("https:") {
+                        SecurityLevel::Dangerous
+                    } else {
+                        security_of(&t.url, Some(&state))
+                    };
                 }
             }
             EngineEvent::AudioChanged { tab, playing } => {

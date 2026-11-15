@@ -118,6 +118,8 @@ pub enum Answer {
 }
 
 thread_local! {
+    /// Hosts whose certificate the user accepted for this session (08 §3).
+    pub static TRUSTED: RefCell<std::collections::BTreeSet<String>> = const { RefCell::new(std::collections::BTreeSet::new()) };
     static CONTEXT: RefCell<Option<(EventSink, MainRunner)>> = const { RefCell::new(None) };
     pub static INFO: RefCell<BTreeMap<TabId, TabInfo>> = const { RefCell::new(BTreeMap::new()) };
     static PENDING: RefCell<BTreeMap<u64, Pending>> = const { RefCell::new(BTreeMap::new()) };
@@ -511,8 +513,14 @@ define_class!(
         ) {
             let tab = self.ivars().tab;
             // SAFETY: reading the response's properties on the main thread.
-            let (url, mime, main, can_show, attachment) = unsafe {
+            let (url, mime, main, can_show, attachment, hsts) = unsafe {
                 let r = response.response();
+                let hsts: Option<Retained<NSString>> = if msg_send![&*r, respondsToSelector: objc2::sel!(valueForHTTPHeaderField:)]
+                {
+                    msg_send![&*r, valueForHTTPHeaderField: &*NSString::from_str("Strict-Transport-Security")]
+                } else {
+                    None
+                };
                 let disposition: Option<Retained<NSString>> = if msg_send![&*r, respondsToSelector: objc2::sel!(valueForHTTPHeaderField:)]
                 {
                     msg_send![&*r, valueForHTTPHeaderField: &*NSString::from_str("Content-Disposition")]
@@ -530,6 +538,8 @@ define_class!(
                             .to_ascii_lowercase()
                             .starts_with("attachment")
                     }),
+                    hsts.is_some_and(|h| h.to_string().to_ascii_lowercase().contains("max-age"))
+                        && convert::url_string(r.URL()).starts_with("https:"),
                 )
             };
             let request = NavRequest {
@@ -543,6 +553,7 @@ define_class!(
                     mime,
                     attachment,
                     can_show,
+                    hsts,
                 },
             };
             match park(
@@ -690,7 +701,34 @@ define_class!(
                     return;
                 }
                 // Server trust: WebKit evaluates it and fails the load with
-                // a certificate error (M2-T08 adds the interstitial).
+                // a certificate error, which shows the interstitial (08 §3);
+                // a host the user chose Proceed for is accepted for the
+                // session.
+                "NSURLAuthenticationMethodServerTrust" if TRUSTED.with_borrow(|t| t.contains(&host)) => {
+                    let space = challenge.protectionSpace();
+                    // SAFETY: the protection space's SecTrustRef (or null),
+                    // and a credential for that same trust, on the main
+                    // thread.
+                    let credential: Option<Retained<NSURLCredential>> = unsafe {
+                        let trust: *mut std::ffi::c_void = msg_send![&*space, serverTrust];
+                        if trust.is_null() {
+                            None
+                        } else {
+                            msg_send![objc2::class!(NSURLCredential), credentialForTrust: trust]
+                        }
+                    };
+                    match credential {
+                        Some(c) => handler.call((
+                            NSURLSessionAuthChallengeDisposition::UseCredential,
+                            Retained::as_ptr(&c).cast_mut(),
+                        )),
+                        None => handler.call((
+                            NSURLSessionAuthChallengeDisposition::PerformDefaultHandling,
+                            std::ptr::null_mut(),
+                        )),
+                    }
+                    return;
+                }
                 _ => {
                     handler.call((
                         NSURLSessionAuthChallengeDisposition::PerformDefaultHandling,
@@ -1028,6 +1066,12 @@ fn failed(tab: TabId, view: &WKWebView, error: &NSError) {
         .and_then(|v| v.downcast::<NSString>().ok())
     {
         url = u.to_string();
+    } else if let Some(u) = info
+        .objectForKey(&NSString::from_str("NSErrorFailingURLKey"))
+        .and_then(|v| v.downcast::<NSURL>().ok())
+    {
+        // Certificate errors carry the URL only as an NSURL.
+        url = convert::url_string(Some(u));
     }
     send(EngineEvent::NavigationFailed {
         tab,

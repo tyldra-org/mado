@@ -31,11 +31,15 @@ pub enum ErrorKind {
     Refused,
     Reset,
     Certificate,
+    /// A certificate error on an HSTS host: no Proceed (spec 08 §3).
+    CertificateHsts,
     CaptivePortal,
     Crashed,
     UnsupportedScheme,
     TooManyRedirects,
     HttpsFallback,
+    /// "Did you mean …?" for a lookalike domain (spec 08 §2).
+    Lookalike,
     Failed,
 }
 
@@ -46,6 +50,10 @@ enum Action {
     Continue,
     SignIn,
     ClearCookies,
+    /// Go to the site a lookalike imitates.
+    GoTo,
+    /// Accept a bad certificate for this session.
+    Proceed,
 }
 
 impl Action {
@@ -56,6 +64,8 @@ impl Action {
             Self::Continue => "continue",
             Self::SignIn => "signIn",
             Self::ClearCookies => "clearCookies",
+            Self::GoTo => "goTo",
+            Self::Proceed => "proceed",
         }
     }
 
@@ -66,6 +76,8 @@ impl Action {
             Self::Continue,
             Self::SignIn,
             Self::ClearCookies,
+            Self::GoTo,
+            Self::Proceed,
         ]
         .into_iter()
         .find(|a| a.name() == s)
@@ -81,11 +93,13 @@ impl ErrorKind {
             Self::Refused => "refused",
             Self::Reset => "reset",
             Self::Certificate => "certificate",
+            Self::CertificateHsts => "certificateHsts",
             Self::CaptivePortal => "captivePortal",
             Self::Crashed => "crashed",
             Self::UnsupportedScheme => "unsupportedScheme",
             Self::TooManyRedirects => "tooManyRedirects",
             Self::HttpsFallback => "httpsFallback",
+            Self::Lookalike => "lookalike",
             Self::Failed => "failed",
         }
     }
@@ -110,9 +124,11 @@ impl ErrorKind {
         match self {
             Self::DnsFailed => &[Action::Reload, Action::Search],
             Self::HttpsFallback => &[Action::Continue],
+            Self::Lookalike => &[Action::GoTo, Action::Continue],
             Self::CaptivePortal => &[Action::SignIn],
             Self::TooManyRedirects => &[Action::ClearCookies],
-            Self::UnsupportedScheme | Self::Certificate => &[],
+            Self::Certificate => &[Action::Reload, Action::Proceed],
+            Self::UnsupportedScheme | Self::CertificateHsts => &[],
             _ => &[Action::Reload],
         }
     }
@@ -124,7 +140,11 @@ pub struct ErrorPage {
     token: String,
     kind: ErrorKind,
     url: String,
+    /// The captive portal, or the site a lookalike imitates.
     portal: Option<String>,
+    /// Mado navigated away from it (a button, Reload): the next commit is a
+    /// page, not this one again.
+    left: bool,
 }
 
 /// An HTTPS-first upgrade in flight.
@@ -212,6 +232,11 @@ impl Core {
 
     /// The policy answer for a navigation, with HTTPS-first bookkeeping.
     pub(super) fn decide_navigation(&mut self, tab: TabId, request: &NavRequest) -> NavDecision {
+        if let mado_engine::NavPhase::Response { hsts: true, .. } = request.phase
+            && request.is_main_frame
+        {
+            self.hsts_seen.insert(host_of(&request.url));
+        }
         if let Some(decision) = self.error_action(tab, &request.url) {
             return decision;
         }
@@ -238,6 +263,10 @@ impl Core {
             http_fallback: &|u| self.http_fallback_allowed(u),
         };
         let decision = crate::navigation::decide(request, &context);
+        if decision == NavDecision::Allow && self.lookalike_check(tab, request) {
+            self.continue_once.remove(&request.url);
+            return NavDecision::Cancel;
+        }
         match &decision {
             NavDecision::OpenExternal {
                 url,
@@ -268,6 +297,96 @@ impl Core {
             }
         }
         decision
+    }
+
+    /// The failed URL under `tab`'s error page, while it is on screen.
+    pub(super) fn error_page_url(&self, tab: TabId) -> Option<String> {
+        self.error_pages
+            .get(&tab)
+            .filter(|p| !p.left)
+            .map(|p| p.url.clone())
+    }
+
+    /// Mado is about to load something in `tab`: its error page, if any,
+    /// is left.
+    pub(super) fn leave_error_page(&mut self, tab: TabId) {
+        if let Some(page) = self.error_pages.get_mut(&tab) {
+            page.left = true;
+        }
+    }
+
+    /// The error page's own link for `action`, followed (test hook).
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub(super) fn press_error_action(&mut self, tab: TabId, action: &str) {
+        if let Some(page) = self.error_pages.get(&tab).cloned() {
+            let link = format!("mado://error-action/?t={}&a={action}", page.token);
+            let _ = self.error_action(tab, &link);
+        }
+    }
+
+    /// 08 §2: a first visit to a host that imitates a well-known or frequent
+    /// site shows "Did you mean …?" instead. Returns true when shown.
+    fn lookalike_check(&mut self, tab: TabId, request: &NavRequest) -> bool {
+        if !request.is_main_frame
+            || !matches!(request.phase, mado_engine::NavPhase::Action { .. })
+            || self.continue_once.contains(&request.url)
+            || self.pending_transition.get(&tab) == Some(&crate::history::Transition::Typed)
+        {
+            return false;
+        }
+        let Ok(url) = url::Url::parse(&request.url) else {
+            return false;
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return false;
+        }
+        let Some(host) = url.host_str().map(str::to_ascii_lowercase) else {
+            return false;
+        };
+        let Some(origin) = mado_permissions::origin_of(&request.url) else {
+            return false;
+        };
+        if self.site_value(&origin, "lookalikeIgnored", None) == mado_permissions::Value::Allow {
+            return false;
+        }
+        let readers = self.profile_db.readers();
+        let seen = readers
+            .read(|c| {
+                c.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM urls WHERE host = ?1 AND visit_count > 0)
+                         OR EXISTS (SELECT 1 FROM bookmarks WHERE url LIKE '%://' || ?1 || '/%' OR url LIKE '%://' || ?1)",
+                    [&host],
+                    |r| r.get::<_, bool>(0),
+                )
+            })
+            .unwrap_or(true);
+        if seen {
+            return false;
+        }
+        let frequent: Vec<String> = readers
+            .read(|c| {
+                let mut stmt = c.prepare_cached(
+                    "SELECT host FROM urls GROUP BY host HAVING SUM(visit_count) >= 5 LIMIT 500",
+                )?;
+                stmt.query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<String>>>()
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .map(|h: String| psl::domain_str(&h).map_or_else(|| h.clone(), str::to_owned))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let known = mado_safety::Known {
+            frequent: &frequent,
+        };
+        let Some(target) =
+            mado_safety::lookalike(&host, &known, mado_navigation::TopDomains::bundled())
+        else {
+            return false;
+        };
+        self.show_error(tab, ErrorKind::Lookalike, request.url.clone(), Some(target));
+        true
     }
 
     /// 05 §7: a link clicked with modifiers opens in a new tab or window,
@@ -359,6 +478,13 @@ impl Core {
     /// A main-frame document committed: an upgrade succeeded, and an
     /// error page commit is not a visit. Returns true for an error page.
     pub(super) fn committed_page(&mut self, tab: TabId, url: &str) -> bool {
+        // A site whose certificate the user accepted stays marked (08 §3).
+        if url.starts_with("https:")
+            && self.proceeded.contains(&host_of(url))
+            && let Some(t) = self.model.tabs.get_mut(&tab)
+        {
+            t.security.level = mado_types::state::SecurityLevel::Dangerous;
+        }
         if url.starts_with("https:")
             && self
                 .upgrades
@@ -367,11 +493,16 @@ impl Core {
         {
             self.upgrades.remove(&tab);
         }
-        if self.error_commits.remove(&tab) {
-            return true;
+        // WebKit can commit a simulated load more than once: every commit of
+        // the failed URL until Mado navigates is the error page.
+        match self.error_pages.get(&tab) {
+            Some(page) if !page.left && page.url == url => true,
+            Some(_) => {
+                self.error_pages.remove(&tab);
+                false
+            }
+            None => false,
         }
-        self.error_pages.remove(&tab);
-        false
     }
 
     pub(super) fn upgrade_timed_out(&mut self, tab: TabId) {
@@ -398,9 +529,29 @@ impl Core {
     }
 
     pub(super) fn navigation_failed(&mut self, tab: TabId, url: String, error: &NetError) {
-        let Some(kind) = ErrorKind::of(error) else {
+        // An engine that could not say which URL failed: the tab's.
+        let url = if url.is_empty() {
+            self.model
+                .tabs
+                .get(&tab)
+                .map(|t| t.url.clone())
+                .unwrap_or_default()
+        } else {
+            url
+        };
+        let Some(mut kind) = ErrorKind::of(error) else {
             return;
         };
+        // 08 §3: no Proceed on hosts that asked for HSTS, now or by the
+        // preload list.
+        let host = host_of(&url);
+        if kind == ErrorKind::Certificate
+            && (self.hsts_seen.contains(&host)
+                || mado_safety::hsts_preloaded(&host)
+                || self.hsts_extra.contains(&host))
+        {
+            kind = ErrorKind::CertificateHsts;
+        }
         if let Some(up) = self.upgrades.get(&tab).cloned()
             && host_of(&up.https) == host_of(&url)
             && matches!(
@@ -445,7 +596,10 @@ impl Core {
     ) {
         let token = uuid::Uuid::now_v7().simple().to_string();
         let strings = self.settings.strings();
-        let html = render(kind, &host_of(&url), &token, &|k| strings.get(k).to_owned());
+        let target = portal.clone().unwrap_or_default();
+        let html = render(kind, &host_of(&url), &token, &|k| {
+            strings.get(k).replace("{suggestion}", &target)
+        });
         self.error_pages.insert(
             tab,
             ErrorPage {
@@ -453,9 +607,9 @@ impl Core {
                 kind,
                 url: url.clone(),
                 portal,
+                left: false,
             },
         );
-        self.error_commits.insert(tab);
         self.outbox.push(EngineOp::Apply(
             tab,
             TabCommand::ShowErrorPage { html, url },
@@ -500,6 +654,17 @@ impl Core {
                     let _ = self.navigate(tab, to);
                 }
             }
+            Action::Continue if page.kind == ErrorKind::Lookalike => {
+                self.write_site(
+                    &format!("[*.]{host}"),
+                    "lookalikeIgnored",
+                    None,
+                    mado_permissions::Value::Allow,
+                    mado_permissions::Source::User,
+                );
+                self.continue_once.insert(page.url.clone());
+                let _ = self.navigate(tab, page.url.clone());
+            }
             Action::Continue => {
                 let now = self.now();
                 let expires = now + HTTP_ALLOWED_MS;
@@ -532,6 +697,16 @@ impl Core {
                     let _ = self
                         .model
                         .open_tab(window, portal, None, true, None, now, prefs);
+                }
+            }
+            Action::Proceed => {
+                self.proceeded.insert(host.clone());
+                self.outbox.push(EngineOp::AllowCertificate(host));
+                let _ = self.navigate(tab, page.url.clone());
+            }
+            Action::GoTo => {
+                if let Some(target) = page.portal.clone() {
+                    let _ = self.navigate(tab, format!("https://{target}/"));
                 }
             }
             Action::ClearCookies => {
@@ -620,11 +795,13 @@ mod tests {
             ErrorKind::Refused,
             ErrorKind::Reset,
             ErrorKind::Certificate,
+            ErrorKind::CertificateHsts,
             ErrorKind::CaptivePortal,
             ErrorKind::Crashed,
             ErrorKind::UnsupportedScheme,
             ErrorKind::TooManyRedirects,
             ErrorKind::HttpsFallback,
+            ErrorKind::Lookalike,
             ErrorKind::Failed,
         ];
         for kind in kinds {

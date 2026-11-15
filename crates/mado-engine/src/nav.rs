@@ -21,6 +21,8 @@ pub enum NavPhase {
         attachment: bool,
         /// Whether the engine can show this MIME type.
         can_show: bool,
+        /// An https response with `Strict-Transport-Security` (spec 08 §3).
+        hsts: bool,
     },
 }
 

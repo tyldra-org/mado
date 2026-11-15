@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Profiles: add, rename, recolour, open and delete profiles from the profile menu and Settings, each in its own window and process; deleting one removes its data, website data and Keychain items. Rules such as `*.acme.com` open links from other apps in the profile you choose.
 - Profiles can be exported to a `.madoprofile` file and imported on another Mac, without page text or session history.
 - Private and guest windows run in a temporary profile with nothing kept on disk, deleted when they close.
+- Safety: a first visit to a site that imitates a well-known or frequently visited one asks "Did you mean …?", and a site with an untrusted certificate shows a warning you can proceed past for the session, except on sites that require secure connections.
 - Downloads: files go to the Downloads folder under a unique name, can be paused and resumed (also after quitting Mado), get the quarantine mark, and wait for Keep when they are insecure or a risky type from a new site. A downloads button lists them.
 - History: every visit is recorded with how it happened, pages' text is searchable (never on banking sites or pages with password fields), and history can be deleted by visit, site or time, excluded per site, and exported as CSV.
 - Tabs, windows and groups: opening, closing and selecting tabs as Chrome does, pinned tabs, saved groups, ⌘⇧T for closed tabs, groups and windows, sleeping tabs with Memory Saver, startup modes with crash restore, and a warning before quitting with typed text.

@@ -2649,3 +2649,137 @@ fn private_and_guest_windows_open_temporary_profiles() {
     );
     assert_eq!(state_of(&core).windows.len(), windows, "no window here");
 }
+
+/// 08 §12 check 1: a first visit to a lookalike of paypal.com shows "Did
+/// you mean paypal.com?"; Go to goes there; once bookmarked, or after
+/// Continue, the site loads.
+#[test]
+fn a_lookalike_domain_asks_did_you_mean() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let spoof = "https://xn--pypal-4ve.com/login";
+    let tab = new_tab(&core, w, "https://start.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://start.example/"
+    });
+    core.page.page_navigates(tab, spoof, true);
+    eventually("the page", || {
+        error_pages(&core)
+            .iter()
+            .any(|(t, u, h)| *t == tab && u == spoof && h.contains(r#"data-kind="lookalike""#))
+    });
+    let html = error_pages(&core)
+        .last()
+        .map(|p| p.2.clone())
+        .expect("a page");
+    assert!(html.contains("Did you mean paypal.com?"));
+    core.page
+        .page_navigates(tab, &action_link(&html, "goTo").expect("go to"), true);
+    eventually("paypal", || {
+        state_of(&core).tabs[&tab].url == "https://paypal.com/"
+    });
+    // Bookmarked: no page.
+    ask(
+        &core,
+        Origin::System,
+        Command::BookmarkAdd {
+            parent_id: None,
+            title: "Shop".into(),
+            url: "https://xn--pypal-4ve.com/".into(),
+            index: None,
+        },
+    )
+    .expect("bookmark");
+    let other = new_tab(&core, w, "https://start.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&other].url == "https://start.example/"
+    });
+    let pages = error_pages(&core).len();
+    core.page.page_navigates(other, spoof, true);
+    eventually("loads", || state_of(&core).tabs[&other].url == spoof);
+    assert_eq!(error_pages(&core).len(), pages);
+    // Continue on another lookalike is remembered.
+    let third = new_tab(&core, w, "https://start.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&third].url == "https://start.example/"
+    });
+    core.page
+        .page_navigates(third, "https://paypal-login.com/", true);
+    eventually("the page", || {
+        error_pages(&core).iter().any(|(t, _, _)| *t == third)
+    });
+    let html = error_pages(&core)
+        .last()
+        .map(|p| p.2.clone())
+        .expect("a page");
+    core.page.page_navigates(
+        third,
+        &action_link(&html, "continue").expect("continue"),
+        true,
+    );
+    eventually("continued", || {
+        state_of(&core).tabs[&third].url == "https://paypal-login.com/"
+    });
+    core.page
+        .page_navigates(third, "https://paypal-login.com/again", true);
+    eventually("again", || {
+        state_of(&core).tabs[&third].url == "https://paypal-login.com/again"
+    });
+}
+
+/// 08 §3 and §12 check 2: a bad certificate shows the interstitial with
+/// Proceed, which loads the site for the session and marks it dangerous;
+/// an HSTS host has no Proceed.
+#[test]
+fn certificate_errors_offer_proceed_except_on_hsts_hosts() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    unreachable(
+        &core,
+        "https://expired.example",
+        mado_engine::NetError::Certificate,
+    );
+    unreachable(
+        &core,
+        "https://hsts.example",
+        mado_engine::NetError::Certificate,
+    );
+    let tab = new_tab(&core, w, "https://expired.example/");
+    eventually("the interstitial", || {
+        error_pages(&core)
+            .iter()
+            .any(|(t, _, h)| *t == tab && h.contains(r#"data-kind="certificate""#))
+    });
+    let html = error_pages(&core)
+        .last()
+        .map(|p| p.2.clone())
+        .expect("a page");
+    core.page
+        .page_navigates(tab, &action_link(&html, "proceed").expect("proceed"), true);
+    eventually("loaded", || {
+        let st = state_of(&core);
+        st.tabs[&tab].url == "https://expired.example/"
+            && st.tabs[&tab].security.level == mado_types::state::SecurityLevel::Dangerous
+            && st.tabs[&tab].life == mado_types::state::TabLife::Live
+    });
+    assert_eq!(
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .allowed_certificates,
+        vec!["expired.example".to_owned()]
+    );
+    let hsts = new_tab(&core, w, "https://hsts.example/");
+    eventually("no proceed", || {
+        error_pages(&core)
+            .iter()
+            .any(|(t, _, h)| *t == hsts && h.contains(r#"data-kind="certificateHsts""#))
+    });
+    let html = error_pages(&core)
+        .last()
+        .map(|p| p.2.clone())
+        .expect("a page");
+    assert!(!html.contains("a=proceed"));
+}
