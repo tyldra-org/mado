@@ -2161,3 +2161,239 @@ fn a_registered_handler_takes_mailto_links() {
             .any(|t| t.url == "https://mail.example/compose?to=mailto%3Aa%40b.example")
     });
 }
+
+fn ask_engine<T: Send + 'static>(
+    default: T,
+) -> (mado_engine::Reply<T>, std::sync::mpsc::Receiver<T>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (reply, _expiry) = mado_engine::Reply::new(default, move |v| {
+        let _ = tx.send(v);
+    });
+    (reply, rx)
+}
+
+fn frame(main: bool, origin: &str) -> mado_engine::event::FrameInfo {
+    mado_engine::event::FrameInfo {
+        is_main_frame: main,
+        origin: origin.into(),
+        url: format!("{origin}/"),
+    }
+}
+
+/// 07 §7 and §10 check 5: dialogs ask in the tab, a second within 5
+/// seconds offers to stop them, cross-origin frames show nothing.
+#[test]
+fn page_dialogs_ask_and_can_be_stopped() {
+    use mado_engine::event::{DialogKind, DialogResponse, JsDialog};
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://app.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://app.example/"
+    });
+    let dialog = |kind: DialogKind, main: bool, origin: &str| {
+        let (reply, rx) = ask_engine(DialogResponse::Dismiss);
+        core.page.send(mado_engine::EngineEvent::DialogRequested {
+            tab,
+            dialog: JsDialog {
+                kind,
+                message: "Hello".into(),
+                frame: frame(main, origin),
+            },
+            reply,
+        });
+        rx
+    };
+    let open = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::Dialog {
+                id, offer_suppress, ..
+            } => Some((*id, *offer_suppress)),
+            _ => None,
+        })
+    };
+    let answer = |id, accept, text: Option<&str>, suppress| {
+        ask(
+            &core,
+            Origin::Ui { window: w },
+            Command::PromptAnswerDialog {
+                id,
+                accept,
+                text: text.map(str::to_owned),
+                suppress,
+            },
+        )
+        .expect("answer")
+    };
+    let wait = |rx: std::sync::mpsc::Receiver<DialogResponse>| {
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("an answer")
+    };
+    // A cross-origin frame's alert shows nothing.
+    assert_eq!(
+        wait(dialog(DialogKind::Alert, false, "https://ads.example")),
+        DialogResponse::Dismiss
+    );
+    assert!(open().is_none());
+    let rx = dialog(
+        DialogKind::Prompt {
+            default: "x".into(),
+        },
+        true,
+        "https://app.example",
+    );
+    eventually("the dialog", || open().is_some());
+    let (id, offer) = open().expect("dialog");
+    assert!(!offer);
+    answer(id, true, Some("typed"), false);
+    assert_eq!(wait(rx), DialogResponse::Accept(Some("typed".into())));
+    let rx = dialog(DialogKind::Confirm, true, "https://app.example");
+    eventually("the second", || open().is_some());
+    let (id, offer) = open().expect("dialog");
+    assert!(offer, "a second dialog within 5 s offers to stop them");
+    answer(id, false, None, true);
+    assert_eq!(wait(rx), DialogResponse::Dismiss);
+    // Stopped: answered without showing; leaving is never blocked.
+    assert_eq!(
+        wait(dialog(DialogKind::Alert, true, "https://app.example")),
+        DialogResponse::Dismiss
+    );
+    assert_eq!(
+        wait(dialog(
+            DialogKind::BeforeUnload,
+            true,
+            "https://app.example"
+        )),
+        DialogResponse::Accept(None)
+    );
+    assert!(open().is_none());
+}
+
+/// 07 §7: sign-in and client certificates ask; the certificate choice is
+/// kept for the session; an https form posting to http waits.
+#[test]
+fn sign_in_certificates_and_insecure_forms_ask() {
+    use mado_engine::event::{AuthChallenge, AuthResponse, ClientCertRequest, ClientCertResponse};
+    use mado_engine::{NavDecision, NavKind, NavPhase, NavRequest};
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://bank.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://bank.example/"
+    });
+    let prompt = |want: &str| {
+        state_of(&core)
+            .prompts
+            .values()
+            .find_map(|p| match (p, want) {
+                (PromptState::Auth { id, .. }, "auth")
+                | (PromptState::ClientCert { id, .. }, "cert")
+                | (PromptState::InsecureForm { id, .. }, "form") => Some(*id),
+                _ => None,
+            })
+    };
+    let ui = Origin::Ui { window: w };
+    let (reply, rx) = ask_engine(AuthResponse::Cancel);
+    core.page.send(mado_engine::EngineEvent::AuthRequested {
+        tab,
+        challenge: AuthChallenge {
+            host: "bank.example".into(),
+            port: 443,
+            realm: Some("Staff".into()),
+            scheme: "basic".into(),
+            is_proxy: false,
+        },
+        reply,
+    });
+    eventually("sign in", || prompt("auth").is_some());
+    ask(
+        &core,
+        ui,
+        Command::PromptAnswerAuth {
+            id: prompt("auth").expect("auth"),
+            user: Some("ada".into()),
+            password: Some("pw".into()),
+        },
+    )
+    .expect("answer");
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("an answer"),
+        AuthResponse::Credentials {
+            user: "ada".into(),
+            password: "pw".into()
+        }
+    );
+    let cert = || {
+        let (reply, rx) = ask_engine(ClientCertResponse::Cancel);
+        core.page
+            .send(mado_engine::EngineEvent::ClientCertificateRequested {
+                tab,
+                request: ClientCertRequest {
+                    host: "bank.example".into(),
+                    port: 443,
+                },
+                reply,
+            });
+        rx
+    };
+    let rx = cert();
+    eventually("the certificate sheet", || prompt("cert").is_some());
+    ask(
+        &core,
+        ui,
+        Command::PromptAnswerClientCert {
+            id: prompt("cert").expect("cert"),
+            identity: Some("cert-1".into()),
+        },
+    )
+    .expect("answer");
+    let identity = ClientCertResponse::Identity("cert-1".into());
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("an answer"),
+        identity
+    );
+    assert_eq!(
+        cert()
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("remembered"),
+        identity
+    );
+    let (reply, rx) = ask_engine(NavDecision::Cancel);
+    core.page.send(mado_engine::EngineEvent::DecidePolicy {
+        tab,
+        request: NavRequest {
+            url: "http://bank.example/login".into(),
+            source_url: Some("https://bank.example/".into()),
+            is_main_frame: true,
+            user_gesture: true,
+            initiated_by_mado: false,
+            kind: NavKind::FormSubmit,
+            phase: NavPhase::Action {
+                modifiers: mado_engine::tab::Modifiers::default(),
+                method: "POST".into(),
+            },
+        },
+        reply,
+    });
+    eventually("the warning", || prompt("form").is_some());
+    ask(
+        &core,
+        ui,
+        Command::PromptRespond {
+            id: prompt("form").expect("form"),
+            decision: mado_types::command::PromptDecision::AllowThisTime,
+        },
+    )
+    .expect("send anyway");
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("an answer"),
+        NavDecision::Allow
+    );
+}

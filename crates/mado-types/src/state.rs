@@ -466,6 +466,46 @@ pub enum PromptState {
         created_at: i64,
         armed_at: i64,
     },
+    /// `alert`, `confirm`, `prompt` or `beforeunload` (spec 07 §7),
+    /// answered with `prompt.answerDialog`. `offerSuppress`: the page
+    /// showed another dialog within 5 seconds.
+    #[serde(rename_all = "camelCase")]
+    Dialog {
+        id: PromptId,
+        tab_id: TabId,
+        origin: String,
+        kind: DialogKind,
+        message: String,
+        default_text: Option<String>,
+        offer_suppress: bool,
+    },
+    /// HTTP authentication, answered with `prompt.answerAuth`.
+    #[serde(rename_all = "camelCase")]
+    Auth {
+        id: PromptId,
+        tab_id: TabId,
+        host: String,
+        port: u16,
+        realm: Option<String>,
+        is_proxy: bool,
+    },
+    /// A site asks for a client certificate, answered with
+    /// `prompt.answerClientCert`.
+    #[serde(rename_all = "camelCase")]
+    ClientCert {
+        id: PromptId,
+        tab_id: TabId,
+        host: String,
+        identities: Vec<ClientIdentity>,
+    },
+    /// A secure page sends a form over http (spec 07 §7):
+    /// `prompt.respond` `allowThisTime` sends it, `never` does not.
+    #[serde(rename_all = "camelCase")]
+    InsecureForm {
+        id: PromptId,
+        tab_id: TabId,
+        url: String,
+    },
     /// The page's protected video does not play in WebKit here (spec 05
     /// §11). Answered with `nav.openExternally`.
     #[serde(rename_all = "camelCase")]
@@ -474,6 +514,26 @@ pub enum PromptState {
         tab_id: TabId,
         host: String,
     },
+}
+
+/// The kinds of page dialog (spec 07 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum DialogKind {
+    Alert,
+    Confirm,
+    Prompt,
+    BeforeUnload,
+}
+
+/// A keychain identity offered for a client certificate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ClientIdentity {
+    pub id: String,
+    pub label: String,
 }
 
 /// A tab whose page stopped answering (spec 02 §5.3). Answered with

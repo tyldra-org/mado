@@ -2303,12 +2303,15 @@ name = "mado-engine-webkit"
 version = "0.0.0"
 dependencies = [
  "block2",
+ "core-foundation 0.10.1",
  "mado-engine",
+ "mado-platform",
  "mado-types",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
  "objc2-web-kit",
+ "security-framework",
  "serde_json",
  "tracing",
 ]

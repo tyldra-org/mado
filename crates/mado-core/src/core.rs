@@ -2,6 +2,7 @@
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
 mod applinks;
+mod dialogs;
 mod dl;
 mod errors;
 mod marks;
@@ -201,6 +202,8 @@ pub struct OsPermissions {
         fn(mado_platform::permissions::OsPermission) -> mado_platform::permissions::OsStatus,
     /// The app that opens a link of another scheme (spec 07 §6).
     pub handler: fn(&str) -> Option<mado_platform::applinks::Handler>,
+    /// Keychain identities for client certificates (spec 07 §7).
+    pub identities: fn() -> Vec<mado_platform::keychain::ClientIdentity>,
 }
 
 impl OsPermissions {
@@ -211,6 +214,7 @@ impl OsPermissions {
             status: |p| status(p).unwrap_or(OsStatus::NotDetermined),
             request: |p| request(p).unwrap_or(OsStatus::Denied),
             handler: |url| mado_platform::applinks::handler(url).ok().flatten(),
+            identities: mado_platform::keychain::identities,
         }
     }
 }
@@ -301,6 +305,8 @@ pub struct Core {
     protocol_handlers: BTreeMap<String, String>,
     app_link_urls: BTreeMap<PromptId, String>,
     handler_templates: BTreeMap<PromptId, String>,
+    /// Open dialogs and sheets with the answers they hold (spec 07 §7).
+    held: dialogs::Held,
     /// Site settings (spec 07).
     sites: mado_permissions::Store,
     dismissals: mado_permissions::Dismissals,
@@ -513,6 +519,7 @@ impl Core {
             popup_opened: BTreeMap::new(),
             engine_rules,
             sites,
+            held: dialogs::Held::default(),
             launches: mado_permissions::LaunchLimiter::new(),
             app_link_rules: links.0.into_iter().collect(),
             protocol_handlers: links.1,
@@ -904,6 +911,9 @@ impl Core {
             | Command::PermissionReset { .. }
             | Command::SiteStopCapture { .. }) => self.prompt_command(origin, cmd, rec, reply_to),
             Command::PermissionUndoRevoke { token } => self.undo_revoke(token),
+            cmd @ (Command::PromptAnswerDialog { .. }
+            | Command::PromptAnswerAuth { .. }
+            | Command::PromptAnswerClientCert { .. }) => self.sheet_command(cmd, rec),
             Command::AppOpenSystemSettings { pane } => {
                 self.ui.open_system_settings(&pane);
                 Ok(Value::Null)
@@ -1083,6 +1093,19 @@ impl Core {
 
     fn engine_event(&mut self, event: EngineEvent, rec: &mut PatchRecorder) {
         match event {
+            EngineEvent::DialogRequested { tab, dialog, reply } => {
+                self.dialog_requested(tab, dialog, reply, rec);
+            }
+            EngineEvent::AuthRequested {
+                tab,
+                challenge,
+                reply,
+            } => self.auth_requested(tab, challenge, reply, rec),
+            EngineEvent::ClientCertificateRequested {
+                tab,
+                request,
+                reply,
+            } => self.client_cert_requested(tab, request, reply, rec),
             EngineEvent::PermissionRequested {
                 tab,
                 request,
@@ -1095,6 +1118,9 @@ impl Core {
                 request,
                 reply,
             } => {
+                let Some(reply) = self.insecure_form(tab, &request, reply, rec) else {
+                    return;
+                };
                 let decision = self.decide_navigation(tab, &request);
                 reply.send(decision);
             }

@@ -348,6 +348,16 @@ impl Core {
                         PromptState::AppLink { armed_at, .. }
                         | PromptState::ProtocolHandler { armed_at, .. },
                     ) => (*armed_at, true),
+                    Some(PromptState::InsecureForm { .. }) => {
+                        if !mado_ui {
+                            return Err(MadoError::new(
+                                ErrorCode::PermissionDenied,
+                                "error.prompt.notAllowed",
+                            ));
+                        }
+                        self.answer_insecure_form(id, decision, rec);
+                        return Ok(Value::Null);
+                    }
                     _ => return Err(not_found()),
                 };
                 if !mado_ui {
@@ -391,6 +401,10 @@ impl Core {
                     Some(PromptState::Permission { .. }) => {}
                     Some(PromptState::AppLink { .. } | PromptState::ProtocolHandler { .. }) => {
                         self.answer_link_prompt(id, PromptDecision::Never, rec);
+                        return Ok(Value::Null);
+                    }
+                    Some(PromptState::InsecureForm { .. }) => {
+                        self.answer_insecure_form(id, PromptDecision::Never, rec);
                         return Ok(Value::Null);
                     }
                     _ => return Err(not_found()),
@@ -527,6 +541,7 @@ impl Core {
     pub(super) fn forget_permissions(&mut self, tab: TabId, rec: &mut PatchRecorder) {
         self.this_time.remove(&tab);
         self.forget_link_prompts(tab, rec);
+        self.forget_sheets(tab, rec);
         if let Some(queue) = self.perm_queue.remove(&tab) {
             for (_, reply) in queue {
                 reply.send(PermissionDecision::Deny);

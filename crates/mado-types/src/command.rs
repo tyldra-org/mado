@@ -622,6 +622,33 @@ pub enum Command {
     /// Escape, clicking away: denies this request only.
     #[serde(rename = "prompt.dismiss", rename_all = "camelCase")]
     PromptDismiss { id: crate::PromptId },
+    /// Answers a page dialog. `suppress`: answer this document's later
+    /// dialogs without showing them.
+    #[serde(rename = "prompt.answerDialog", rename_all = "camelCase")]
+    PromptAnswerDialog {
+        id: crate::PromptId,
+        accept: bool,
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        suppress: bool,
+    },
+    /// Answers HTTP authentication; no user cancels.
+    #[serde(rename = "prompt.answerAuth", rename_all = "camelCase")]
+    PromptAnswerAuth {
+        id: crate::PromptId,
+        #[serde(default)]
+        user: Option<String>,
+        #[serde(default)]
+        password: Option<String>,
+    },
+    /// Answers a client certificate request; no identity continues without.
+    #[serde(rename = "prompt.answerClientCert", rename_all = "camelCase")]
+    PromptAnswerClientCert {
+        id: crate::PromptId,
+        #[serde(default)]
+        identity: Option<String>,
+    },
     /// Returns the site settings, of one origin or all.
     #[serde(rename = "permission.list", rename_all = "camelCase")]
     PermissionList {
@@ -813,7 +840,11 @@ impl Command {
             | Self::NavSearchEngines
             | Self::NavOpenExternally { .. }
             | Self::NavSetSearchEngineActive { .. } => CommandFamily::Nav,
-            Self::PromptRespond { .. } | Self::PromptDismiss { .. } => CommandFamily::Prompt,
+            Self::PromptRespond { .. }
+            | Self::PromptDismiss { .. }
+            | Self::PromptAnswerDialog { .. }
+            | Self::PromptAnswerAuth { .. }
+            | Self::PromptAnswerClientCert { .. } => CommandFamily::Prompt,
             Self::PermissionList { .. }
             | Self::PermissionSet { .. }
             | Self::PermissionReset { .. }
@@ -921,6 +952,9 @@ impl Command {
             Self::NavOpenExternally { .. } => "nav.openExternally",
             Self::PromptRespond { .. } => "prompt.respond",
             Self::PromptDismiss { .. } => "prompt.dismiss",
+            Self::PromptAnswerDialog { .. } => "prompt.answerDialog",
+            Self::PromptAnswerAuth { .. } => "prompt.answerAuth",
+            Self::PromptAnswerClientCert { .. } => "prompt.answerClientCert",
             Self::PermissionList { .. } => "permission.list",
             Self::PermissionSet { .. } => "permission.set",
             Self::PermissionReset { .. } => "permission.reset",

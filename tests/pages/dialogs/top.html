@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dialogs: waiting</title>
+  </head>
+  <body>
+    <!-- 07 §10 check 5: a cross-origin frame's alert shows nothing. -->
+    <iframe src="http://other.mado.test/dialogs/frame.html" title="Frame"></iframe>
+    <script>
+      addEventListener("message", (e) => {
+        if (e.data !== "frame done") return;
+        document.title = "Dialogs: frame done";
+        alert("From the page");
+        document.title = "Dialogs: top answered";
+      });
+    </script>
+  </body>
+</html>

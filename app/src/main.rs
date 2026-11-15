@@ -708,6 +708,7 @@ fn run_app(
             api, code: None, ..
         } if !quitting.load(std::sync::atomic::Ordering::SeqCst) => api.prevent_exit(),
         RunEvent::Exit => {
+            mado_engine_webkit::shutdown();
             if let Ok(guard) = owner.lock()
                 && let Some(owner) = guard.as_ref()
             {
