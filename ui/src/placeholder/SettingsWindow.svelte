@@ -6,6 +6,7 @@
   import { t } from "../i18n";
   import Notices from "./Notices.svelte";
   import SettingRow from "./SettingRow.svelte";
+  import SiteExceptions from "./SiteExceptions.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -69,6 +70,9 @@
     {#each rows as entry (entry.key)}
       <SettingRow {entry} value={values[entry.key]} client={store.client} />
     {/each}
+    {#if hits === null && section === "siteSettings"}
+      <SiteExceptions client={store.client} />
+    {/if}
   </main>
   <Notices {store} />
 </div>

@@ -210,6 +210,11 @@ pub struct OpenSearch {
     pub href: String,
 }
 
+/// `apple-pay`: a checkout asked whether Apple Pay works (spec 07 §9).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplePayProbe {}
+
 /// `media`: for the media button (spec 05 §11).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -298,6 +303,7 @@ messages! {
     GeolocationWatch(GeolocationWatch) = "geolocationWatch" from ["geolocation"],
     GeolocationClear(GeolocationClear) = "geolocationClear" from ["geolocation"],
     ProtocolHandlerRegister(ProtocolHandlerRegister) = "protocolHandlerRegister" from ["protocol-handlers"],
+    ApplePayProbe(ApplePayProbe) = "applePayProbe" from ["apple-pay"],
     MediaState(MediaState) = "mediaState" from ["media"],
     DrmFailed(DrmFailed) = "drmFailed" from ["media"],
     FindResult(FindResult) = "findResult" from ["find"],
@@ -398,6 +404,10 @@ const GEOLOCATION: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/geolocation.js"
 ));
+const APPLE_PAY: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/apple-pay.js"
+));
 const PROTOCOL_HANDLERS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/protocol-handlers.js"
@@ -430,6 +440,7 @@ pub fn bundled(geolocation_shim: bool) -> crate::PageScriptSet {
             true,
             PROTOCOL_HANDLERS,
         ),
+        s("apple-pay", Page, DocumentStart, true, APPLE_PAY),
     ];
     if geolocation_shim {
         scripts.push(s("geolocation", Page, DocumentStart, true, GEOLOCATION));
@@ -618,7 +629,8 @@ mod tests {
                 "forms",
                 "relay",
                 "notifications",
-                "protocol-handlers"
+                "protocol-handlers",
+                "apple-pay"
             ]
         );
         assert!(set.scripts.iter().all(|s| !s.source.is_empty()));

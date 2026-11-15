@@ -135,7 +135,9 @@ describe("address bar", () => {
   test("the Safari prompt answers nav.openExternally", async () => {
     const P = "01a1d7aa-0000-7000-8000-0000000000ff";
     const seen = await shown({
-      prompts: { [P]: { type: "openInSafari", id: P, tabId: A, host: "tv.example" } },
+      prompts: {
+        [P]: { type: "openInSafari", id: P, tabId: A, host: "tv.example", reason: "drm" },
+      },
     });
     await fireEvent.click(screen.getByRole("button", { name: "Always for this site" }));
     expect(sent(seen, "nav.openExternally")).toEqual([

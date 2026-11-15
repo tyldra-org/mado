@@ -13,6 +13,7 @@
   import Notices from "./Notices.svelte";
   import PermissionPrompt from "./PermissionPrompt.svelte";
   import SafariPrompt from "./SafariPrompt.svelte";
+  import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
   import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
   import UnsavedPrompt from "./UnsavedPrompt.svelte";
@@ -60,6 +61,7 @@
   <header>
     <h1>{store.state?.profile.name ?? t("app.name")}</h1>
     <TabStrip {store} {windowId} />
+    <SiteInfo {store} {windowId} />
     <AddressBar {store} {windowId} />
     <BookmarksBar {store} {windowId} />
     <DownloadsBubble {store} />

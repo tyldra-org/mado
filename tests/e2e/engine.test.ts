@@ -338,6 +338,20 @@ run("WebKit adapter", () => {
     await tabWhere(tab, (t) => t.title === "Dialogs: top answered");
   }, 30_000);
 
+  test("a checkout asking for Apple Pay hears no and is offered Safari (07 §9)", async () => {
+    const { tab } = await open("http://pages.mado.test/checkout.html");
+    await tabWhere(tab, (t) => t.title === "Checkout: false");
+    type P = { type: string; tabId: string; reason?: string };
+    await until("the offer", async () => {
+      const s = (await mado.control.call("state.get")) as { state: { prompts: Record<string, P> } };
+      return Object.values(s.state.prompts).some(
+        (p) => p.type === "openInSafari" && p.tabId === tab && p.reason === "applePay",
+      )
+        ? true
+        : undefined;
+    });
+  });
+
   test("a zoommtg: link never navigates (02 §8 check 5)", async () => {
     const { tab } = await open("http://pages.mado.test/applink.html");
     const t = await tabWhere(tab, (t) => t.title === "App link: still here");

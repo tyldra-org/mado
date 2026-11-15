@@ -513,7 +513,19 @@ pub enum PromptState {
         id: PromptId,
         tab_id: TabId,
         host: String,
+        reason: SafariReason,
     },
+}
+
+/// Why a page should open in Safari.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SafariReason {
+    /// Protected video does not play (spec 05 §11).
+    Drm,
+    /// The checkout wants Apple Pay (spec 07 §9).
+    ApplePay,
 }
 
 /// The kinds of page dialog (spec 07 §7).
