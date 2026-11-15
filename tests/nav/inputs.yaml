@@ -1102,10 +1102,10 @@
   expect:
     class: "search"
     terms: "#hashtag"
-- input: "\"exact phrase\""
+- input: '"exact phrase"'
   expect:
     class: "search"
-    terms: "\"exact phrase\""
+    terms: '"exact phrase"'
 - input: "site:example.com rust"
   expect:
     class: "search"
