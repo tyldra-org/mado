@@ -797,6 +797,16 @@ pub enum Command {
     /// Undoes an automatic revoke (the notice's Undo).
     #[serde(rename = "permission.undoRevoke", rename_all = "camelCase")]
     PermissionUndoRevoke { token: u64 },
+    /// Closes the welcome sheet for good (M2-T17).
+    #[serde(rename = "app.finishFirstRun")]
+    AppFinishFirstRun,
+    /// Returns `{ isDefault }`: whether Mado is the default browser.
+    #[serde(rename = "app.defaultBrowser")]
+    AppDefaultBrowser,
+    /// Asks macOS to make Mado the default browser (macOS confirms). Only
+    /// from Mado's own windows.
+    #[serde(rename = "app.setDefaultBrowser")]
+    AppSetDefaultBrowser,
     /// Opens the macOS privacy pane for `pane` (`camera`, `microphone`,
     /// `location`, `screen`, `speechRecognition`).
     #[serde(rename = "app.openSystemSettings", rename_all = "camelCase")]
@@ -971,7 +981,10 @@ impl Command {
             | Self::PermissionSet { .. }
             | Self::PermissionReset { .. }
             | Self::PermissionUndoRevoke { .. } => CommandFamily::Permission,
-            Self::AppOpenSystemSettings { .. } => CommandFamily::App,
+            Self::AppOpenSystemSettings { .. }
+            | Self::AppFinishFirstRun
+            | Self::AppDefaultBrowser
+            | Self::AppSetDefaultBrowser => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
             | Self::ProfileUpdate { .. }
@@ -1107,6 +1120,9 @@ impl Command {
             Self::ImportRun { .. } => "import.run",
             Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
             Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",
+            Self::AppFinishFirstRun => "app.finishFirstRun",
+            Self::AppDefaultBrowser => "app.defaultBrowser",
+            Self::AppSetDefaultBrowser => "app.setDefaultBrowser",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
             Self::ProfileUpdate { .. } => "profile.update",
@@ -1152,6 +1168,7 @@ impl Command {
                 | Self::BookmarkRecent { .. }
                 | Self::BookmarkOfUrl { .. }
                 | Self::ImportDetect
+                | Self::AppDefaultBrowser
         )
     }
 }

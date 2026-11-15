@@ -58,6 +58,9 @@ pub struct State {
     pub update: UpdateState,
     /// This build and the web engine under it (spec 15 §5).
     pub about: AboutState,
+    /// The welcome sheet waits: import, search engine, default browser
+    /// (M2-T17). Never in private or guest windows.
+    pub first_run: bool,
     #[patch(nested)]
     pub settings: SettingsState,
     #[patch(map)]

@@ -3533,6 +3533,46 @@ fn security_updates_relaunch_when_idle_and_sessions_come_back() {
     });
 }
 
+/// M2-T17: the welcome sheet shows until finished, once per Mac, never in
+/// a private profile; the default browser is offered and only Mado's own
+/// windows may ask macOS to change it.
+#[test]
+fn the_first_run_shows_once_and_offers_the_default_browser() {
+    let core = TestCore::start();
+    assert!(state_of(&core).first_run);
+    assert_eq!(
+        ask(&core, Origin::Settings, Command::AppDefaultBrowser).expect("query"),
+        json!({ "isDefault": false })
+    );
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Control {
+                client: ClientId::new()
+            },
+            Command::AppSetDefaultBrowser
+        )
+        .expect_err("not from a control client")
+        .code,
+        ErrorCode::Protected
+    );
+    ask(&core, Origin::Settings, Command::AppSetDefaultBrowser).expect("asked macOS");
+    assert_eq!(
+        ask(&core, Origin::Settings, Command::AppDefaultBrowser).expect("query"),
+        json!({ "isDefault": true })
+    );
+    crate::testing::DEFAULT_BROWSER.store(false, std::sync::atomic::Ordering::SeqCst);
+    ask(&core, Origin::Settings, Command::AppFinishFirstRun).expect("finished");
+    assert!(!state_of(&core).first_run);
+    let dir = core.stop();
+    let again = TestCore::start_in(dir, true);
+    assert!(!state_of(&again).first_run, "once per Mac");
+    crate::testing::PRIVATE.set(true);
+    let private = TestCore::start();
+    crate::testing::PRIVATE.set(false);
+    assert!(!state_of(&private).first_run);
+}
+
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and
 /// Global Privacy Control reach the engine at start and when they change.
 #[test]
