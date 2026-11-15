@@ -162,7 +162,7 @@ impl Core {
         });
     }
 
-    fn write_site(
+    pub(super) fn write_site(
         &mut self,
         origin: &str,
         key: &str,

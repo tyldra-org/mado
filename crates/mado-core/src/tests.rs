@@ -2480,3 +2480,23 @@ fn an_apple_pay_checkout_is_offered_safari() {
     std::thread::sleep(std::time::Duration::from_millis(100));
     assert_eq!(state_of(&core).prompts.len(), 1, "offered once");
 }
+
+/// 04 and 07 §1: "Mute site" goes through the permission store, so a page
+/// of that site opened afterwards starts muted, in this run.
+#[test]
+fn a_muted_site_stays_muted_in_new_tabs() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::TabMuteSite {
+            host: "noisy.example".into(),
+            muted: true,
+        },
+    )
+    .expect("mute site");
+    let tab = new_tab(&core, w, "https://www.noisy.example/video");
+    eventually("muted", || state_of(&core).tabs[&tab].audio.muted);
+}
