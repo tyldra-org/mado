@@ -85,7 +85,7 @@ impl Core {
         self.settings.value(lookup_def(key))
     }
 
-    fn setting_str(&self, key: &str) -> String {
+    pub(super) fn setting_str(&self, key: &str) -> String {
         self.setting(key).as_str().unwrap_or_default().to_owned()
     }
 
@@ -1329,6 +1329,9 @@ impl Core {
         let window = self.model.windows.get(&t.window_id);
         let initial = match self.model.extras.get(&t.id).and_then(|e| e.session.clone()) {
             Some(blob) => TabInitial::Restore(blob),
+            // A tab whose page the core is about to show (View Source)
+            // loads nothing first.
+            None if t.url == "about:blank" => TabInitial::Blank,
             None => TabInitial::Url(t.url.clone()),
         };
         TabSpec {

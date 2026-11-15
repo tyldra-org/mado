@@ -40,10 +40,12 @@ pub enum Section {
     Advanced,
     About,
     Features,
+    /// Keyboard shortcuts, one per menu command (spec 06 §8).
+    Shortcuts,
 }
 
 impl Section {
-    pub const ALL: [Section; 14] = [
+    pub const ALL: [Section; 15] = [
         Self::General,
         Self::Appearance,
         Self::Tabs,
@@ -58,6 +60,7 @@ impl Section {
         Self::Advanced,
         Self::About,
         Self::Features,
+        Self::Shortcuts,
     ];
 
     /// The id in `mado://settings/<section>` and in `en.json` keys.
@@ -77,6 +80,7 @@ impl Section {
             Self::Advanced => "advanced",
             Self::About => "about",
             Self::Features => "features",
+            Self::Shortcuts => "shortcuts",
         }
     }
 
@@ -270,7 +274,11 @@ fn valid_shortcut(s: &str) -> bool {
         }
         seen.push(m);
     }
-    !key.is_empty() && !MODIFIERS.contains(key) && !mods.is_empty()
+    let function_key = key
+        .strip_prefix('F')
+        .and_then(|n| n.parse::<u8>().ok())
+        .is_some_and(|n| (1..=20).contains(&n));
+    !key.is_empty() && !MODIFIERS.contains(key) && (!mods.is_empty() || function_key)
 }
 
 #[cfg(test)]

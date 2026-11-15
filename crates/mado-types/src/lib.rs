@@ -12,6 +12,7 @@ extern crate self as mado_types;
 pub mod command;
 pub mod error;
 pub mod ids;
+pub mod menu;
 pub mod patch;
 pub mod state;
 

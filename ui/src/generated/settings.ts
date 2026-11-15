@@ -101,6 +101,55 @@ export type SettingKey =
   | "features.memory"
   | "features.textCommands"
   | "features.reader"
+  | "shortcuts.about"
+  | "shortcuts.settings"
+  | "shortcuts.quit"
+  | "shortcuts.newTab"
+  | "shortcuts.newWindow"
+  | "shortcuts.newPrivateWindow"
+  | "shortcuts.reopenClosedTab"
+  | "shortcuts.openLocation"
+  | "shortcuts.focusAddressBar"
+  | "shortcuts.closeWindow"
+  | "shortcuts.closeTab"
+  | "shortcuts.importBrowserData"
+  | "shortcuts.print"
+  | "shortcuts.find"
+  | "shortcuts.findNext"
+  | "shortcuts.findPrevious"
+  | "shortcuts.toggleBookmarksBar"
+  | "shortcuts.stop"
+  | "shortcuts.reload"
+  | "shortcuts.forceReload"
+  | "shortcuts.actualSize"
+  | "shortcuts.zoomIn"
+  | "shortcuts.zoomOut"
+  | "shortcuts.reader"
+  | "shortcuts.viewSource"
+  | "shortcuts.developerTools"
+  | "shortcuts.home"
+  | "shortcuts.back"
+  | "shortcuts.forward"
+  | "shortcuts.showHistory"
+  | "shortcuts.bookmarkManager"
+  | "shortcuts.bookmarkTab"
+  | "shortcuts.bookmarkAllTabs"
+  | "shortcuts.nextTab"
+  | "shortcuts.previousTab"
+  | "shortcuts.selectTab1"
+  | "shortcuts.selectTab2"
+  | "shortcuts.selectTab3"
+  | "shortcuts.selectTab4"
+  | "shortcuts.selectTab5"
+  | "shortcuts.selectTab6"
+  | "shortcuts.selectTab7"
+  | "shortcuts.selectTab8"
+  | "shortcuts.selectLastTab"
+  | "shortcuts.duplicateTab"
+  | "shortcuts.pinTab"
+  | "shortcuts.muteSite"
+  | "shortcuts.moveTabToNewWindow"
+  | "shortcuts.downloads"
 ;
 
 export interface SettingValues {
@@ -204,6 +253,55 @@ export interface SettingValues {
   "features.memory": boolean;
   "features.textCommands": boolean;
   "features.reader": boolean;
+  "shortcuts.about": string;
+  "shortcuts.settings": string;
+  "shortcuts.quit": string;
+  "shortcuts.newTab": string;
+  "shortcuts.newWindow": string;
+  "shortcuts.newPrivateWindow": string;
+  "shortcuts.reopenClosedTab": string;
+  "shortcuts.openLocation": string;
+  "shortcuts.focusAddressBar": string;
+  "shortcuts.closeWindow": string;
+  "shortcuts.closeTab": string;
+  "shortcuts.importBrowserData": string;
+  "shortcuts.print": string;
+  "shortcuts.find": string;
+  "shortcuts.findNext": string;
+  "shortcuts.findPrevious": string;
+  "shortcuts.toggleBookmarksBar": string;
+  "shortcuts.stop": string;
+  "shortcuts.reload": string;
+  "shortcuts.forceReload": string;
+  "shortcuts.actualSize": string;
+  "shortcuts.zoomIn": string;
+  "shortcuts.zoomOut": string;
+  "shortcuts.reader": string;
+  "shortcuts.viewSource": string;
+  "shortcuts.developerTools": string;
+  "shortcuts.home": string;
+  "shortcuts.back": string;
+  "shortcuts.forward": string;
+  "shortcuts.showHistory": string;
+  "shortcuts.bookmarkManager": string;
+  "shortcuts.bookmarkTab": string;
+  "shortcuts.bookmarkAllTabs": string;
+  "shortcuts.nextTab": string;
+  "shortcuts.previousTab": string;
+  "shortcuts.selectTab1": string;
+  "shortcuts.selectTab2": string;
+  "shortcuts.selectTab3": string;
+  "shortcuts.selectTab4": string;
+  "shortcuts.selectTab5": string;
+  "shortcuts.selectTab6": string;
+  "shortcuts.selectTab7": string;
+  "shortcuts.selectTab8": string;
+  "shortcuts.selectLastTab": string;
+  "shortcuts.duplicateTab": string;
+  "shortcuts.pinTab": string;
+  "shortcuts.muteSite": string;
+  "shortcuts.moveTabToNewWindow": string;
+  "shortcuts.downloads": string;
 }
 
 export const settingDefaults: SettingValues = {
@@ -307,4 +405,53 @@ export const settingDefaults: SettingValues = {
   "features.memory": false,
   "features.textCommands": false,
   "features.reader": true,
+  "shortcuts.about": "",
+  "shortcuts.settings": "Cmd+,",
+  "shortcuts.quit": "Cmd+Q",
+  "shortcuts.newTab": "Cmd+T",
+  "shortcuts.newWindow": "Cmd+N",
+  "shortcuts.newPrivateWindow": "Cmd+Shift+N",
+  "shortcuts.reopenClosedTab": "Cmd+Shift+T",
+  "shortcuts.openLocation": "Cmd+L",
+  "shortcuts.focusAddressBar": "F6",
+  "shortcuts.closeWindow": "Cmd+Shift+W",
+  "shortcuts.closeTab": "Cmd+W",
+  "shortcuts.importBrowserData": "",
+  "shortcuts.print": "Cmd+P",
+  "shortcuts.find": "Cmd+F",
+  "shortcuts.findNext": "Cmd+G",
+  "shortcuts.findPrevious": "Cmd+Shift+G",
+  "shortcuts.toggleBookmarksBar": "Cmd+Shift+B",
+  "shortcuts.stop": "Cmd+.",
+  "shortcuts.reload": "Cmd+R",
+  "shortcuts.forceReload": "Cmd+Shift+R",
+  "shortcuts.actualSize": "Cmd+0",
+  "shortcuts.zoomIn": "Cmd+=",
+  "shortcuts.zoomOut": "Cmd+-",
+  "shortcuts.reader": "",
+  "shortcuts.viewSource": "Cmd+Alt+U",
+  "shortcuts.developerTools": "Cmd+Alt+I",
+  "shortcuts.home": "Cmd+Shift+H",
+  "shortcuts.back": "Cmd+[",
+  "shortcuts.forward": "Cmd+]",
+  "shortcuts.showHistory": "Cmd+Y",
+  "shortcuts.bookmarkManager": "Cmd+Alt+B",
+  "shortcuts.bookmarkTab": "Cmd+D",
+  "shortcuts.bookmarkAllTabs": "Cmd+Shift+D",
+  "shortcuts.nextTab": "Cmd+Alt+Right",
+  "shortcuts.previousTab": "Cmd+Alt+Left",
+  "shortcuts.selectTab1": "Cmd+1",
+  "shortcuts.selectTab2": "Cmd+2",
+  "shortcuts.selectTab3": "Cmd+3",
+  "shortcuts.selectTab4": "Cmd+4",
+  "shortcuts.selectTab5": "Cmd+5",
+  "shortcuts.selectTab6": "Cmd+6",
+  "shortcuts.selectTab7": "Cmd+7",
+  "shortcuts.selectTab8": "Cmd+8",
+  "shortcuts.selectLastTab": "Cmd+9",
+  "shortcuts.duplicateTab": "",
+  "shortcuts.pinTab": "",
+  "shortcuts.muteSite": "",
+  "shortcuts.moveTabToNewWindow": "",
+  "shortcuts.downloads": "Cmd+Alt+L",
 };

@@ -9,6 +9,7 @@ mod args;
 mod dev;
 mod ipc;
 mod lock;
+mod menu;
 mod profile_service;
 mod profiles;
 mod update;
@@ -24,7 +25,6 @@ use mado_settings::{Settings, Strings};
 use mado_storage::{Kind, Storage, open};
 use mado_types::command::{Command, LaunchRequest, Origin};
 use mado_types::state::Bounds;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 use crate::args::Args;
@@ -370,76 +370,8 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     tauri::generate_handler![ipc::mado_invoke]
 }
 
-fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Mado", true, Some("CmdOrCtrl+Q"))?;
-    let app_menu = Submenu::with_items(
-        app,
-        "Mado",
-        true,
-        &[
-            &PredefinedMenuItem::about(app, None, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &settings,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::show_all(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
-    let edit = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
-        ],
-    )?;
-    let window = Submenu::with_items(
-        app,
-        "Window",
-        true,
-        &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::close_window(app, None)?,
-        ],
-    )?;
-    #[cfg_attr(
-        not(debug_assertions),
-        expect(unused_mut, reason = "only debug builds add a menu")
-    )]
-    let mut menus: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&app_menu, &edit, &window];
-    #[cfg(debug_assertions)]
-    let developer = Submenu::with_items(
-        app,
-        "Developer",
-        true,
-        &[&MenuItem::with_id(
-            app,
-            "dev-platform",
-            "Platform Test Page",
-            true,
-            None::<&str>,
-        )?],
-    )?;
-    #[cfg(debug_assertions)]
-    menus.push(&developer);
-    Menu::with_items(app, &menus)
-}
-
 /// The settings window: one per process, label `settings` (spec 06 §9).
-fn open_settings(app: &AppHandle) -> tauri::Result<()> {
+pub(crate) fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("settings") {
         return w.set_focus();
     }
@@ -580,6 +512,26 @@ fn start_owner(
     if profile_count > 1 {
         mado_platform::dock::set_badge(Some(&owner.profile.initial()));
     }
+    // The Dock tile's menu (01 §5.4): New Window, New Private Window.
+    let strings = mado_settings::Strings::english();
+    let dock: Vec<(String, String)> = mado_types::menu::DOCK_MENU
+        .iter()
+        .map(|id| {
+            (
+                (*id).to_owned(),
+                strings.get(&format!("menu.{id}")).to_owned(),
+            )
+        })
+        .collect();
+    let to_core = handle.clone();
+    if !mado_platform::dock::set_menu(&dock, move |id| {
+        to_core.send(Input::Internal(Internal::Menu {
+            id: id.to_owned(),
+            window: None,
+        }));
+    }) {
+        tracing::warn!("the Dock menu was not added");
+    }
     if !args.hidden {
         handle.send(Input::Internal(Internal::Startup {
             bounds: Bounds::default(),
@@ -647,6 +599,22 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
             Box::pin(async move {
                 if method == "test.click" {
                     return test_click(&app, &params).await;
+                }
+                if method == "test.key" {
+                    let tab: Option<mado_types::TabId> =
+                        serde_json::from_value(params["tabId"].clone()).ok();
+                    let keys = params["keys"].as_str().unwrap_or_default().to_owned();
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = app.run_on_main_thread(move || {
+                        let _ = tx.send(tab.map(|t| mado_engine_webkit::synthesize_key(t, &keys)));
+                    });
+                    return match rx.await.ok().flatten() {
+                        Some(Ok(())) => Ok(serde_json::Value::Null),
+                        _ => Err(mado_types::MadoError::new(
+                            mado_types::ErrorCode::InvalidInput,
+                            "error.control.badCommand",
+                        )),
+                    };
                 }
                 if method == "test.takeSheet" {
                     let tab: Option<mado_types::TabId> =
@@ -856,36 +824,46 @@ fn run_app(
             quitting: Arc::clone(&quitting),
         })
         .invoke_handler(handlers())
-        .menu(menu)
+        .manage(menu::MenuItems::default())
+        .menu(menu::build)
         .on_menu_event(move |app, event| match event.id().as_ref() {
-            "settings" => {
-                if let Err(e) = open_settings(app) {
-                    tracing::error!(error = %e, "the settings window did not open");
-                }
-            }
             #[cfg(debug_assertions)]
             "dev-platform" => {
                 if let Err(e) = dev::open(app) {
                     tracing::error!(error = %e, "the platform test page did not open");
                 }
             }
-            "quit" => {
-                // The core asks about typed text and a second ⌘Q (04 §9),
-                // then calls back through `UiSink::quit`.
+            id => {
+                // Every other item is a menu command the core runs in the
+                // key window (01 §5.4); quitting asks about typed text and a
+                // second ⌘Q first (04 §9).
                 let core = app
                     .try_state::<Shared>()
                     .and_then(|s| s.core.get().cloned());
                 match core {
                     Some(core) => {
-                        core.send(Input::Internal(Internal::QuitRequested { shortcut: true }));
+                        let window = app
+                            .windows()
+                            .into_values()
+                            .find(|w| w.is_focused().unwrap_or(false))
+                            .and_then(|w| window_of(w.label()));
+                        core.send(Input::Internal(Internal::Menu {
+                            id: id.to_owned(),
+                            window,
+                        }));
                     }
-                    None => {
+                    None if id == "quit" => {
                         quit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                         app.exit(0);
                     }
+                    None if id == "settings" => {
+                        if let Err(e) = open_settings(app) {
+                            tracing::error!(error = %e, "the settings window did not open");
+                        }
+                    }
+                    None => {}
                 }
             }
-            _ => {}
         })
         .setup(move |app| {
             // SIGTERM (kill, logout tools) quits like ⌘Q, so the clean-quit

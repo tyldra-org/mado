@@ -2,8 +2,10 @@
 //! keywords live in `ui/src/i18n/en.json` under `settings.<key>.label`,
 //! `.help` and `.keywords`.
 //!
-//! Not here yet: per-command keyboard shortcuts (generated when the menus
-//! land in M2-T15), `translate.offer` and the v1.1 features, and per-profile
+//! The `@shortcuts` block declares one `shortcuts.<command>` setting per
+//! menu command (`mado_types::menu`), with Chrome's macOS default.
+//!
+//! Not here yet: `translate.offer` and the v1.1 features, and per-profile
 //! name, colour and avatar, which live in the app database's `profiles`
 //! table (spec 12).
 
@@ -762,5 +764,56 @@ settings! {
         scope: Profile,
         section: Features,
         protected: true,
+    }
+    @shortcuts {
+        ShortcutAbout: "about" = "",
+        ShortcutSettings: "settings" = "Cmd+,",
+        ShortcutQuit: "quit" = "Cmd+Q",
+        ShortcutNewTab: "newTab" = "Cmd+T",
+        ShortcutNewWindow: "newWindow" = "Cmd+N",
+        ShortcutNewPrivateWindow: "newPrivateWindow" = "Cmd+Shift+N",
+        ShortcutReopenClosedTab: "reopenClosedTab" = "Cmd+Shift+T",
+        ShortcutOpenLocation: "openLocation" = "Cmd+L",
+        ShortcutFocusAddressBar: "focusAddressBar" = "F6",
+        ShortcutCloseWindow: "closeWindow" = "Cmd+Shift+W",
+        ShortcutCloseTab: "closeTab" = "Cmd+W",
+        ShortcutImportBrowserData: "importBrowserData" = "",
+        ShortcutPrint: "print" = "Cmd+P",
+        ShortcutFind: "find" = "Cmd+F",
+        ShortcutFindNext: "findNext" = "Cmd+G",
+        ShortcutFindPrevious: "findPrevious" = "Cmd+Shift+G",
+        ShortcutToggleBookmarksBar: "toggleBookmarksBar" = "Cmd+Shift+B",
+        ShortcutStop: "stop" = "Cmd+.",
+        ShortcutReload: "reload" = "Cmd+R",
+        ShortcutForceReload: "forceReload" = "Cmd+Shift+R",
+        ShortcutActualSize: "actualSize" = "Cmd+0",
+        ShortcutZoomIn: "zoomIn" = "Cmd+=",
+        ShortcutZoomOut: "zoomOut" = "Cmd+-",
+        ShortcutReader: "reader" = "",
+        ShortcutViewSource: "viewSource" = "Cmd+Alt+U",
+        ShortcutDeveloperTools: "developerTools" = "Cmd+Alt+I",
+        ShortcutHome: "home" = "Cmd+Shift+H",
+        ShortcutBack: "back" = "Cmd+[",
+        ShortcutForward: "forward" = "Cmd+]",
+        ShortcutShowHistory: "showHistory" = "Cmd+Y",
+        ShortcutBookmarkManager: "bookmarkManager" = "Cmd+Alt+B",
+        ShortcutBookmarkTab: "bookmarkTab" = "Cmd+D",
+        ShortcutBookmarkAllTabs: "bookmarkAllTabs" = "Cmd+Shift+D",
+        ShortcutNextTab: "nextTab" = "Cmd+Alt+Right",
+        ShortcutPreviousTab: "previousTab" = "Cmd+Alt+Left",
+        ShortcutSelectTab1: "selectTab1" = "Cmd+1",
+        ShortcutSelectTab2: "selectTab2" = "Cmd+2",
+        ShortcutSelectTab3: "selectTab3" = "Cmd+3",
+        ShortcutSelectTab4: "selectTab4" = "Cmd+4",
+        ShortcutSelectTab5: "selectTab5" = "Cmd+5",
+        ShortcutSelectTab6: "selectTab6" = "Cmd+6",
+        ShortcutSelectTab7: "selectTab7" = "Cmd+7",
+        ShortcutSelectTab8: "selectTab8" = "Cmd+8",
+        ShortcutSelectLastTab: "selectLastTab" = "Cmd+9",
+        ShortcutDuplicateTab: "duplicateTab" = "",
+        ShortcutPinTab: "pinTab" = "",
+        ShortcutMuteSite: "muteSite" = "",
+        ShortcutMoveTabToNewWindow: "moveTabToNewWindow" = "",
+        ShortcutDownloads: "downloads" = "Cmd+Alt+L",
     }
 }

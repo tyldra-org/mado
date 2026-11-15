@@ -1,6 +1,7 @@
 <script lang="ts">
   // The address bar with its suggestions and security icon (spec 05).
   // Placeholder until the design pass (M6): every behaviour, no styling.
+  import { onAction } from "../core/actions";
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
   import { t } from "../i18n";
@@ -32,6 +33,17 @@
   let engines = $state<Engine[] | null>(null);
   let pending = "";
   let result = $state<string | null>(null);
+  let input: HTMLInputElement | undefined = $state();
+
+  // ⌘L, F6 (01 §5.3): focus moves to the address bar with its text selected.
+  $effect(() =>
+    onAction(store, (action) => {
+      if ((action === "openLocation" || action === "focusAddressBar") && input) {
+        input.focus();
+        input.select();
+      }
+    }),
+  );
 
   // Remote suggestions arrive later for the latest request only.
   $effect(() => {
@@ -140,6 +152,7 @@
     >{t(`address.security.${tab?.security?.level ?? "internal"}`)}</span
   >
   <input
+    bind:this={input}
     aria-label={t("address.label")}
     value={editing ? text : (tab?.displayUrl?.text ?? "")}
     onfocus={() => {

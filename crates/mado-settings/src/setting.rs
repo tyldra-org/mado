@@ -70,6 +70,10 @@ pub trait Setting {
     const KEY: crate::SettingKey;
 }
 
+/// `settings! { <settings> @shortcuts { <Ident>: "<command>" = "<keys>", … } }`:
+/// each shortcut is a `shortcuts.<command>` setting of type `Shortcut` in
+/// the Keyboard shortcuts section, one per menu command (spec 06 §8), with
+/// its label from `menu.<command>`.
 macro_rules! settings {
     ($(
         $ident:ident : $rust:ty {
@@ -80,12 +84,27 @@ macro_rules! settings {
             section: $section:ident,
             $($field:ident : $val:expr,)*
         }
-    )*) => {
+    )*
+    @shortcuts {
+        $($sident:ident : $command:literal = $keys:literal,)*
+    }) => {
         /// One variant per setting, in registry order.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub enum SettingKey {
             $($ident,)*
+            $($sident,)*
         }
+
+        $(
+            #[doc = concat!("`shortcuts.", $command, "`")]
+            #[derive(Debug, Clone, Copy)]
+            pub struct $sident;
+
+            impl crate::setting::Setting for $sident {
+                type Value = String;
+                const KEY: SettingKey = SettingKey::$sident;
+            }
+        )*
 
         $(
             #[doc = concat!("`", $key, "`")]
@@ -111,6 +130,20 @@ macro_rules! settings {
                 help: concat!("settings.", $key, ".help"),
                 keywords: concat!("settings.", $key, ".keywords"),
                 opts: crate::setting::Options { $($field: $val,)* ..crate::setting::Options::DEFAULT },
+            },
+        )*
+        $(
+            crate::setting::SettingDef {
+                id: SettingKey::$sident,
+                key: concat!("shortcuts.", $command),
+                ty: crate::types::SettingType::Shortcut,
+                default_json: concat!("\"", $keys, "\""),
+                scope: crate::types::Scope::App,
+                section: crate::types::Section::Shortcuts,
+                label: concat!("menu.", $command),
+                help: "settings.shortcut.help",
+                keywords: "settings.shortcut.keywords",
+                opts: crate::setting::Options::DEFAULT,
             },
         )*];
     };

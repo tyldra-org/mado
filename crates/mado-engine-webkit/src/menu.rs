@@ -66,6 +66,17 @@ define_class!(
             let tab = *self.ivars();
             replace(tab, self, menu);
         }
+
+        /// Reserved shortcuts go to the menu bar before the page (05 §10);
+        /// every other key goes to the page first, as WebKit does.
+        #[unsafe(method(performKeyEquivalent:))]
+        fn perform_key_equivalent(&self, event: &NSEvent) -> objc2::runtime::Bool {
+            if crate::keys::is_reserved(event) && crate::keys::to_menu(event) {
+                return objc2::runtime::Bool::YES;
+            }
+            // SAFETY: WKWebView's own handling of the event.
+            unsafe { msg_send![super(self), performKeyEquivalent: event] }
+        }
     }
 );
 

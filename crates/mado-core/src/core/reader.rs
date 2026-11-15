@@ -294,8 +294,13 @@ impl Core {
         };
         let html = page(&article, &url, &self.look());
         self.reader_sources.insert(tab, url);
-        self.outbox
-            .push(EngineOp::Apply(tab, TabCommand::ShowReader { html }));
+        self.outbox.push(EngineOp::Apply(
+            tab,
+            TabCommand::ShowPage {
+                page: mado_engine::tab::GeneratedPage::Reader,
+                html,
+            },
+        ));
     }
 
     pub(super) fn reader_command(&mut self, cmd: Command) -> Result<Value, MadoError> {

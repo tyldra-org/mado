@@ -10,6 +10,7 @@
   import BookmarksBar from "./BookmarksBar.svelte";
   import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
+  import FindBar from "./FindBar.svelte";
   import Notices from "./Notices.svelte";
   import PermissionPrompt from "./PermissionPrompt.svelte";
   import ProfileMenu from "./ProfileMenu.svelte";
@@ -76,6 +77,7 @@
     <SiteInfo {store} {windowId} />
     <AddressBar {store} {windowId} />
     <BookmarksBar {store} {windowId} />
+    <FindBar {store} {windowId} />
     <DownloadsBubble {store} />
     <UnsavedPrompt {store} {windowId} />
     <UnresponsivePrompt {store} {windowId} />

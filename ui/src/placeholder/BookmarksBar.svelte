@@ -2,6 +2,7 @@
   // The bookmarks bar and the ⌘D dialog (spec 12 §3). Placeholder until the
   // design pass (M6). Bookmarks are not in the state document: the bar
   // fetches them again whenever `bookmarksRev` changes.
+  import { onAction } from "../core/actions";
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
   import { t } from "../i18n";
@@ -52,6 +53,19 @@
   });
 
   const call = (cmd: Parameters<CoreStore["client"]["call"]>[0]) => store.client.call(cmd);
+
+  // ⌘D and ⇧⌘D from the menu (12 §3).
+  $effect(() =>
+    onAction(store, (action) => {
+      if (action === "bookmarkTab") void bookmarkThisTab();
+      if (action === "bookmarkAllTabs")
+        void call({
+          type: "bookmark.addAllTabs",
+          windowId,
+          folderName: t("bookmarks.allTabsFolder"),
+        }).catch(() => {});
+    }),
+  );
 
   function open(url: string | null) {
     if (url)

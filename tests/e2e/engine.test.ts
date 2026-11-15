@@ -442,6 +442,18 @@ run("WebKit adapter", () => {
     expect((await state()).tabs[forged.tab]?.url).toBe("http://pages.mado.test/forge-invoke.html");
   }, 30_000);
 
+  test("a reserved shortcut runs the menu command and never reaches the page (05 §10)", async () => {
+    const { window, tab } = await open("http://pages.mado.test/keys.html");
+    await tabWhere(tab, (t) => t.title === "keys:");
+    const count = async () => (await state()).windows[window]?.tabOrder.length ?? 0;
+    const before = await count();
+    await mado.control.call("test.key", { tabId: tab, keys: "Cmd+T" });
+    await until("the new tab", async () => ((await count()) === before + 1 ? true : undefined));
+    await mado.control.call("test.key", { tabId: tab, keys: "Cmd+K" });
+    await tabWhere(tab, (t) => t.title.includes("Cmd+K"));
+    expect((await state()).tabs[tab]?.title).not.toContain("Cmd+T");
+  });
+
   test("data.clear removes site data from WebKit's store (08 §7)", async () => {
     const url = "http://pages.mado.test/privacy/storage.html";
     const first = await open(url);
