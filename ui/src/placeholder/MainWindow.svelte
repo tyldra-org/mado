@@ -11,6 +11,7 @@
   import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
   import FindBar from "./FindBar.svelte";
+  import FirstRun from "./FirstRun.svelte";
   import Notices from "./Notices.svelte";
   import PermissionPrompt from "./PermissionPrompt.svelte";
   import ProfileMenu from "./ProfileMenu.svelte";
@@ -96,6 +97,7 @@
       </div>
     {/if}
   </main>
+  {#if store.state?.firstRun}<FirstRun {store} />{/if}
   <Notices {store} />
 </div>
 

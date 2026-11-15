@@ -10,6 +10,7 @@
   import SiteExceptions from "./SiteExceptions.svelte";
   import ClearData from "./ClearData.svelte";
   import ImportSheet from "./ImportSheet.svelte";
+  import DefaultBrowser from "./DefaultBrowser.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -85,6 +86,7 @@
       >
     {/if}
     {#if hits === null && section === "general"}
+      <DefaultBrowser client={store.client} />
       <ImportSheet client={store.client} />
     {/if}
     {#if hits === null && section === "privacy"}

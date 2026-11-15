@@ -285,6 +285,10 @@ pub struct OsPermissions {
     pub handler: fn(&str) -> Option<mado_platform::applinks::Handler>,
     /// Keychain identities for client certificates (spec 07 §7).
     pub identities: fn() -> Vec<mado_platform::keychain::ClientIdentity>,
+    /// Whether Mado is the default web browser.
+    pub is_default_browser: fn() -> Result<bool, String>,
+    /// Asks macOS to make Mado the default browser; macOS confirms.
+    pub make_default_browser: fn() -> Result<(), String>,
 }
 
 impl OsPermissions {
@@ -296,6 +300,12 @@ impl OsPermissions {
             request: |p| request(p).unwrap_or(OsStatus::Denied),
             handler: |url| mado_platform::applinks::handler(url).ok().flatten(),
             identities: mado_platform::keychain::identities,
+            is_default_browser: || {
+                mado_platform::default_browser::is_default().map_err(|e| e.to_string())
+            },
+            make_default_browser: || {
+                mado_platform::default_browser::make_default().map_err(|e| e.to_string())
+            },
         }
     }
 }
@@ -590,6 +600,24 @@ impl Core {
             .read(|c| errors::load_http_allowed(c, (config.clock)()))
             .unwrap_or_default();
         let page_scripts = config.page_scripts;
+        // The welcome sheet comes once per Mac, never in a temporary profile.
+        let first_run = !config.profile.is_private
+            && !config.profile.is_guest
+            && config
+                .app_db
+                .readers()
+                .read(|c| {
+                    use rusqlite::OptionalExtension as _;
+                    c.query_row(
+                        "SELECT 1 FROM app_state WHERE k = 'first_run_done'",
+                        [],
+                        |_| Ok(()),
+                    )
+                    .optional()
+                })
+                .ok()
+                .flatten()
+                .is_none();
         let reader_always = config
             .profile_db
             .readers()
@@ -599,6 +627,7 @@ impl Core {
             state: State {
                 profile: config.profile,
                 about: config.about.clone(),
+                first_run,
                 ..State::default()
             },
             rev: 0,
@@ -1088,6 +1117,47 @@ impl Core {
             cmd @ (Command::PromptAnswerDialog { .. }
             | Command::PromptAnswerAuth { .. }
             | Command::PromptAnswerClientCert { .. }) => self.sheet_command(cmd, rec),
+            Command::AppFinishFirstRun => {
+                if self.state.first_run {
+                    self.state.tx(rec).set_first_run(false);
+                    let pending = self
+                        .app_db
+                        .writer()
+                        .write(|c| {
+                            c.execute(
+                                "INSERT OR REPLACE INTO app_state (k, v) VALUES ('first_run_done', '1')",
+                                [],
+                            )
+                            .map(|_| ())
+                        });
+                    tokio::task::spawn_local(async move {
+                        if let Err(e) = pending.await {
+                            tracing::error!(error = %e, "the end of the first run was not saved");
+                        }
+                    });
+                }
+                Ok(Value::Null)
+            }
+            cmd @ (Command::AppDefaultBrowser | Command::AppSetDefaultBrowser) => {
+                if matches!(cmd, Command::AppSetDefaultBrowser) && !origin.is_user() {
+                    return Err(MadoError::new(ErrorCode::Protected, "error.app.notAllowed"));
+                }
+                let (is, make) = (self.os.is_default_browser, self.os.make_default_browser);
+                if let Some(reply) = reply_to.take() {
+                    tokio::task::spawn_blocking(move || {
+                        let answer = if matches!(cmd, Command::AppSetDefaultBrowser) {
+                            make().map(|()| Value::Null)
+                        } else {
+                            is().map(|d| json!({ "isDefault": d }))
+                        };
+                        let _ = reply.send(answer.map_err(|reason| {
+                            MadoError::new(ErrorCode::Internal, "error.app.defaultBrowser")
+                                .arg("reason", reason)
+                        }));
+                    });
+                }
+                Ok(Value::Null)
+            }
             Command::AppOpenSystemSettings { pane } => {
                 self.ui.open_system_settings(&pane);
                 Ok(Value::Null)

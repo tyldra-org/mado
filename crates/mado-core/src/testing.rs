@@ -134,6 +134,10 @@ impl crate::Updates for CountUpdates {
     }
 }
 
+/// Whether the fake macOS has Mado as the default browser.
+pub static DEFAULT_BROWSER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 thread_local! {
     /// The profile service the next `TestCore` on this thread uses.
     pub static PROFILES: std::cell::RefCell<std::sync::Arc<dyn crate::ui::Profiles>> =
@@ -200,65 +204,73 @@ impl TestCore {
             let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
             op.run(&mut *engine, &sink);
         });
-        let (handle, thread) = crate::start(CoreConfig {
-            profile: ProfileInfo {
-                name: "Test".into(),
-                is_private: PRIVATE.get(),
-                ..ProfileInfo::default()
-            },
-            app_db: Storage::start(&app).expect("app storage"),
-            profile_db: Storage::start(&profile).expect("profile storage"),
-            backups,
-            settings: Settings::new(Strings::english()),
-            engine,
-            captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
-            profiles: PROFILES.with_borrow(Clone::clone),
-            hsts_extra: ["hsts.example".to_owned()].into(),
-            home: IMPORT_HOME.with_borrow(Clone::clone),
-            // Camera denied at the OS, everything else answered yes.
-            os: crate::OsPermissions {
-                status: |p| match p {
-                    mado_platform::permissions::OsPermission::Camera => {
-                        mado_platform::permissions::OsStatus::Denied
-                    }
-                    _ => mado_platform::permissions::OsStatus::Granted,
+        let (handle, thread) =
+            crate::start(CoreConfig {
+                profile: ProfileInfo {
+                    name: "Test".into(),
+                    is_private: PRIVATE.get(),
+                    ..ProfileInfo::default()
                 },
-                request: |_| mado_platform::permissions::OsStatus::Granted,
-                // Only zoommtg: and mailto: have an app here.
-                handler: |url| {
-                    let name = if url.starts_with("zoommtg:") {
-                        "zoom.us"
-                    } else if url.starts_with("mailto:") {
-                        "Mail"
-                    } else {
-                        return None;
-                    };
-                    Some(mado_platform::applinks::Handler {
-                        name: name.into(),
-                        icon_png: Some(vec![137, 80, 78, 71]),
-                    })
+                app_db: Storage::start(&app).expect("app storage"),
+                profile_db: Storage::start(&profile).expect("profile storage"),
+                backups,
+                settings: Settings::new(Strings::english()),
+                engine,
+                captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
+                profiles: PROFILES.with_borrow(Clone::clone),
+                hsts_extra: ["hsts.example".to_owned()].into(),
+                home: IMPORT_HOME.with_borrow(Clone::clone),
+                // Camera denied at the OS, everything else answered yes.
+                os: crate::OsPermissions {
+                    status: |p| match p {
+                        mado_platform::permissions::OsPermission::Camera => {
+                            mado_platform::permissions::OsStatus::Denied
+                        }
+                        _ => mado_platform::permissions::OsStatus::Granted,
+                    },
+                    request: |_| mado_platform::permissions::OsStatus::Granted,
+                    // Only zoommtg: and mailto: have an app here.
+                    handler: |url| {
+                        let name = if url.starts_with("zoommtg:") {
+                            "zoom.us"
+                        } else if url.starts_with("mailto:") {
+                            "Mail"
+                        } else {
+                            return None;
+                        };
+                        Some(mado_platform::applinks::Handler {
+                            name: name.into(),
+                            icon_png: Some(vec![137, 80, 78, 71]),
+                        })
+                    },
+                    identities: || {
+                        vec![mado_platform::keychain::ClientIdentity {
+                            id: "cert-1".into(),
+                            label: "Ada Lovelace".into(),
+                        }]
+                    },
+                    is_default_browser: || {
+                        Ok(DEFAULT_BROWSER.load(std::sync::atomic::Ordering::SeqCst))
+                    },
+                    make_default_browser: || {
+                        DEFAULT_BROWSER.store(true, std::sync::atomic::Ordering::SeqCst);
+                        Ok(())
+                    },
                 },
-                identities: || {
-                    vec![mado_platform::keychain::ClientIdentity {
-                        id: "cert-1".into(),
-                        label: "Ada Lovelace".into(),
-                    }]
+                user_agent: mado_engine::UserAgent::EngineDefault,
+                clean_start,
+                page_scripts: mado_engine::PageScriptSet::default(),
+                ui: Box::new(Collect(Arc::clone(&sent))),
+                updates: Box::new(CountUpdates(Arc::clone(&sent))),
+                about: mado_types::state::AboutState {
+                    version: "0.1.0".into(),
+                    engine_version: "625.2.8".into(),
+                    engine_outdated: false,
                 },
-            },
-            user_agent: mado_engine::UserAgent::EngineDefault,
-            clean_start,
-            page_scripts: mado_engine::PageScriptSet::default(),
-            ui: Box::new(Collect(Arc::clone(&sent))),
-            updates: Box::new(CountUpdates(Arc::clone(&sent))),
-            about: mado_types::state::AboutState {
-                version: "0.1.0".into(),
-                engine_version: "625.2.8".into(),
-                engine_outdated: false,
-            },
-            restore_session: RESTORE.get(),
-            clock: || 1_800_000_000_000,
-        })
-        .expect("core starts");
+                restore_session: RESTORE.get(),
+                clock: || 1_800_000_000_000,
+            })
+            .expect("core starts");
         // The main thread's role: hand engine events back to the core.
         let forward = handle.clone();
         std::thread::spawn(move || {

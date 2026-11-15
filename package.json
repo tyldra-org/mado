@@ -22,6 +22,7 @@
     "deps:check": "bun scripts/check-deps.ts",
     "typecheck:tests": "tsc -p tests --noEmit",
     "test:e2e": "bun run build:ui && cargo build -p mado-app --features test-hooks && cargo build -p mado-fixture-server && MADO_E2E_BIN=target/debug/mado-app MADO_FIXTURE_BIN=target/debug/mado-fixture-server bun test tests/e2e",
+    "test:smoke": "bun run build:ui && cargo build -p mado-app --features test-hooks && MADO_E2E_BIN=target/debug/mado-app bun scripts/site-smoke.ts",
     "test:audit": "bun run build:ui && cargo build -p mado-app --features test-hooks && cargo build -p mado-fixture-server && MADO_E2E_BIN=target/debug/mado-app MADO_FIXTURE_BIN=target/debug/mado-fixture-server bun scripts/network-audit.ts"
   },
   "devDependencies": {

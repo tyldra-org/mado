@@ -13,6 +13,22 @@ import { channel } from "./channel";
 
 const REPO = process.env.GITHUB_REPOSITORY ?? "tyldra-org/mado";
 
+/** The release notes: the CHANGELOG section of `version` (a pre-release
+ * uses its base version's section, `0.1.0` for `0.1.0-beta.1`), then how
+ * to open an app Apple has not notarised. */
+export function notes(version: string, changelog: string): string {
+  const base = version.split("-")[0] ?? version;
+  const heading = new RegExp(`^## \\[${base.replaceAll(".", "\\.")}\\][^\\n]*\\n`, "m");
+  const start = changelog.search(heading);
+  const opening =
+    "Mado is not notarised by Apple: the first time, open it from Privacy & Security › Open Anyway.";
+  if (start < 0) return `Mado ${version}. ${opening}`;
+  const rest = changelog.slice(start).replace(heading, "");
+  const end = rest.search(/^## \[/m);
+  const section = (end < 0 ? rest : rest.slice(0, end)).trim();
+  return `${section}\n\n${opening}\n`;
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const dry = args.includes("--dry-run");
@@ -39,7 +55,10 @@ if (import.meta.main) {
     "--title",
     `Mado ${version}`,
     "--notes",
-    `Mado ${version}. Unsigned by Apple: see Privacy & Security, Open Anyway.`,
+    notes(
+      version,
+      await readFile(join(import.meta.dir, "../../CHANGELOG.md"), "utf8").catch(() => ""),
+    ),
     ...(prerelease === "true" ? ["--prerelease"] : []),
   );
 

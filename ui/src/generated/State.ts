@@ -42,4 +42,9 @@ notices: Array<Notice>, extensions: ExtensionsState, media: MediaState, blocker:
 /**
  * This build and the web engine under it (spec 15 §5).
  */
-about: AboutState, settings: SettingsState, features: { [key in string]: boolean }, };
+about: AboutState, 
+/**
+ * The welcome sheet waits: import, search engine, default browser
+ * (M2-T17). Never in private or guest windows.
+ */
+firstRun: boolean, settings: SettingsState, features: { [key in string]: boolean }, };
