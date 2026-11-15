@@ -93,6 +93,10 @@ pub struct FakeState {
     pub cleared: Vec<ClearDataRequest>,
     /// Downloads: where the core put them, and whether they run.
     pub downloads: BTreeMap<EngineDownloadId, FakeDownload>,
+    /// Error pages shown: tab, URL and HTML.
+    pub error_pages: Vec<(TabId, String, String)>,
+    /// Origins (`https://host`) whose loads fail, with the error.
+    pub unreachable: BTreeMap<String, mado_engine::NetError>,
     next_nav: u64,
 }
 
@@ -280,7 +284,17 @@ impl FakeControl {
             },
         };
         self.decide(tab, request, move |control, decision, url| match decision {
-            NavDecision::Allow => control.commit(tab, &url, kind, true),
+            NavDecision::Allow => {
+                let origin = url::Url::parse(&url)
+                    .ok()
+                    .and_then(|u| Some(format!("{}://{}", u.scheme(), u.host_str()?)))
+                    .unwrap_or_default();
+                let failure = lock(&control.state).unreachable.get(&origin).cloned();
+                match failure {
+                    Some(error) => control.fail(tab, &url, error),
+                    None => control.commit(tab, &url, kind, true),
+                }
+            }
             NavDecision::Redirect { url: to } => {
                 control.navigate(tab, &to, None, true, user_gesture, NavKind::Redirect);
             }
@@ -307,6 +321,29 @@ impl FakeControl {
             tab,
             request,
             reply,
+        });
+    }
+
+    /// A load of `url` that fails with `error`.
+    fn fail(&self, tab: TabId, url: &str, error: mado_engine::NetError) {
+        let nav_id = {
+            let mut state = lock(&self.state);
+            state.next_nav += 1;
+            state.next_nav
+        };
+        self.events.send(EngineEvent::NavigationStarted {
+            tab,
+            url: url.to_owned(),
+            nav_id,
+            is_main_frame: true,
+            user_gesture: false,
+            kind: NavKind::Other,
+        });
+        self.events.send(EngineEvent::NavigationFailed {
+            tab,
+            nav_id,
+            url: url.to_owned(),
+            error,
         });
     }
 
@@ -516,6 +553,11 @@ impl Engine for FakeEngine {
             TabCommand::Navigate { url, kind, .. } => {
                 drop(state);
                 control.navigate(tab, &url, None, true, false, kind);
+            }
+            TabCommand::ShowErrorPage { html, url } => {
+                state.error_pages.push((tab, url.clone(), html));
+                drop(state);
+                control.commit(tab, &url, NavKind::Other, false);
             }
             TabCommand::Reload { .. } => {
                 let url = t.url().map(str::to_owned);

@@ -389,6 +389,7 @@ fn start_owner(
             Arc::clone(&owner.staged),
         )),
         clock: mado_core::system_clock,
+        captive_probe: captive_probe(),
     })?;
     let _ = owner.core.set(handle.clone());
     if let Ok(mut slot) = owner.core_thread.lock() {
@@ -666,4 +667,14 @@ fn run_app(
         _ => {}
     });
     Ok(ExitCode::SUCCESS)
+}
+
+/// Apple's captive portal probe (spec 05 §8). End-to-end tests point it
+/// elsewhere, or turn it off with an empty value.
+fn captive_probe() -> Option<String> {
+    #[cfg(feature = "test-hooks")]
+    if let Ok(probe) = std::env::var("MADO_CAPTIVE_PROBE") {
+        return (!probe.is_empty()).then_some(probe);
+    }
+    Some("http://captive.apple.com/hotspot-detect.html".to_owned())
 }

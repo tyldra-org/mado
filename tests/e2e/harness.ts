@@ -92,6 +92,8 @@ export class Mado {
       MADO_DATA_DIR: this.dir,
       MADO_TEST_TOKEN: this.token,
       MADO_TEST_HEADLESS: "1",
+      // Tests never reach Apple's captive portal probe.
+      MADO_CAPTIVE_PROBE: "",
     } as Record<string, string>;
   }
 

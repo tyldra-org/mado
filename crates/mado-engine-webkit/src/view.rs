@@ -707,6 +707,17 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 );
             }
             TabCommand::ShowDevTools => show_inspector(&view)?,
+            TabCommand::ShowErrorPage { html, url } => {
+                // A simulated response keeps `url` as the page's URL, where
+                // loadHTMLString would show about:blank.
+                if let Some(u) = objc2_foundation::NSURL::URLWithString(&NSString::from_str(&url)) {
+                    let request = objc2_foundation::NSURLRequest::requestWithURL(&u);
+                    view.loadSimulatedRequest_responseHTMLString(
+                        &request,
+                        &NSString::from_str(&html),
+                    );
+                }
+            }
             TabCommand::ShowSource => {
                 return Err(EngineError::Unsupported(
                     "view source arrives with internal pages (M2-T14)",
