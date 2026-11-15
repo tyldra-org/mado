@@ -87,15 +87,30 @@ export class Mado {
   }
 
   env(): Record<string, string> {
+    // The network audit (scripts/network-audit.ts, spec 08 §11) sends all of
+    // Mado's traffic, its own and its pages', through a recording proxy and
+    // lets it reach what it would reach for a user, the captive portal probe
+    // included.
+    const audit = process.env.MADO_AUDIT_PROXY;
     return {
       ...process.env,
       MADO_DATA_DIR: this.dir,
       MADO_TEST_TOKEN: this.token,
       MADO_TEST_HEADLESS: "1",
-      // Tests never reach Apple's captive portal probe.
-      MADO_CAPTIVE_PROBE: "",
       // A fixture host treated as HSTS-preloaded (spec 08 §12 check 2).
       MADO_HSTS_HOSTS: "hsts.mado.test",
+      ...(audit
+        ? {
+            MADO_TEST_PROXY: audit,
+            HTTP_PROXY: `http://${audit}`,
+            HTTPS_PROXY: `http://${audit}`,
+            ALL_PROXY: `http://${audit}`,
+            NO_PROXY: "",
+          }
+        : {
+            // Tests never reach Apple's captive portal probe.
+            MADO_CAPTIVE_PROBE: "",
+          }),
     } as Record<string, string>;
   }
 

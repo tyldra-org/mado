@@ -1441,6 +1441,19 @@ impl Core {
                     .collect()
             })
             .unwrap_or_default();
+        // The network audit (spec 08 §11, 16 §3): with `test-hooks`, a
+        // profile on the system proxy uses the recording proxy instead.
+        #[cfg(feature = "test-hooks")]
+        if s("proxy.mode") == "system"
+            && let Ok(http) = std::env::var("MADO_TEST_PROXY")
+            && !http.is_empty()
+        {
+            return mado_engine::ProxyConfig::Manual {
+                http,
+                socks5: String::new(),
+                bypass: Vec::new(),
+            };
+        }
         mado_engine::ProxyConfig::from_settings(
             &s("proxy.mode"),
             &s("proxy.http"),

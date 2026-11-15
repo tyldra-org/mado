@@ -29,6 +29,33 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
+/// Where every host a client asked for is appended, one per line, for the
+/// network audit (spec 08 §11). Set once per process.
+static RECORD: std::sync::OnceLock<std::sync::Mutex<std::fs::File>> = std::sync::OnceLock::new();
+
+/// Appends each host clients ask for to `path` from now on: `CONNECT`
+/// targets and plain requests' `Host`, including hosts the server refuses.
+pub fn record_hosts_to(path: &Path) -> std::io::Result<()> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    let _ = RECORD.set(std::sync::Mutex::new(file));
+    Ok(())
+}
+
+fn record(host: &str) {
+    use std::io::Write;
+    if let Some(file) = RECORD.get()
+        && !host.is_empty()
+    {
+        let mut f = file
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = writeln!(f, "{host}");
+    }
+}
+
 /// The suffix every fixture host has.
 pub const DOMAIN: &str = "mado.test";
 
@@ -245,6 +272,16 @@ async fn handle(State(pages): State<Pages>, request: Request) -> Response {
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
+    record(&host);
+    // The captive portal probe (spec 05 §8) answers as on a network without
+    // a portal, so the network audit runs the suite as a user's Mac would.
+    if host == "captive.apple.com" && request.uri().path() == "/hotspot-detect.html" {
+        return (
+            [(header::CONTENT_TYPE, "text/html")],
+            "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>",
+        )
+            .into_response();
+    }
     if host != DOMAIN && !host.ends_with(".mado.test") {
         return (
             StatusCode::BAD_GATEWAY,
@@ -345,6 +382,13 @@ async fn connection(
         .nth(1)
         .unwrap_or_default()
         .to_owned();
+    record(
+        &target
+            .rsplit_once(':')
+            .map_or(target.as_str(), |(h, _)| h)
+            .trim_matches(['[', ']'])
+            .to_ascii_lowercase(),
+    );
     stream
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await?;
