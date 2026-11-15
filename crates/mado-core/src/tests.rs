@@ -2718,8 +2718,19 @@ fn a_lookalike_domain_asks_did_you_mean() {
         &action_link(&html, "continue").expect("continue"),
         true,
     );
+    // The error page already shows this URL: wait until the engine may load
+    // it, or that load could land after the next navigation.
     eventually("continued", || {
-        state_of(&core).tabs[&third].url == "https://paypal-login.com/"
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .decisions
+            .iter()
+            .any(|(t, u, d)| {
+                *t == third
+                    && u == "https://paypal-login.com/"
+                    && *d == mado_engine::NavDecision::Allow
+            })
     });
     core.page
         .page_navigates(third, "https://paypal-login.com/again", true);
