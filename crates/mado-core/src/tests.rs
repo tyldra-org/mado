@@ -1062,3 +1062,27 @@ fn pause_resume_and_quit_keep_resume_data() {
     )
     .expect("resumes after relaunch");
 }
+
+/// The bookmarks bar reloads the tree whenever `bookmarksRev` goes up, so
+/// reading the tree must not raise it (that looped forever); a change must.
+#[test]
+fn reading_the_bookmark_tree_leaves_bookmarks_rev_alone() {
+    let core = TestCore::start();
+    let rev = |core: &TestCore| state_of(core).bookmarks_rev;
+    let tree = || Command::BookmarkTree { parent_id: None };
+    ask(&core, Origin::System, tree()).expect("bookmarks.tree");
+    ask(&core, Origin::System, tree()).expect("bookmarks.tree");
+    assert_eq!(rev(&core), 0, "reads leave the rev alone");
+    ask(
+        &core,
+        Origin::System,
+        Command::BookmarkAdd {
+            parent_id: None,
+            title: "Example".into(),
+            url: "https://example.com/".into(),
+            index: None,
+        },
+    )
+    .expect("bookmarks.add");
+    eventually("the rev to go up", || rev(&core) == 1);
+}
