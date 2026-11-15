@@ -354,23 +354,19 @@ impl Core {
                         t.audio.muted = muted;
                     }
                 }
-                if !self.state.profile.is_private {
-                    let origin_pattern = format!("[*.]{host}");
-                    let value = if muted { "block" } else { "allow" };
-                    let pending = self.profile_db.writer().write(move |c| {
-                        c.execute(
-                            "INSERT INTO site_settings (origin, key, value, embedder, granted_at, source)
-                             VALUES (?1, 'sound', ?2, '', ?3, 'user')
-                             ON CONFLICT DO UPDATE SET value = ?2, granted_at = ?3, source = 'user'",
-                            rusqlite::params![origin_pattern, value, now],
-                        )
-                    });
-                    tokio::task::spawn_local(async move {
-                        if let Err(e) = pending.await {
-                            tracing::error!(error = %e, "the sound site setting was not written");
-                        }
-                    });
-                }
+                // Through the permission store, so the setting applies now
+                // (spec 07 §1 `sound`); private profiles keep it in memory.
+                self.write_site(
+                    &format!("[*.]{host}"),
+                    "sound",
+                    None,
+                    if muted {
+                        mado_permissions::Value::Block
+                    } else {
+                        mado_permissions::Value::Allow
+                    },
+                    mado_permissions::Source::User,
+                );
                 Ok(Value::Null)
             }
             Command::TabMoveToProfile { tab_id, profile_id } => {
