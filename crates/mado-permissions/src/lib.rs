@@ -211,6 +211,20 @@ impl Store {
         );
     }
 
+    /// Removes the rows granted at or after `since`, or every row.
+    /// Returns them (spec 08 §7, `siteSettings`).
+    pub fn remove_granted_since(&mut self, since: Option<i64>) -> Vec<Row> {
+        let gone: Vec<(String, String, String)> = self
+            .rows
+            .iter()
+            .filter(|(_, r)| since.is_none_or(|s| r.granted_at >= s))
+            .map(|(k, _)| k.clone())
+            .collect();
+        gone.into_iter()
+            .filter_map(|k| self.rows.remove(&k))
+            .collect()
+    }
+
     /// Removes `origin`'s rows for `key`, or all of them. Returns them.
     pub fn remove(&mut self, origin: &str, key: Option<&str>) -> Vec<Row> {
         let gone: Vec<(String, String, String)> = self

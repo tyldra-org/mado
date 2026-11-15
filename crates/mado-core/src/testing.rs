@@ -25,11 +25,16 @@ pub struct Sent {
     pub other_profiles: Vec<(mado_types::ProfileId, String)>,
     /// Temporary windows asked for: guest or not, and their URLs.
     pub temporary: Vec<(bool, Vec<String>)>,
+    /// How many times the core asked the app to quit.
+    pub quits: usize,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
 
 impl UiSink for Collect {
+    fn quit(&mut self) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).quits += 1;
+    }
     fn patch(&mut self, patch: &Patch) {
         self.0
             .lock()

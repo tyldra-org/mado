@@ -9,8 +9,8 @@ use std::ptr::NonNull;
 use block2::RcBlock;
 use mado_engine::tab::{Image, ImageFormat, MediaAction, SessionBlob};
 use mado_engine::{
-    Callback, ClearDataRequest, EngineError, InjectAt, PageScriptSet, ProxyConfig, TabCommand,
-    TabInitial, TabSpec, UserAgent, World,
+    Callback, ClearDataRequest, EngineError, InjectAt, PageScriptSet, PrivacyConfig, ProxyConfig,
+    TabCommand, TabInitial, TabSpec, UserAgent, World,
 };
 use mado_types::{TabId, WindowId};
 use objc2::rc::Retained;
@@ -24,9 +24,9 @@ use objc2_foundation::{
     NSObjectNSKeyValueObserverRegistration, NSSet, NSString, NSUUID, ns_string,
 };
 use objc2_web_kit::{
-    WKAudiovisualMediaTypes, WKContentWorld, WKSnapshotConfiguration, WKUserContentController,
-    WKUserScript, WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration,
-    WKWebsiteDataRecord, WKWebsiteDataStore,
+    WKAudiovisualMediaTypes, WKContentRuleList, WKContentRuleListStore, WKContentWorld,
+    WKSnapshotConfiguration, WKUserContentController, WKUserScript, WKUserScriptInjectionTime,
+    WKWebView, WKWebViewConfiguration, WKWebsiteDataRecord, WKWebsiteDataStore,
 };
 
 use crate::delegate::{self, INFO, Observer, TabDelegate, TabInfo};
@@ -56,6 +56,9 @@ pub struct Adapter {
     mtm: MainThreadMarker,
     store: Retained<WKWebsiteDataStore>,
     scripts: PageScriptSet,
+    privacy: PrivacyConfig,
+    /// The compiled third-party cookie rule (spec 08 §8), once compiled.
+    cookie_rules: Option<Retained<WKContentRuleList>>,
     scheme: Retained<SchemeHandler>,
     inspectable: bool,
     tabs: BTreeMap<TabId, Tab>,
@@ -110,6 +113,8 @@ impl Adapter {
             mtm,
             store,
             scripts: PageScriptSet::default(),
+            privacy: PrivacyConfig::default(),
+            cookie_rules: None,
             scheme: SchemeHandler::new(mtm, config.resolver),
             inspectable: config.inspectable,
             tabs: BTreeMap::new(),
@@ -214,7 +219,13 @@ impl Adapter {
             }
             let prefs = config.preferences();
             prefs.setElementFullscreenEnabled(true);
-            prefs.setFraudulentWebsiteWarningEnabled(true);
+            prefs.setFraudulentWebsiteWarningEnabled(self.privacy.dangerous_site_warnings);
+            set_ice_filtering(&prefs, self.privacy.hide_local_ip);
+            if self.privacy.block_third_party_cookies
+                && let Some(rules) = &self.cookie_rules
+            {
+                controller.addContentRuleList(rules);
+            }
             prefs.setTextInteractionEnabled(true);
             config
                 .defaultWebpagePreferences()
@@ -352,6 +363,36 @@ impl Adapter {
         }
     }
 
+    /// Applies the safety and privacy settings to every view (spec 08 §1,
+    /// §8). The cookie rule compiles once, off the first call that needs it.
+    pub fn set_privacy(&mut self, privacy: PrivacyConfig) {
+        self.privacy = privacy;
+        if privacy.block_third_party_cookies && self.cookie_rules.is_none() {
+            compile_cookie_rules(self.mtm);
+        }
+        for t in self.tabs.values() {
+            // SAFETY: the view's live preferences and its own controller.
+            unsafe {
+                t.view
+                    .configuration()
+                    .preferences()
+                    .setFraudulentWebsiteWarningEnabled(privacy.dangerous_site_warnings);
+                set_ice_filtering(&t.view.configuration().preferences(), privacy.hide_local_ip);
+                if let Some(rules) = &self.cookie_rules {
+                    t.controller.removeContentRuleList(rules);
+                    if privacy.block_third_party_cookies {
+                        t.controller.addContentRuleList(rules);
+                    }
+                }
+            }
+        }
+    }
+
+    fn cookie_rules_ready(&mut self, rules: Retained<WKContentRuleList>) {
+        self.cookie_rules = Some(rules);
+        self.set_privacy(self.privacy);
+    }
+
     pub fn set_proxy(&mut self, proxy: &ProxyConfig) {
         if let Err(e) = set_proxy(&self.store, proxy) {
             tracing::error!(error = %e, "the proxy was not applied");
@@ -371,6 +412,57 @@ impl Adapter {
             }
         });
         self.install_scripts(tab, &controller);
+    }
+}
+
+/// `privacy.webrtcHideIp` (spec 08 §8): WebKit filters host ICE candidates
+/// unless told otherwise through the `_iceCandidateFilteringEnabled`
+/// preference, which has no public API. Without it the filter stays on.
+fn set_ice_filtering(prefs: &objc2_web_kit::WKPreferences, on: bool) {
+    let sel = objc2::sel!(_setICECandidateFilteringEnabled:);
+    // SAFETY: a BOOL setter, called only when the preferences answer it.
+    unsafe {
+        let responds: bool = msg_send![prefs, respondsToSelector: sel];
+        if responds {
+            let _: () = msg_send![prefs, _setICECandidateFilteringEnabled: on];
+        } else if !on {
+            tracing::warn!("WebKit has no ICE candidate filtering switch; local IPs stay hidden");
+        }
+    }
+}
+
+/// Third-party requests carry no cookies (WebKit content rule
+/// `block-cookies`, spec 08 §8).
+const COOKIE_RULES: &str = r#"[{"trigger":{"url-filter":".*","load-type":["third-party"]},"action":{"type":"block-cookies"}}]"#;
+
+fn compile_cookie_rules(mtm: MainThreadMarker) {
+    // SAFETY: the app's rule list store, on the main thread.
+    let Some(store) = (unsafe { WKContentRuleListStore::defaultStore(mtm) }) else {
+        tracing::error!("WebKit has no content rule list store");
+        return;
+    };
+    let done = RcBlock::new(|list: *mut WKContentRuleList, error: *mut NSError| {
+        // SAFETY: WebKit hands a list or an error, retained for the call.
+        match unsafe { Retained::retain(list) } {
+            Some(list) => {
+                crate::with(|a| a.cookie_rules_ready(list));
+            }
+            None => {
+                // SAFETY: as above.
+                let error = unsafe { Retained::retain(error) }
+                    .map(|e| e.localizedDescription().to_string())
+                    .unwrap_or_default();
+                tracing::error!(%error, "the third-party cookie rule did not compile");
+            }
+        }
+    });
+    // SAFETY: compiling a constant rule list with a completion block.
+    unsafe {
+        store.compileContentRuleListForIdentifier_encodedContentRuleList_completionHandler(
+            Some(ns_string!("mado.thirdPartyCookies")),
+            Some(&NSString::from_str(COOKIE_RULES)),
+            Some(&done),
+        );
     }
 }
 

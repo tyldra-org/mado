@@ -135,6 +135,11 @@ pub fn set_proxy(proxy: ProxyConfig) {
     with(|a| a.set_proxy(&proxy));
 }
 
+/// Applies the profile's safety and privacy settings (spec 08 §1, §8).
+pub fn set_privacy(privacy: mado_engine::PrivacyConfig) {
+    with(|a| a.set_privacy(privacy));
+}
+
 /// Accepts `host`'s certificate for the session (spec 08 §3).
 pub fn allow_certificate(host: String) {
     delegate::TRUSTED.with_borrow_mut(|t| t.insert(host));

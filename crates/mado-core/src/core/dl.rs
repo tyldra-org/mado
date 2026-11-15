@@ -602,7 +602,7 @@ impl Core {
     fn quit_when_downloads_paused(&mut self) {
         if self.quit_after_downloads && self.dls.values().all(|d| d.engine.is_none()) {
             self.quit_after_downloads = false;
-            self.ui.quit();
+            self.quit_now();
         }
     }
 
@@ -772,7 +772,7 @@ impl Core {
         Ok(Value::Null)
     }
 
-    fn forget_download(&mut self, id: DownloadId, rec: &mut PatchRecorder) {
+    pub(super) fn forget_download(&mut self, id: DownloadId, rec: &mut PatchRecorder) {
         self.state.tx(rec).downloads().remove(&id);
         self.dls.remove(&id);
         if !self.state.profile.is_private {

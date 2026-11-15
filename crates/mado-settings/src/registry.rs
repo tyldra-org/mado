@@ -275,7 +275,16 @@ settings! {
     }
     PrivacyClearOnExit: Vec<String> {
         key: "privacy.clearOnExit",
-        ty: SettingType::List(&SettingType::Enum(&["cookies", "cache", "history", "downloads", "siteData"])),
+        ty: SettingType::List(&SettingType::Enum(&[
+            "history",
+            "downloadsList",
+            "cookies",
+            "cache",
+            "siteSettings",
+            "formHistory",
+            "blockerStats",
+            "aiChats",
+        ])),
         default: r#"[]"#,
         scope: Profile,
         section: Privacy,

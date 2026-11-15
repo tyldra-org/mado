@@ -46,7 +46,11 @@ pub fn search_index() -> Value {
                 "undoNotice": d.opts.undo_notice,
                 "restart": format!("{:?}", d.opts.restart).to_lowercase(),
                 "scope": d.scope.as_str(),
-                "options": match d.ty { crate::types::SettingType::Enum(o) => json!(o), _ => Value::Null },
+                "options": match d.ty {
+                    crate::types::SettingType::Enum(o) => json!(o),
+                    crate::types::SettingType::List(crate::types::SettingType::Enum(o)) => json!(o),
+                    _ => Value::Null,
+                },
             })
         })
         .collect();

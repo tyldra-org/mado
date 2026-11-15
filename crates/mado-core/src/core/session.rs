@@ -915,7 +915,7 @@ impl Core {
                     self.timers
                         .schedule(Timer::QuitNow, std::time::Duration::from_secs(3));
                 } else {
-                    self.ui.quit();
+                    self.quit_now();
                 }
             }
             CloseAction::Window(w) => {

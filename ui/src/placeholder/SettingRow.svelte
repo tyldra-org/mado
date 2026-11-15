@@ -64,6 +64,26 @@
       onchange={(e) => set(Math.round(e.currentTarget.valueAsNumber * MINUTE))}
     />
     <span>{t("settings.minutes")}</span>
+  {:else if entry.renderer === "list" && entry.options}
+    <fieldset {id}>
+      {#each entry.options as option (option)}
+        <label
+          ><input
+            type="checkbox"
+            checked={Array.isArray(value) && value.includes(option)}
+            onchange={(e) =>
+              set(
+                (entry.options ?? []).filter((o) =>
+                  o === option
+                    ? e.currentTarget.checked
+                    : Array.isArray(value) && value.includes(o),
+                ),
+              )}
+          />
+          {option}</label
+        >
+      {/each}
+    </fieldset>
   {:else if entry.renderer === "list"}
     <textarea
       {id}

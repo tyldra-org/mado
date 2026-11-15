@@ -8,6 +8,7 @@
   import SettingRow from "./SettingRow.svelte";
   import ProfilesSection from "./ProfilesSection.svelte";
   import SiteExceptions from "./SiteExceptions.svelte";
+  import ClearData from "./ClearData.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -73,6 +74,9 @@
     {/each}
     {#if hits === null && section === "profiles"}
       <ProfilesSection client={store.client} />
+    {/if}
+    {#if hits === null && section === "privacy"}
+      <ClearData client={store.client} />
     {/if}
     {#if hits === null && section === "siteSettings"}
       <SiteExceptions client={store.client} />

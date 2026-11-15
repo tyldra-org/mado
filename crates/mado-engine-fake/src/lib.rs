@@ -97,6 +97,8 @@ pub struct FakeState {
     pub downloads: BTreeMap<EngineDownloadId, FakeDownload>,
     /// Hosts whose certificate the user accepted (Proceed).
     pub allowed_certificates: Vec<String>,
+    /// The last privacy settings the core sent.
+    pub privacy: Option<mado_engine::PrivacyConfig>,
     /// Messages posted to pages, in order.
     pub posted: Vec<(TabId, serde_json::Value)>,
     /// Error pages shown: tab, URL and HTML.
@@ -769,6 +771,10 @@ impl Engine for FakeEngine {
 
     fn allow_certificate(&mut self, host: String) {
         self.lock().allowed_certificates.push(host);
+    }
+
+    fn set_privacy(&mut self, privacy: mado_engine::PrivacyConfig) {
+        self.lock().privacy = Some(privacy);
     }
 
     fn download(&mut self, id: EngineDownloadId, cmd: DownloadCommand) {
