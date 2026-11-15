@@ -1,5 +1,6 @@
-//! `en.json` strings for labels, help and search keywords. Rust never shows
-//! them; it searches them (spec 06 §3) and checks they exist.
+//! `en.json` strings. The core searches setting labels, help and keywords
+//! (spec 06 §3), checks they exist, and fills error pages (spec 05 §6),
+//! which it renders itself.
 
 use std::collections::BTreeMap;
 

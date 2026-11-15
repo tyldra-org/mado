@@ -1342,3 +1342,143 @@ fn suggestions_for_a_large_history_come_back_in_time() {
     assert!(out["rows"].as_array().is_some_and(|r| r.len() > 1));
     assert!(took < std::time::Duration::from_millis(30), "took {took:?}");
 }
+
+fn error_pages(core: &TestCore) -> Vec<(mado_types::TabId, String, String)> {
+    core.engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .error_pages
+        .clone()
+}
+
+fn unreachable(core: &TestCore, origin: &str, error: mado_engine::NetError) {
+    core.engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .unreachable
+        .insert(origin.into(), error);
+}
+
+/// The error page's button for `action`, as its link.
+fn action_link(html: &str, action: &str) -> Option<String> {
+    let start = html.find("mado://error-action/?t=")?;
+    let end = html[start..].find('"')? + start;
+    let link = html[start..end].replace("&amp;", "&");
+    let token = link.split("t=").nth(1)?.split('&').next()?.to_owned();
+    Some(format!("mado://error-action/?t={token}&a={action}"))
+}
+
+/// 05 §12 check 4 on the fake engine: an http URL loads over HTTPS when it
+/// can; a host without HTTPS shows the fallback page, whose Continue loads
+/// it over http and remembers the host.
+#[test]
+fn https_first_upgrades_and_falls_back() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "http://example.com/");
+    eventually("https", || state_of(&core).tabs[&tab].url == "https://example.com/");
+    unreachable(&core, "https://nohttps.example", mado_engine::NetError::Refused);
+    let tab = new_tab(&core, w, "http://nohttps.example/page");
+    eventually("the fallback page", || {
+        error_pages(&core).iter().any(|(t, _, h)| *t == tab && h.contains(r#"data-kind="httpsFallback""#))
+    });
+    let html = error_pages(&core).last().map(|p| p.2.clone()).expect("a page");
+    // A wrong token does nothing.
+    core.page.page_navigates(tab, "mado://error-action/?t=guess&a=continue", true);
+    core.page.page_navigates(tab, &action_link(&html, "continue").expect("continue"), true);
+    eventually("the http page", || state_of(&core).tabs[&tab].url == "http://nohttps.example/page");
+    // Remembered: the next visit goes straight to http.
+    let again = new_tab(&core, w, "http://nohttps.example/other");
+    eventually("no upgrade", || state_of(&core).tabs[&again].url == "http://nohttps.example/other");
+}
+
+/// 05 §12 check 5 on the fake engine: each error kind shows its page with
+/// the failed URL kept, and an error page is not a visit.
+#[test]
+fn every_error_kind_shows_its_page() {
+    use mado_engine::NetError;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let kinds = [
+        (NetError::Offline, "offline"),
+        (NetError::DnsFailed, "dnsFailed"),
+        (NetError::TimedOut, "timedOut"),
+        (NetError::Refused, "refused"),
+        (NetError::Reset, "reset"),
+        (NetError::Certificate, "certificate"),
+        (NetError::UnsupportedScheme, "unsupportedScheme"),
+        (NetError::TooManyRedirects, "tooManyRedirects"),
+        (NetError::Other(-1), "failed"),
+    ];
+    for (i, (error, kind)) in kinds.into_iter().enumerate() {
+        let origin = format!("https://e{i}.example");
+        unreachable(&core, &origin, error);
+        let url = format!("{origin}/x");
+        let tab = new_tab(&core, w, &url);
+        eventually(kind, || {
+            error_pages(&core)
+                .iter()
+                .any(|(t, u, h)| *t == tab && *u == url && h.contains(&format!(r#"data-kind="{kind}""#)))
+        });
+        eventually("the URL kept", || state_of(&core).tabs[&tab].url == url);
+    }
+    let tab = new_tab(&core, w, "https://fine.example/");
+    eventually("loaded", || state_of(&core).tabs[&tab].url == "https://fine.example/");
+    core.page.crash(tab);
+    eventually("crashed", || {
+        error_pages(&core).iter().any(|(t, _, h)| *t == tab && h.contains(r#"data-kind="crashed""#))
+    });
+    let visits = ask(
+        &core,
+        Origin::System,
+        Command::HistoryQuery {
+            text: None,
+            host: None,
+            from: None,
+            to: None,
+            limit: 100,
+            cursor: None,
+            utc_offset_minutes: 0,
+        },
+    )
+    .expect("history");
+    let urls = visits.to_string();
+    assert!(!urls.contains("e0.example"), "an error page is not a visit");
+}
+
+/// 05 §8: a failed load behind a captive portal shows "Sign in to the
+/// network", whose button opens the portal.
+#[test]
+fn a_captive_portal_turns_the_error_into_sign_in() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    std::thread::spawn(move || {
+        for mut s in listener.incoming().flatten() {
+            let mut buf = [0u8; 1024];
+            let _ = s.read(&mut buf);
+            let body = "<html>Log in to the hotel Wi-Fi</html>";
+            let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        }
+    });
+    crate::testing::CAPTIVE_PROBE.with_borrow_mut(|p| *p = Some(format!("http://127.0.0.1:{port}/hotspot")));
+    let core = TestCore::start();
+    crate::testing::CAPTIVE_PROBE.with_borrow_mut(|p| *p = None);
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    unreachable(&core, "https://news.example", mado_engine::NetError::TimedOut);
+    let tab = new_tab(&core, w, "https://news.example/");
+    eventually("sign in", || {
+        error_pages(&core).iter().any(|(t, _, h)| *t == tab && h.contains(r#"data-kind="captivePortal""#))
+    });
+    let html = error_pages(&core).last().map(|p| p.2.clone()).expect("a page");
+    let before = state_of(&core).tabs.len();
+    core.page.page_navigates(tab, &action_link(&html, "signIn").expect("sign in"), true);
+    eventually("the portal tab", || {
+        state_of(&core).tabs.values().any(|t| t.url == format!("http://127.0.0.1:{port}/hotspot"))
+            && state_of(&core).tabs.len() == before + 1
+    });
+}
+
