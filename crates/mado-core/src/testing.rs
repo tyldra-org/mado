@@ -23,6 +23,8 @@ pub struct Sent {
     pub copied: Vec<String>,
     /// URLs handed to other profiles.
     pub other_profiles: Vec<(mado_types::ProfileId, String)>,
+    /// Temporary windows asked for: guest or not, and their URLs.
+    pub temporary: Vec<(bool, Vec<String>)>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
@@ -48,6 +50,13 @@ impl UiSink for Collect {
             .unwrap_or_else(|e| e.into_inner())
             .other_profiles
             .push((profile, url.to_owned()));
+    }
+    fn open_temporary(&mut self, guest: bool, urls: &[String]) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .temporary
+            .push((guest, urls.to_vec()));
     }
     fn copy_text(&mut self, text: &str) {
         self.0

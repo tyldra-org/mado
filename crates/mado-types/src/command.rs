@@ -632,6 +632,9 @@ pub enum Command {
     ProfileOpen { id: crate::ids::ProfileId },
     #[serde(rename = "profile.linkRules")]
     ProfileLinkRules,
+    /// Opens a guest window: a temporary profile deleted on close.
+    #[serde(rename = "profile.openGuest")]
+    ProfileOpenGuest,
     #[serde(rename = "profile.linkRules.set", rename_all = "camelCase")]
     ProfileLinkRulesSet { rules: Vec<LinkRule> },
     // Navigation (spec 05).
@@ -913,6 +916,7 @@ impl Command {
             | Self::ProfileDelete { .. }
             | Self::ProfileOpen { .. }
             | Self::ProfileLinkRules
+            | Self::ProfileOpenGuest
             | Self::ProfileLinkRulesSet { .. } => CommandFamily::Profile,
             Self::SiteStopCapture { .. } => CommandFamily::Site,
             Self::HistoryQuery { .. }
@@ -1031,6 +1035,7 @@ impl Command {
             Self::ProfileDelete { .. } => "profile.delete",
             Self::ProfileOpen { .. } => "profile.open",
             Self::ProfileLinkRules => "profile.linkRules",
+            Self::ProfileOpenGuest => "profile.openGuest",
             Self::ProfileLinkRulesSet { .. } => "profile.linkRules.set",
             Self::NavSetSearchEngineActive { .. } => "nav.setSearchEngineActive",
             Self::HistoryQuery { .. } => "history.query",

@@ -951,6 +951,10 @@ impl Core {
             | Command::ProfileLinkRulesSet { .. }) => {
                 self.profile_command(origin, cmd, rec, reply_to)
             }
+            Command::ProfileOpenGuest => {
+                self.ui.open_temporary(true, &[]);
+                Ok(Value::Null)
+            }
             cmd @ (Command::NavOpen { .. }
             | Command::NavSuggest { .. }
             | Command::NavRemoveSuggestion { .. }

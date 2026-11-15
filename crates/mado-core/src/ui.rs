@@ -15,6 +15,9 @@ pub trait UiSink: Send {
     fn show_notification(&mut self, _id: &str, _title: &str, _body: &str) {}
     /// Opens a macOS privacy pane (spec 07 §4).
     fn open_system_settings(&mut self, _pane: &str) {}
+    /// Opens a private (`guest: false`) or guest window in a temporary
+    /// profile's process, with `urls` (spec 12 §1.6).
+    fn open_temporary(&mut self, _guest: bool, _urls: &[String]) {}
     /// The running profile's name, colour or avatar changed (Dock badge).
     fn profile_changed(&mut self, _info: &mado_types::state::ProfileInfo) {}
     /// Puts text on the pasteboard (context menu copies, spec 07 §8).

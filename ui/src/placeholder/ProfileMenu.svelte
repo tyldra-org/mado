@@ -36,5 +36,25 @@
         {/if}
       </li>
     {/each}
+    {#if !store.state?.profile.isPrivate}
+      <li>
+        <button
+          type="button"
+          onclick={() => (
+            (open = false),
+            store.client.call({ type: "window.new", private: true, urls: [] }).catch(() => {})
+          )}>{t("profiles.privateWindow")}</button
+        >
+      </li>
+    {/if}
+    <li>
+      <button
+        type="button"
+        onclick={() => (
+          (open = false),
+          store.client.call({ type: "profile.openGuest" }).catch(() => {})
+        )}>{t("profiles.guestWindow")}</button
+      >
+    </li>
   </ul>
 {/if}

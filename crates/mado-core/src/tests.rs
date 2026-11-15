@@ -2609,3 +2609,37 @@ fn links_from_other_apps_follow_link_rules() {
     .expect("update");
     eventually("renamed", || state_of(&core).profile.name == "Home");
 }
+
+/// 12 §1.6: a private window from a normal profile opens in a temporary
+/// profile's process; a guest window too.
+#[test]
+fn private_and_guest_windows_open_temporary_profiles() {
+    let core = TestCore::start();
+    startup(&core);
+    let windows = state_of(&core).windows.len();
+    let v = ask(
+        &core,
+        Origin::System,
+        Command::WindowNew {
+            private: true,
+            urls: vec!["https://a.example/".into()],
+        },
+    )
+    .expect("private");
+    assert_eq!(v["private"], true);
+    ask(&core, Origin::Settings, Command::ProfileOpenGuest).expect("guest");
+    let asked = core
+        .sent
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .temporary
+        .clone();
+    assert_eq!(
+        asked,
+        vec![
+            (false, vec!["https://a.example/".to_owned()]),
+            (true, vec![])
+        ]
+    );
+    assert_eq!(state_of(&core).windows.len(), windows, "no window here");
+}

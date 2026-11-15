@@ -174,6 +174,9 @@ fn launch(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
     )?;
     let app_db = Arc::new(Storage::start(&app_db)?);
     let profiles = profiles::ensure_one(&app_db, now())?;
+    if (args.private || args.guest) && args.profile.is_none() {
+        return launch_temporary(&paths, app_db, args, profiles.len());
+    }
     let choice = profiles::choose(&app_db, &args, &profiles)?;
     let owner = match choice {
         Choice::Run(profile) => match claim(&paths, &app_db, &args, profile)? {
@@ -183,6 +186,78 @@ fn launch(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
         Choice::Picker(_) => None,
     };
     run_app(paths, app_db, args, owner, profiles.len())
+}
+
+/// A private or guest window (spec 12 §1.6): a temporary profile in the
+/// temporary folder with an in-memory website data store, deleted on
+/// close. Private windows share one such profile while it runs.
+fn launch_temporary(
+    paths: &Paths,
+    app_db: Arc<Storage>,
+    args: Args,
+    profile_count: usize,
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    use profiles::Temporary;
+    let temp = paths.temporary();
+    std::fs::create_dir_all(temp.profiles())?;
+    let kind = if args.guest {
+        Temporary::Guest
+    } else {
+        Temporary::Private
+    };
+    let marker = |id: mado_types::ProfileId| temp.profile(id).join("kind");
+    let mut running_private = None;
+    // Sweep folders no process owns (a crash), and find the private one.
+    for entry in std::fs::read_dir(temp.profiles())?.flatten() {
+        let Some(id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<mado_types::ProfileId>().ok())
+        else {
+            continue;
+        };
+        if !lock::is_held(&temp.lock(id)) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        } else if std::fs::read_to_string(marker(id)).is_ok_and(|k| k == "private") {
+            running_private = Some(id);
+        }
+    }
+    let id = match (kind, running_private) {
+        (Temporary::Private, Some(id)) => id,
+        _ => {
+            let id = mado_types::ProfileId::new();
+            std::fs::create_dir_all(temp.profile(id))?;
+            std::fs::write(
+                marker(id),
+                if kind == Temporary::Guest {
+                    "guest"
+                } else {
+                    "private"
+                },
+            )?;
+            id
+        }
+    };
+    let profile = Profile {
+        id,
+        name: if kind == Temporary::Guest {
+            "Guest"
+        } else {
+            "Private"
+        }
+        .into(),
+        color: "grey".into(),
+        avatar: String::new(),
+        temporary: Some(kind),
+    };
+    // A second private launch opens a window in the running one.
+    let mut args = args;
+    args.new_window = true;
+    let owner = match claim(&temp, &app_db, &args, profile)? {
+        Claim::Owner(owner) => Some(owner),
+        Claim::Forwarded => return Ok(ExitCode::SUCCESS),
+    };
+    run_app(temp, app_db, args, owner, profile_count)
 }
 
 enum Claim {
@@ -453,8 +528,10 @@ fn start_owner(
     ));
     write_control_entry(owner)?;
 
-    profiles::set_app_state(&owner.app_db, "last_profile_id", &id.to_string()).wait()?;
-    profiles::set_app_state(&owner.app_db, &format!("clean_quit.{id}"), "0").wait()?;
+    if owner.profile.temporary.is_none() {
+        profiles::set_app_state(&owner.app_db, "last_profile_id", &id.to_string()).wait()?;
+        profiles::set_app_state(&owner.app_db, &format!("clean_quit.{id}"), "0").wait()?;
+    }
     if profile_count > 1 {
         mado_platform::dock::set_badge(Some(&owner.profile.initial()));
     }
@@ -462,6 +539,24 @@ fn start_owner(
         handle.send(Input::Internal(Internal::Startup {
             bounds: Bounds::default(),
         }));
+    }
+    // URLs this launch was started with (a link that started Mado, a
+    // profile opened for a link): link rules already chose this profile.
+    if !args.urls.is_empty() {
+        let request = LaunchRequest {
+            urls: args.urls.clone(),
+            files: Vec::new(),
+            new_window: false,
+            private: false,
+            source: mado_types::command::LaunchSource::Cli,
+            control: None,
+        };
+        let core = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = core
+                .command(Origin::System, Command::LaunchForward(request))
+                .await;
+        });
     }
     // Memory pressure and the power source steer tab sleeping (04 §7).
     let pressure = handle.clone();
@@ -660,11 +755,21 @@ fn shutdown(owner: &Owner) {
         let _ = thread.join();
     }
     let id = owner.profile.id;
+    let _ = std::fs::remove_file(owner.paths.control_entry(id));
+    if owner.profile.temporary.is_some() {
+        // Nothing of a private or guest session stays (spec 12 §1.6).
+        match std::fs::remove_dir_all(owner.paths.profile(id)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                tracing::error!(error = %e, "the temporary profile was not deleted");
+            }
+            _ => {}
+        }
+        return;
+    }
     if let Err(e) = profiles::set_app_state(&owner.app_db, &format!("clean_quit.{id}"), "1").wait()
     {
         tracing::error!(error = %e, "the clean-quit marker was not written");
     }
-    let _ = std::fs::remove_file(owner.paths.control_entry(id));
 }
 
 fn run_app(

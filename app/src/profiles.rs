@@ -15,6 +15,15 @@ pub struct Profile {
     pub name: String,
     pub color: String,
     pub avatar: String,
+    /// Private and guest profiles live in the temporary folder, with no
+    /// row, and are deleted on close (spec 12 §1.6).
+    pub temporary: Option<Temporary>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Temporary {
+    Private,
+    Guest,
 }
 
 impl Profile {
@@ -24,8 +33,8 @@ impl Profile {
             name: self.name.clone(),
             color: self.color.clone(),
             avatar: self.avatar.clone(),
-            is_private: false,
-            is_guest: false,
+            is_private: self.temporary == Some(Temporary::Private),
+            is_guest: self.temporary == Some(Temporary::Guest),
         }
     }
 
@@ -71,6 +80,7 @@ pub fn list(app: &Storage) -> Result<Vec<Profile>, ProfileError> {
                     name,
                     color,
                     avatar,
+                    temporary: None,
                 })
             }),
             Err(e) => Some(Err(e)),
@@ -240,6 +250,7 @@ mod tests {
             name: "Work".into(),
             color: "red".into(),
             avatar: String::new(),
+            temporary: None,
         };
         let id = work.id.to_string();
         app.writer()
