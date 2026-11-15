@@ -9,6 +9,9 @@ use mado_types::ProfileId;
 pub struct Paths {
     root: PathBuf,
     logs: PathBuf,
+    /// Where profile folders live: `<root>/Profiles`, or the temporary
+    /// folder for private and guest profiles.
+    profiles: PathBuf,
 }
 
 impl Paths {
@@ -21,14 +24,17 @@ impl Paths {
             let root = PathBuf::from(dir);
             return Ok(Self {
                 logs: root.join("Logs"),
+                profiles: root.join("Profiles"),
                 root,
             });
         }
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set"))?;
+        let root = home.join("Library/Application Support/Mado");
         Ok(Self {
-            root: home.join("Library/Application Support/Mado"),
+            profiles: root.join("Profiles"),
+            root,
             logs: home.join("Library/Logs/Mado"),
         })
     }
@@ -38,6 +44,22 @@ impl Paths {
         Self {
             root: root.to_owned(),
             logs: root.join("Logs"),
+            profiles: root.join("Profiles"),
+        }
+    }
+
+    /// The same paths, with profile folders in the temporary folder (spec
+    /// 12 §1.6). With `MADO_DATA_DIR`, under it, so tests keep everything
+    /// in one place.
+    pub fn temporary(&self) -> Self {
+        let profiles = if std::env::var_os("MADO_DATA_DIR").is_some() {
+            self.root.join("Temporary")
+        } else {
+            Self::temporary_profiles()
+        };
+        Self {
+            profiles,
+            ..self.clone()
         }
     }
 
@@ -48,7 +70,11 @@ impl Paths {
         self.root.join("app.sqlite")
     }
     pub fn profile(&self, id: ProfileId) -> PathBuf {
-        self.root.join("Profiles").join(id.to_string())
+        self.profiles.join(id.to_string())
+    }
+    /// The folder profile folders are in.
+    pub fn profiles(&self) -> &Path {
+        &self.profiles
     }
     pub fn profile_db(&self, id: ProfileId) -> PathBuf {
         self.profile(id).join("profile.sqlite")

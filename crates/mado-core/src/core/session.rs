@@ -180,11 +180,9 @@ impl Core {
             Command::WindowNew { private, urls } => {
                 if private && !self.state.profile.is_private {
                     // Private windows run in their own temporary profile
-                    // process, which the profiles task adds (M2-T09).
-                    return Err(MadoError::new(
-                        ErrorCode::EngineUnavailable,
-                        "error.window.privateUnavailable",
-                    ));
+                    // process (spec 12 §1.6), with these URLs.
+                    self.ui.open_temporary(false, &urls);
+                    return Ok(json!({ "windowId": null, "private": true }));
                 }
                 let id = self.open_window(Bounds::default(), &urls)?;
                 Ok(json!({ "windowId": id }))

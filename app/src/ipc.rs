@@ -164,6 +164,18 @@ impl UiSink for TauriUi {
         self.app.exit(0);
     }
 
+    fn open_temporary(&mut self, guest: bool, urls: &[String]) {
+        let started = std::env::current_exe().and_then(|exe| {
+            std::process::Command::new(exe)
+                .arg(if guest { "--guest" } else { "--private" })
+                .args(urls)
+                .spawn()
+        });
+        if let Err(e) = started {
+            tracing::error!(error = %e, "the private window did not start");
+        }
+    }
+
     fn profile_changed(&mut self, info: &mado_types::state::ProfileInfo) {
         let initial: String = info
             .name
