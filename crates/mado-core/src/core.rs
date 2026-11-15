@@ -8,6 +8,7 @@ mod errors;
 mod marks;
 mod nav;
 mod pages;
+mod profiles;
 mod session;
 mod site;
 mod visits;
@@ -103,6 +104,8 @@ pub enum Internal {
     NotificationClicked { id: String },
     /// A held automatic download was allowed or not (spec 07 §1).
     DownloadAllowed { token: u64, granted: bool },
+    /// This profile's name, colour or avatar changed (spec 12 §1.2).
+    ProfileChanged(mado_types::state::ProfileInfo),
     /// An OpenSearch description was fetched and parsed (spec 05 §3).
     EngineDiscovered(mado_navigation::engines::Engine),
     /// Remote search suggestions merged with the local rows (spec 05 §2).
@@ -189,6 +192,8 @@ pub struct CoreConfig {
     pub captive_probe: Option<String>,
     /// macOS privacy permissions (spec 07 §4); tests pass fakes.
     pub os: OsPermissions,
+    /// The app's profiles (spec 12 §1).
+    pub profiles: std::sync::Arc<dyn crate::ui::Profiles>,
 }
 
 /// How the core asks macOS about its own permissions.
@@ -344,6 +349,7 @@ pub struct Core {
     continue_once: std::collections::BTreeSet<String>,
     captive_probe: Option<String>,
     os: OsPermissions,
+    profiles: std::sync::Arc<dyn crate::ui::Profiles>,
     /// The profile's search engines (spec 05 §3).
     engines: Vec<nav::EngineRow>,
     /// Searches waiting for their visit, for `search_terms`.
@@ -541,6 +547,7 @@ impl Core {
             continue_once: std::collections::BTreeSet::new(),
             captive_probe: config.captive_probe.clone(),
             os: config.os,
+            profiles: std::sync::Arc::clone(&config.profiles),
             engines,
             pending_search: BTreeMap::new(),
             dls: BTreeMap::new(),
@@ -760,6 +767,23 @@ impl Core {
                         .as_str()
                         .unwrap_or_default()
                         .to_owned();
+                    // Links from other apps go to the profile a link rule
+                    // names (spec 12 §1.3).
+                    let own = self.state.profile.id;
+                    let mut request = request;
+                    if request.source == mado_types::command::LaunchSource::Link {
+                        let profiles = std::sync::Arc::clone(&self.profiles);
+                        request.urls.retain(|url| match profiles.route(url) {
+                            Some(other) if other != own => {
+                                self.ui.open_in_profile(other, url);
+                                false
+                            }
+                            _ => true,
+                        });
+                        if request.urls.is_empty() {
+                            return Ok(Value::Null);
+                        }
+                    }
                     match current {
                         Some(window) if !request.new_window && external != "newWindow" => {
                             let prefs = self.prefs();
@@ -918,6 +942,15 @@ impl Core {
                 self.ui.open_system_settings(&pane);
                 Ok(Value::Null)
             }
+            cmd @ (Command::ProfileList
+            | Command::ProfileCreate { .. }
+            | Command::ProfileUpdate { .. }
+            | Command::ProfileDelete { .. }
+            | Command::ProfileOpen { .. }
+            | Command::ProfileLinkRules
+            | Command::ProfileLinkRulesSet { .. }) => {
+                self.profile_command(origin, cmd, rec, reply_to)
+            }
             cmd @ (Command::NavOpen { .. }
             | Command::NavSuggest { .. }
             | Command::NavRemoveSuggestion { .. }
@@ -984,6 +1017,7 @@ impl Core {
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
             Internal::EngineDiscovered(engine) => self.engine_discovered(engine),
+            Internal::ProfileChanged(info) => self.profile_changed(info, rec),
             Internal::OsAnswered { token, granted } => self.os_answered(token, granted),
             Internal::AppLinkResolved(r) => self.app_link_resolved(r, rec),
             Internal::ShimDecided { tab, then, granted } => self.shim_decided(tab, then, granted),

@@ -42,6 +42,26 @@ impl ProfileLock {
     }
 }
 
+/// Whether a process owns the profile at `path`, without taking it or
+/// touching the file's contents.
+pub fn is_held(path: &Path) -> bool {
+    let Ok(file) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+    else {
+        return false;
+    };
+    match file.try_lock() {
+        Ok(()) => {
+            let _ = file.unlock();
+            false
+        }
+        Err(TryLockError::WouldBlock) => true,
+        Err(TryLockError::Error(_)) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,7 +74,9 @@ mod tests {
             .expect("io")
             .expect("owner");
         assert!(ProfileLock::acquire(&path, "0", 2).expect("io").is_none());
+        assert!(is_held(&path));
         drop(first);
+        assert!(!is_held(&path));
         assert!(ProfileLock::acquire(&path, "0", 3).expect("io").is_some());
         assert!(
             std::fs::read_to_string(&path)

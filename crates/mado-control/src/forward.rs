@@ -87,6 +87,7 @@ mod tests {
             new_window: false,
             private: false,
             source: LaunchSource::Link,
+            control: None,
         };
 
         forward(&socket, &secret, &request).await.expect("forwards");
@@ -205,6 +206,7 @@ mod tests {
             new_window: true,
             private: false,
             source: LaunchSource::Dock,
+            control: None,
         };
         assert!(matches!(
             forward(&dir.path().join("none.sock"), &secret, &request).await,

@@ -30,4 +30,4 @@ pub use core::{
     CoreConfig, CoreHandle, Input, Internal, OsPermissions, Power, Reply, start, system_clock,
 };
 pub use timers::Timer;
-pub use ui::{NoUpdates, UiSink, Updates};
+pub use ui::{NoProfiles, NoUpdates, Profiles, UiSink, Updates};

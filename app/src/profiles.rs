@@ -131,20 +131,38 @@ pub fn set_app_state(app: &Storage, key: &str, value: &str) -> mado_storage::Pen
 }
 
 /// A link rule pattern: a host, or `*.` and a domain that matches it and
-/// its subdomains (spec 12 §1.3).
-fn rule_matches(pattern: &str, url: &str) -> bool {
-    let host = url
-        .split_once("://")
-        .map_or("", |(_, rest)| rest)
-        .split(['/', '?', '#', ':'])
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let pattern = pattern.to_ascii_lowercase();
-    match pattern.strip_prefix("*.") {
+/// its subdomains, then an optional path prefix (`github.com/acme/`):
+/// case-insensitive on the host, exact on the path (spec 12 §1.3).
+pub fn rule_matches(pattern: &str, url: &str) -> bool {
+    let Ok(u) = url::Url::parse(url) else {
+        return false;
+    };
+    let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+    let (host_pattern, path) = match pattern.split_once('/') {
+        Some((h, p)) => (h.to_ascii_lowercase(), format!("/{p}")),
+        None => (pattern.to_ascii_lowercase(), String::new()),
+    };
+    let host_ok = match host_pattern.strip_prefix("*.") {
         Some(domain) => host == domain || host.ends_with(&format!(".{domain}")),
-        None => host == pattern,
-    }
+        None => host == host_pattern,
+    };
+    host_ok && u.path().starts_with(&path)
+}
+
+/// The profile the first matching rule names, in `sort` order.
+pub fn route(app: &Storage, url: &str) -> Option<ProfileId> {
+    let rules: Vec<(String, String)> = app
+        .readers()
+        .read(|c| {
+            let mut stmt = c.prepare("SELECT pattern, profile_id FROM link_rules ORDER BY sort")?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect()
+        })
+        .ok()?;
+    rules
+        .iter()
+        .find(|(pattern, _)| rule_matches(pattern, url))
+        .and_then(|(_, id)| id.parse().ok())
 }
 
 /// Resolves the profile in the order of spec 01 §1.1 step 2.
@@ -157,18 +175,13 @@ pub fn choose(app: &Storage, args: &Args, profiles: &[Profile]) -> Result<Choice
             .map(Choice::Run)
             .ok_or_else(|| ProfileError::NotFound(wanted.clone()));
     }
-    if let Some(url) = args.urls.first() {
-        let rules: Vec<(String, String)> = app.readers().read(|c| {
-            let mut stmt = c.prepare("SELECT pattern, profile_id FROM link_rules ORDER BY sort")?;
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect()
-        })?;
-        if let Some((_, id)) = rules.iter().find(|(pattern, _)| rule_matches(pattern, url))
-            && let Some(p) = profiles.iter().find(|p| p.id.to_string() == *id)
-        {
-            return Ok(Choice::Run(p.clone()));
-        }
+    if let Some(url) = args.urls.first()
+        && let Some(id) = route(app, url)
+        && let Some(p) = profiles.iter().find(|p| p.id == id)
+    {
+        return Ok(Choice::Run(p.clone()));
     }
+
     let dock = args.urls.is_empty() && args.files.is_empty() && !args.hidden;
     if profiles.len() > 1 && dock && setting_bool(app, "app.showProfilePicker", true) {
         return Ok(Choice::Picker(profiles.to_vec()));

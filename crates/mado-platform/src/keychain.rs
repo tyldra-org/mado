@@ -58,6 +58,54 @@ mod tests {
         delete(&service, "a").expect("deleting twice is fine");
         assert_eq!(get(&service, "a").expect("reads"), None);
     }
+
+    #[test]
+    fn a_profiles_items_all_go_together() {
+        let service = format!("app.mado.test.service.{}", std::process::id());
+        set(&service, "vault", b"k1").expect("writes");
+        set(&service, "ai", b"k2").expect("writes");
+        assert_eq!(delete_service(&service).expect("deletes"), 2);
+        assert_eq!(get(&service, "vault").expect("reads"), None);
+        assert_eq!(delete_service(&service).expect("nothing left"), 0);
+    }
+}
+
+/// The Keychain service every secret of one profile is stored under (the
+/// vault key, AI keys, the Bitwarden session), so deleting the profile can
+/// find them all (spec 12 §1.4).
+pub fn profile_service(profile: mado_types::ProfileId) -> String {
+    format!("app.mado.profile.{profile}")
+}
+
+/// Deletes every generic password of `service`. Returns how many went.
+pub fn delete_service(service: &str) -> Result<usize, PlatformError> {
+    use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
+    let found = ItemSearchOptions::new()
+        .class(ItemClass::generic_password())
+        .service(service)
+        .load_attributes(true)
+        .limit(Limit::All)
+        .search();
+    let found = match found {
+        Ok(f) => f,
+        // errSecItemNotFound
+        Err(e) if e.code() == -25300 => return Ok(0),
+        Err(e) => return Err(PlatformError::Failed(e.to_string())),
+    };
+    let mut n = 0;
+    for item in found {
+        let SearchResult::Dict(_) = &item else {
+            continue;
+        };
+        let Some(attrs) = item.simplify_dict() else {
+            continue;
+        };
+        if let Some(account) = attrs.get("acct") {
+            delete(service, account)?;
+            n += 1;
+        }
+    }
+    Ok(n)
 }
 
 /// A certificate with its private key, for TLS client authentication

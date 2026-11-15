@@ -164,17 +164,22 @@ impl UiSink for TauriUi {
         self.app.exit(0);
     }
 
+    fn profile_changed(&mut self, info: &mado_types::state::ProfileInfo) {
+        let initial: String = info
+            .name
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().collect())
+            .unwrap_or_default();
+        let _ = self.app.run_on_main_thread(move || {
+            mado_platform::dock::set_badge(Some(&initial));
+        });
+    }
+
     fn open_in_profile(&mut self, profile: mado_types::ProfileId, url: &str) {
         // A launch with --profile hands the URL to that profile's process,
         // starting it if needed (spec 01 §1.3).
-        let started = std::env::current_exe().and_then(|exe| {
-            std::process::Command::new(exe)
-                .arg("--profile")
-                .arg(profile.to_string())
-                .arg(url)
-                .spawn()
-        });
-        if let Err(e) = started {
+        if let Err(e) = crate::profile_service::launch(profile, Some(url)) {
             tracing::error!(error = %e, "the other profile did not start");
         }
     }

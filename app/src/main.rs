@@ -9,6 +9,7 @@ mod args;
 mod dev;
 mod ipc;
 mod lock;
+mod profile_service;
 mod profiles;
 mod update;
 mod windows;
@@ -222,6 +223,7 @@ fn claim(
             new_window: args.new_window,
             private: args.private,
             source: args.source(),
+            control: None,
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -391,17 +393,50 @@ fn start_owner(
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
         os: mado_core::OsPermissions::system(),
+        profiles: Arc::new(profile_service::AppProfiles {
+            app_db: Arc::clone(&owner.app_db),
+            paths: owner.paths.clone(),
+            own: id,
+            removers: profile_service::removers(app.clone()),
+            launch: Box::new(profile_service::launch),
+            now,
+        }),
     })?;
     let _ = owner.core.set(handle.clone());
+    let early = EARLY_LINKS
+        .lock()
+        .map(|mut l| std::mem::take(&mut *l))
+        .unwrap_or_default();
+    open_links(&handle, early);
     if let Ok(mut slot) = owner.core_thread.lock() {
         *slot = Some(thread);
     }
 
     // The control endpoint: launch.forward only, while control is off.
     let forward_to = handle.clone();
+    let rows = Arc::clone(&owner.app_db);
     let on_forward: ForwardHandler = Arc::new(move |request: LaunchRequest| {
         let core = forward_to.clone();
+        let rows = Arc::clone(&rows);
         Box::pin(async move {
+            // Another profile asks this one to quit or reload itself
+            // (spec 12 §1.2, §1.4); the launch secret was checked.
+            match request.control {
+                Some(mado_types::command::OwnerAction::Quit) => {
+                    core.send(Input::Internal(Internal::Terminate));
+                    return Ok(());
+                }
+                Some(mado_types::command::OwnerAction::ProfileChanged) => {
+                    if let Some(p) = profiles::list(&rows)
+                        .ok()
+                        .and_then(|l| l.into_iter().find(|p| p.id == id))
+                    {
+                        core.send(Input::Internal(Internal::ProfileChanged(p.info())));
+                    }
+                    return Ok(());
+                }
+                None => {}
+            }
             core.command(Origin::System, Command::LaunchForward(request))
                 .await
                 .map_err(|_| {
@@ -473,6 +508,9 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
                 if method == "test.click" {
                     return test_click(&app, &params).await;
                 }
+                if method == "test.hasDataStore" {
+                    return test_has_data_store(&app, &params).await;
+                }
                 let hook = match method.as_str() {
                     "test.dropNextPatch" => Some(TestHook::DropNextPatch),
                     "test.fakeAuthSuccess" => Some(TestHook::FakeAuthSuccess),
@@ -486,6 +524,18 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
                     core.send(Input::Internal(Internal::Hook(hook)));
                     return Ok(serde_json::Value::Null);
                 }
+                // Runs a command as Mado's own settings window would, for
+                // commands control clients may never send (profiles).
+                let (origin, params) = if method == "test.asUser" {
+                    (Origin::Settings, params["command"].clone())
+                } else {
+                    (Origin::Control { client }, params)
+                };
+                let method = if method == "test.asUser" {
+                    params["type"].as_str().unwrap_or_default().to_owned()
+                } else {
+                    method
+                };
                 let mut body = if params.is_object() {
                     params
                 } else {
@@ -499,14 +549,9 @@ fn test_access(core: &CoreHandle, app: &tauri::AppHandle) -> Option<mado_control
                     )
                     .arg("reason", e.to_string())
                 })?;
-                core.command(Origin::Control { client }, cmd)
-                    .await
-                    .map_err(|_| {
-                        mado_types::MadoError::new(
-                            mado_types::ErrorCode::Internal,
-                            "error.coreStopped",
-                        )
-                    })?
+                core.command(origin, cmd).await.map_err(|_| {
+                    mado_types::MadoError::new(mado_types::ErrorCode::Internal, "error.coreStopped")
+                })?
             })
         });
     Some(mado_control::TestAccess { token, call })
@@ -547,6 +592,35 @@ async fn test_click(
         .map_err(|_| bad("the main thread dropped the click"))?
         .map_err(|e| bad(&e.to_string()))?;
     Ok(serde_json::Value::Null)
+}
+
+/// `test.hasDataStore { profileId }`: whether WebKit still has that
+/// profile's website data store (spec 12 §7 check 2).
+#[cfg(feature = "test-hooks")]
+async fn test_has_data_store(
+    app: &tauri::AppHandle,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, mado_types::MadoError> {
+    let bad = |reason: String| {
+        mado_types::MadoError::new(
+            mado_types::ErrorCode::InvalidInput,
+            "error.control.badCommand",
+        )
+        .arg("reason", reason)
+    };
+    let id: mado_types::ProfileId =
+        serde_json::from_value(params["profileId"].clone()).map_err(|e| bad(e.to_string()))?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        mado_engine_webkit::has_data_store(
+            id,
+            Box::new(move |found| {
+                let _ = tx.send(found);
+            }),
+        );
+    })
+    .map_err(|e| bad(e.to_string()))?;
+    Ok(serde_json::json!(rx.await.map_err(|e| bad(e.to_string()))?))
 }
 
 #[cfg(not(feature = "test-hooks"))]
@@ -707,6 +781,27 @@ fn run_app(
         RunEvent::ExitRequested {
             api, code: None, ..
         } if !quitting.load(std::sync::atomic::Ordering::SeqCst) => api.prevent_exit(),
+        // Links from other apps while Mado runs, or that launched it
+        // (macOS sends them as Apple Events, not arguments).
+        RunEvent::Opened { urls } => {
+            let urls: Vec<String> = urls
+                .into_iter()
+                .filter(|u| matches!(u.scheme(), "http" | "https"))
+                .map(String::from)
+                .collect();
+            let core = owner
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().and_then(|o| o.core.get().cloned()));
+            match core {
+                Some(core) => open_links(&core, urls),
+                None => {
+                    if let Ok(mut early) = EARLY_LINKS.lock() {
+                        early.extend(urls);
+                    }
+                }
+            }
+        }
         RunEvent::Exit => {
             mado_engine_webkit::shutdown();
             if let Ok(guard) = owner.lock()
@@ -718,6 +813,31 @@ fn run_app(
         _ => {}
     });
     Ok(ExitCode::SUCCESS)
+}
+
+/// Links that arrived before the core started.
+static EARLY_LINKS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Hands links from other apps to the core, which applies link rules
+/// (spec 12 §1.3) and opens the rest here (spec 05 §9).
+fn open_links(core: &CoreHandle, urls: Vec<String>) {
+    if urls.is_empty() {
+        return;
+    }
+    let request = LaunchRequest {
+        urls,
+        files: Vec::new(),
+        new_window: false,
+        private: false,
+        source: mado_types::command::LaunchSource::Link,
+        control: None,
+    };
+    let core = core.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = core
+            .command(Origin::System, Command::LaunchForward(request))
+            .await;
+    });
 }
 
 /// Apple's captive portal probe (spec 05 §8). End-to-end tests point it
