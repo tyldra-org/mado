@@ -1063,6 +1063,130 @@ fn pause_resume_and_quit_keep_resume_data() {
     .expect("resumes after relaunch");
 }
 
+/// 12 §4.2 step 4 and 8, §4.3: a file larger than the free space fails, a
+/// second download from the same page is refused with a notice, and each
+/// command refuses the states it does not apply to.
+#[test]
+fn download_commands_follow_the_state() {
+    use mado_engine::event::DownloadDestination;
+    use mado_types::state::DownloadStatus;
+    let core = TestCore::start();
+    let dir = downloads_into(&core);
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let destination = |id| {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .downloads
+            .get(&id)
+            .and_then(|d| d.destination.clone())
+    };
+    let by_name = |name: &str| {
+        state_of(&core)
+            .downloads
+            .values()
+            .find(|d| d.filename == name)
+            .cloned()
+    };
+    let cmd = |c: Command| ask(&core, Origin::System, c);
+    let code = |r: Result<Value, MadoError>| r.expect_err("refused").message_key;
+
+    let tab = new_tab(&core, w, "https://files.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].life == mado_types::state::TabLife::Live
+    });
+    let first = core
+        .page
+        .download(tab, 21, "https://files.example/a.zip", "a.zip", Some(10));
+    eventually("a destination", || destination(first).is_some());
+    let second = core
+        .page
+        .download(tab, 22, "https://files.example/b.zip", "b.zip", Some(10));
+    eventually("the second refused", || {
+        destination(second) == Some(DownloadDestination::Cancel)
+    });
+    assert!(
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.multipleDownloadsBlocked")
+    );
+    let a = by_name("a.zip").expect("a.zip listed");
+    assert_eq!(
+        code(cmd(Command::DownloadRemove { download_id: a.id })),
+        "error.download.running"
+    );
+    assert_eq!(
+        code(cmd(Command::DownloadOpen { download_id: a.id })),
+        "error.download.notComplete"
+    );
+    assert_eq!(
+        code(cmd(Command::DownloadKeep { download_id: a.id })),
+        "error.download.notHeld"
+    );
+    cmd(Command::DownloadCancel { download_id: a.id }).expect("cancel");
+    eventually("cancelled", || {
+        by_name("a.zip").is_some_and(|d| d.state == DownloadStatus::Cancelled)
+    });
+    let tabs_before = state_of(&core).tabs.len();
+    cmd(Command::DownloadOpenSource { download_id: a.id }).expect("open source");
+    let st = state_of(&core);
+    assert_eq!(st.tabs.len(), tabs_before + 1);
+    assert!(
+        st.tabs
+            .values()
+            .filter(|t| t.url == "https://files.example/")
+            .count()
+            >= 2
+    );
+
+    // Too big for any disk.
+    let big = new_tab(&core, w, "https://big.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&big].life == mado_types::state::TabLife::Live
+    });
+    let huge = core.page.download(
+        big,
+        23,
+        "https://big.example/huge.iso",
+        "huge.iso",
+        Some(u64::MAX / 2),
+    );
+    eventually("refused for space", || {
+        destination(huge) == Some(DownloadDestination::Cancel)
+    });
+    let h = by_name("huge.iso").expect("huge.iso listed");
+    assert_eq!(h.state, DownloadStatus::Failed);
+    assert_eq!(h.error.as_deref(), Some("insufficientSpace"));
+
+    // An http download is held; Discard deletes its file.
+    let plain = new_tab(&core, w, "http://plain.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&plain].life == mado_types::state::TabLife::Live
+    });
+    let id = core
+        .page
+        .download(plain, 24, "http://plain.example/c.txt", "c.txt", None);
+    eventually("a destination", || destination(id).is_some());
+    let temp = dir.join("c.txt.madodownload");
+    std::fs::write(&temp, b"c").expect("bytes");
+    core.page.download_done(id);
+    eventually("blocked", || {
+        by_name("c.txt").is_some_and(|d| d.state == DownloadStatus::Blocked)
+    });
+    let c = by_name("c.txt").expect("c.txt listed");
+    assert_eq!(c.danger.as_deref(), Some("insecure"));
+    cmd(Command::DownloadDiscard { download_id: c.id }).expect("discard");
+    assert!(!temp.exists() && !dir.join("c.txt").exists());
+
+    // Clear list keeps nothing that has ended; Remove takes one.
+    cmd(Command::DownloadRemove { download_id: h.id }).expect("remove");
+    assert!(by_name("huge.iso").is_none());
+    cmd(Command::DownloadClearList).expect("clear");
+    assert!(state_of(&core).downloads.is_empty());
+}
+
 /// The bookmarks bar reloads the tree whenever `bookmarksRev` goes up, so
 /// reading the tree must not raise it (that looped forever); a change must.
 #[test]
