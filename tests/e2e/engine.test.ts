@@ -411,6 +411,19 @@ run("WebKit adapter", () => {
     await mado.control.call("settings.set", { key: "privacy.webrtcHideIp", value: true });
   });
 
+  test("Reader shows the article at mado://reader and Back leaves it (08 §10)", async () => {
+    const { tab } = await open("http://pages.mado.test/reader/article.html");
+    await tabWhere(tab, (t) => (t as Tab & { readerAvailable: boolean }).readerAvailable);
+    await mado.control.call("tab.reader", { tabId: tab, on: true });
+    const reader = await tabWhere(
+      tab,
+      (t) => t.url.startsWith("mado://reader?tab=") && t.title === "The fixture story",
+    );
+    expect((reader as Tab & { readerActive: boolean }).readerActive).toBe(true);
+    await mado.control.call("tab.reader", { tabId: tab, on: false });
+    await tabWhere(tab, (t) => t.url === "http://pages.mado.test/reader/article.html");
+  }, 30_000);
+
   test("data.clear removes site data from WebKit's store (08 §7)", async () => {
     const url = "http://pages.mado.test/privacy/storage.html";
     const first = await open(url);

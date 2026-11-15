@@ -101,6 +101,11 @@ pub struct FakeState {
     pub privacy: Option<mado_engine::PrivacyConfig>,
     /// Messages posted to pages, in order.
     pub posted: Vec<(TabId, serde_json::Value)>,
+    /// Answers to `EvaluateInWorld`: the first whose marker starts the
+    /// source; null otherwise.
+    pub eval_answers: Vec<(String, Value)>,
+    /// Reader pages shown: tab and HTML.
+    pub reader_pages: Vec<(TabId, String)>,
     /// Error pages shown: tab, URL and HTML.
     pub error_pages: Vec<(TabId, String, String)>,
     /// Origins (`https://host`) whose loads fail, with the error.
@@ -678,9 +683,24 @@ impl Engine for FakeEngine {
                     bytes: Vec::new(),
                 }));
             }
-            TabCommand::EvaluateInWorld { reply, .. } => {
+            TabCommand::EvaluateInWorld { reply, source, .. } => {
+                let answer = state
+                    .eval_answers
+                    .iter()
+                    .find(|(marker, _)| source.starts_with(marker.as_str()))
+                    .map_or(Value::Null, |(_, v)| v.clone());
                 drop(state);
-                reply(Ok(Value::Null));
+                reply(Ok(answer));
+            }
+            TabCommand::ShowReader { html } => {
+                state.reader_pages.push((tab, html));
+                drop(state);
+                control.commit(
+                    tab,
+                    &format!("mado://reader?tab={tab}"),
+                    NavKind::Other,
+                    true,
+                );
             }
             TabCommand::SaveSession { reply } => {
                 let blob = serde_json::to_vec(&Session {
@@ -700,7 +720,6 @@ impl Engine for FakeEngine {
             | TabCommand::ShowDevTools
             | TabCommand::ShowCertificate
             | TabCommand::ShowSource
-            | TabCommand::SetReader(_)
             | TabCommand::SetImagesEnabled(_)
             | TabCommand::ExitFullscreen
             | TabCommand::MediaControl(_) => {}

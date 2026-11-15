@@ -1420,6 +1420,7 @@ impl Core {
                         .map(|t| t.url.clone())
                         .unwrap_or_default();
                     self.nav_committed(tab, &url);
+                    self.reader_committed(tab);
                 }
                 if !is_same_document {
                     self.new_document(tab, rec);
@@ -1433,6 +1434,9 @@ impl Core {
                 {
                     t.life = TabLife::Live;
                     t.progress = 1.0;
+                }
+                if matches!(event, EngineEvent::NavigationFinished { .. }) {
+                    self.reader_probe(tab);
                 }
             }
             EngineEvent::TitleChanged { tab, title } => {

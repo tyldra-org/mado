@@ -763,6 +763,12 @@ pub enum Command {
     /// Shows the certificate of the tab's page (spec 08 §3).
     #[serde(rename = "site.showCertificate", rename_all = "camelCase")]
     SiteShowCertificate { tab_id: TabId },
+    /// Turns Reader on for the tab's article, or leaves it (spec 08 §10).
+    #[serde(rename = "tab.reader", rename_all = "camelCase")]
+    TabReader { tab_id: TabId, on: bool },
+    /// Opens `host`'s pages in Reader whenever they have an article.
+    #[serde(rename = "site.setReaderAlways", rename_all = "camelCase")]
+    SiteSetReaderAlways { host: String, always: bool },
     /// Removes the cookies and storage of `origin`'s site (spec 08 §7).
     #[serde(rename = "site.clearData", rename_all = "camelCase")]
     SiteClearData { origin: String },
@@ -956,7 +962,9 @@ impl Command {
             | Self::ProfileLinkRulesSet { .. } => CommandFamily::Profile,
             Self::SiteStopCapture { .. }
             | Self::SiteClearData { .. }
-            | Self::SiteShowCertificate { .. } => CommandFamily::Site,
+            | Self::SiteShowCertificate { .. }
+            | Self::SiteSetReaderAlways { .. } => CommandFamily::Site,
+            Self::TabReader { .. } => CommandFamily::Tab,
             Self::DataClear { .. } => CommandFamily::Data,
             Self::HistoryQuery { .. }
             | Self::HistoryDelete { .. }
@@ -1069,6 +1077,8 @@ impl Command {
             Self::SiteStopCapture { .. } => "site.stopCapture",
             Self::SiteClearData { .. } => "site.clearData",
             Self::SiteShowCertificate { .. } => "site.showCertificate",
+            Self::SiteSetReaderAlways { .. } => "site.setReaderAlways",
+            Self::TabReader { .. } => "tab.reader",
             Self::DataClear { .. } => "data.clear",
             Self::PermissionUndoRevoke { .. } => "permission.undoRevoke",
             Self::AppOpenSystemSettings { .. } => "app.openSystemSettings",

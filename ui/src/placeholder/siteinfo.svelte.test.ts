@@ -179,6 +179,34 @@ describe("private window lock (08 §6)", () => {
   });
 });
 
+describe("reader (08 §10)", () => {
+  test("an article offers Reader and Always open in Reader", async () => {
+    const seen = await shown({
+      tabs: {
+        [A]: {
+          id: A,
+          windowId: W,
+          title: "Alpha",
+          url: "https://alpha.example/story",
+          displayUrl: { text: "alpha.example", emphasisStart: 0, emphasisEnd: 13, punycode: false },
+          security: { level: "secure" },
+          life: "live",
+          audio: { playing: false, muted: false },
+          capture: { camera: false, microphone: false, screen: false, location: false },
+          readerAvailable: true,
+          readerActive: false,
+        },
+      },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Reader" }));
+    expect(sent(seen, "tab.reader")).toEqual([{ type: "tab.reader", tabId: A, on: true }]);
+    await fireEvent.click(screen.getByRole("button", { name: "Always open this site in Reader" }));
+    expect(sent(seen, "site.setReaderAlways")).toEqual([
+      { type: "site.setReaderAlways", host: "alpha.example", always: true },
+    ]);
+  });
+});
+
 describe("clear browsing data (08 §7)", () => {
   test("sends the chosen range and types", async () => {
     const { store, seen } = setup();

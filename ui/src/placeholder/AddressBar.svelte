@@ -153,6 +153,29 @@
     }}
     onkeydown={keydown}
   />
+  {#if tab?.readerAvailable}
+    <button
+      type="button"
+      aria-pressed={tab.readerActive}
+      onclick={() =>
+        store.client
+          .call({ type: "tab.reader", tabId: tab.id, on: !tab.readerActive })
+          .catch(() => {})}>{t(tab.readerActive ? "address.readerExit" : "address.reader")}</button
+    >
+    {#if !tab.readerActive}
+      <button
+        type="button"
+        onclick={() =>
+          store.client
+            .call({
+              type: "site.setReaderAlways",
+              host: new URL(tab.url).hostname,
+              always: true,
+            })
+            .catch(() => {})}>{t("address.readerAlways")}</button
+      >
+    {/if}
+  {/if}
   {#if editing && inline}<span class="inline">{inline}</span>{/if}
   {#if result !== null}<output>{result}</output>{/if}
   {#if editing && rows.length}

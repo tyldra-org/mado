@@ -11,6 +11,7 @@ mod marks;
 mod nav;
 mod pages;
 mod profiles;
+mod reader;
 mod session;
 mod site;
 mod visits;
@@ -142,6 +143,14 @@ pub enum Internal {
     UpdateStatus(mado_types::state::UpdateState),
     /// Clearing on quit is done (spec 08 §7).
     ClearedOnExit,
+    /// The `reader` probe answered for the page at `url` (spec 08 §10).
+    ReaderProbed { tab: TabId, url: String, ok: bool },
+    /// Readability's article for the page at `url`, or none.
+    ReaderExtracted {
+        tab: TabId,
+        url: String,
+        article: Option<reader::Article>,
+    },
     /// The answer to `window.unlock`'s authentication (spec 08 §6).
     UnlockAnswered {
         window: WindowId,
@@ -397,6 +406,10 @@ pub struct Core {
     drm_failed: BTreeSet<TabId>,
     /// `privacy.clearOnExit` is clearing before the app quits.
     clearing_on_exit: bool,
+    /// Hosts that always open in Reader (`reader_sites`).
+    reader_always: BTreeSet<String>,
+    /// The article page each tab's reader page came from.
+    reader_sources: BTreeMap<TabId, String>,
     /// Private windows in the background, since when (spec 08 §6).
     background_since: BTreeMap<WindowId, i64>,
     /// The bundled page scripts; `gpc` joins them while `privacy.gpc` is on.
@@ -517,6 +530,11 @@ impl Core {
             .read(|c| errors::load_http_allowed(c, (config.clock)()))
             .unwrap_or_default();
         let page_scripts = config.page_scripts;
+        let reader_always = config
+            .profile_db
+            .readers()
+            .read(reader::load)
+            .unwrap_or_default();
         let mut core = Self {
             state: State {
                 profile: config.profile,
@@ -586,6 +604,8 @@ impl Core {
             context_targets: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             clearing_on_exit: false,
+            reader_always,
+            reader_sources: BTreeMap::new(),
             background_since: BTreeMap::new(),
             page_scripts,
             ui: config.ui,
@@ -977,6 +997,9 @@ impl Core {
                 Ok(Value::Null)
             }
             Command::WindowUnlock { window_id } => self.unlock_command(origin, window_id, reply_to),
+            cmd @ (Command::TabReader { .. } | Command::SiteSetReaderAlways { .. }) => {
+                self.reader_command(cmd)
+            }
             cmd @ (Command::DataClear { .. } | Command::SiteClearData { .. }) => {
                 self.data_command(origin, cmd, rec, reply_to)
             }
@@ -1045,6 +1068,10 @@ impl Core {
             }
             Internal::QuitRequested { shortcut } => self.quit_requested(shortcut, rec),
             Internal::ClearedOnExit => self.cleared_on_exit(),
+            Internal::ReaderProbed { tab, url, ok } => self.reader_probed(tab, &url, ok),
+            Internal::ReaderExtracted { tab, url, article } => {
+                self.reader_extracted(tab, url, article);
+            }
             Internal::UnlockAnswered { window, ok, reply } => {
                 self.unlock_answered(window, ok, reply);
             }

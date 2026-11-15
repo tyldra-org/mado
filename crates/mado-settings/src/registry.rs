@@ -145,6 +145,38 @@ settings! {
         scope: Profile,
         section: Appearance,
     }
+    ReaderFont: String {
+        key: "reader.font",
+        ty: SettingType::Enum(&["serif", "sans"]),
+        default: r#""serif""#,
+        scope: Profile,
+        section: Appearance,
+        feature: Some("reader"),
+    }
+    ReaderSize: i64 {
+        key: "reader.size",
+        ty: SettingType::Int { min: 12, max: 32, step: 1 },
+        default: r#"19"#,
+        scope: Profile,
+        section: Appearance,
+        feature: Some("reader"),
+    }
+    ReaderWidth: String {
+        key: "reader.width",
+        ty: SettingType::Enum(&["narrow", "medium", "wide"]),
+        default: r#""medium""#,
+        scope: Profile,
+        section: Appearance,
+        feature: Some("reader"),
+    }
+    ReaderTheme: String {
+        key: "reader.theme",
+        ty: SettingType::Enum(&["system", "light", "sepia", "dark"]),
+        default: r#""system""#,
+        scope: Profile,
+        section: Appearance,
+        feature: Some("reader"),
+    }
     AppearanceDefaultZoom: f64 {
         key: "appearance.defaultZoom",
         ty: SettingType::Float { min: 0.25, max: 5.0 },

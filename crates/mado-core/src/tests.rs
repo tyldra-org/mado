@@ -2841,6 +2841,106 @@ fn private_windows_lock_in_the_background() {
     eventually("shown", || visible() == shown + 2);
 }
 
+/// 08 §10: the probe marks an article, Reader shows it sanitised at
+/// `mado://reader`, Back leaves it, "Always open in Reader" opens it by
+/// itself, and with `features.reader` off nothing runs.
+#[test]
+fn reader_mode_shows_the_article_and_remembers_sites() {
+    let core = TestCore::start();
+    startup(&core);
+    core.engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .eval_answers = vec![
+        ("// reader-probe".into(), json!(true)),
+        (
+            "// reader-extract".into(),
+            json!({
+                "title": "A long read",
+                "byline": "Ada",
+                "content": "<p>Text</p><script>alert(1)</script>",
+                "length": 4,
+                "siteName": "News",
+            }),
+        ),
+    ];
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://news.example/a");
+    eventually("an article", || state_of(&core).tabs[&tab].reader_available);
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::TabReader {
+            tab_id: tab,
+            on: true,
+        },
+    )
+    .expect("reader");
+    eventually("in Reader", || {
+        let t = &state_of(&core).tabs[&tab];
+        t.reader_active && t.url.starts_with("mado://reader?tab=")
+    });
+    let html = core
+        .engine
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .reader_pages
+        .last()
+        .map(|p| p.1.clone())
+        .expect("a page");
+    assert!(
+        html.contains("A long read") && html.contains("<p>Text</p>") && !html.contains("alert")
+    );
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::TabReader {
+            tab_id: tab,
+            on: false,
+        },
+    )
+    .expect("leave");
+    eventually("back", || {
+        state_of(&core).tabs[&tab].url == "https://news.example/a"
+    });
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::SiteSetReaderAlways {
+            host: "news.example".into(),
+            always: true,
+        },
+    )
+    .expect("always");
+    let other = new_tab(&core, w, "https://news.example/b");
+    eventually("opened by itself", || {
+        state_of(&core).tabs[&other].reader_active
+    });
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "features.reader".into(),
+            value: json!(false),
+            token: None,
+        },
+    )
+    .expect("off");
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Ui { window: w },
+            Command::TabReader {
+                tab_id: tab,
+                on: true
+            }
+        )
+        .expect_err("off")
+        .code,
+        ErrorCode::Unsupported
+    );
+}
+
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and
 /// Global Privacy Control reach the engine at start and when they change.
 #[test]

@@ -330,6 +330,7 @@ impl Adapter {
     pub fn destroy_tab(&mut self, tab: TabId) {
         crate::menu::forget(tab);
         crate::certificate::forget(tab);
+        crate::scheme::forget_reader(tab);
         let Some(t) = self.tabs.remove(&tab) else {
             return;
         };
@@ -888,8 +889,9 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                     "view source arrives with internal pages (M2-T14)",
                 ));
             }
-            TabCommand::SetReader(_) => {
-                return Err(EngineError::Unsupported("reader mode arrives in M2-T08"));
+            TabCommand::ShowReader { html } => {
+                crate::scheme::set_reader(tab, html);
+                load(tab, &view, &format!("mado://reader?tab={tab}"), None)?;
             }
             TabCommand::SetJavaScriptEnabled(js) => INFO.with_borrow_mut(|i| {
                 if let Some(info) = i.get_mut(&tab) {

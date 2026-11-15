@@ -30,6 +30,16 @@ export const DATA: Credit[] = [
   },
 ];
 
+/** JavaScript copied into the repository rather than installed. */
+export const VENDORED: Credit[] = [
+  {
+    name: "@mozilla/readability",
+    version: "0.6.0",
+    license: "Apache-2.0",
+    source: "javascript",
+  },
+];
+
 const root = join(import.meta.dir, "..");
 
 /** The SPDX identifiers about.toml accepts. */
@@ -111,8 +121,8 @@ async function javascript(ok: Set<string>): Promise<Credit[]> {
 
 if (import.meta.main) {
   const ok = await allowed();
-  const credits = [...(await rust()), ...(await javascript(ok))].sort((a, b) =>
-    a.name.localeCompare(b.name),
+  const credits = [...(await rust()), ...(await javascript(ok)), ...VENDORED, ...DATA].sort(
+    (a, b) => a.name.localeCompare(b.name),
   );
   await mkdir(join(root, "app/resources"), { recursive: true });
   await writeFile(
