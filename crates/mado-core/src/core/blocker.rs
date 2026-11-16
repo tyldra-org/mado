@@ -132,7 +132,7 @@ impl Core {
         self.blocker_building = false;
         let mut state = self.state.blocker.clone();
         if let Some(build) = &built.build
-            && let Some(engine) = mado_blocker::engine_from(&build.bytes, built.resources)
+            && let Some(engine) = mado_blocker::engine_from(&build.bytes, built.resources.clone())
         {
             tracing::info!(
                 filters = build.filters,
@@ -140,6 +140,12 @@ impl Core {
                 "blocker engine ready"
             );
             self.blocker_engine = Some(engine);
+            let names =
+                |r: &[mado_blocker::Resource]| r.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+            if names(&built.resources) != names(&self.blocker_resources) {
+                self.blocker_resources = built.resources;
+                self.load_custom_filters();
+            }
             self.blocker_shards.clone_from(&build.shards);
             self.push_blocker_rules();
             state.filters = u32::try_from(build.filters).unwrap_or(u32::MAX);
@@ -199,7 +205,8 @@ impl Core {
         self.blocker_profile_rules = mado_blocker::rules::profile_rules(&custom, &pairs);
         self.blocker_off_hosts = off;
         let all: Vec<String> = custom.into_iter().chain(hidden).collect();
-        self.blocker_custom = (!all.is_empty()).then(|| mado_blocker::custom_engine(&all));
+        self.blocker_custom = (!all.is_empty())
+            .then(|| mado_blocker::custom_engine(&all, self.blocker_resources.clone()));
         self.push_blocker_rules();
     }
 

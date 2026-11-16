@@ -835,6 +835,18 @@ pub enum Command {
     /// Downloads the filter lists now and rebuilds the blocker (spec 10 §8).
     #[serde(rename = "blocker.updateNow")]
     BlockerUpdateNow,
+    /// Starts the element picker on the tab's page (spec 10 §8).
+    #[serde(rename = "blocker.pickElement", rename_all = "camelCase")]
+    BlockerPickElement { tab_id: TabId },
+    /// The elements hidden on `host`: `[{ id, selector, createdAt }]`.
+    #[serde(rename = "blocker.hidden", rename_all = "camelCase")]
+    BlockerHidden { host: String },
+    /// Shows a hidden element again.
+    #[serde(rename = "blocker.unhide", rename_all = "camelCase")]
+    BlockerUnhide { id: i64 },
+    /// Replaces the profile's custom filters, one per line.
+    #[serde(rename = "blocker.setCustomFilters", rename_all = "camelCase")]
+    BlockerSetCustomFilters { text: String },
     // Extensions (spec 09). Protected: only Mado's own windows.
     /// Installs from the Chrome Web Store (`id`), or in Developer mode from
     /// a folder, a `.crx` or a `.zip` (`path`). Shows the install prompt.
@@ -1116,7 +1128,11 @@ impl Command {
             | Self::AppFinishFirstRun
             | Self::AppDefaultBrowser
             | Self::AppSetDefaultBrowser => CommandFamily::App,
-            Self::BlockerUpdateNow => CommandFamily::Blocker,
+            Self::BlockerUpdateNow
+            | Self::BlockerPickElement { .. }
+            | Self::BlockerHidden { .. }
+            | Self::BlockerUnhide { .. }
+            | Self::BlockerSetCustomFilters { .. } => CommandFamily::Blocker,
             Self::ExtensionInstall { .. }
             | Self::ExtensionConfirmInstall { .. }
             | Self::ExtensionList
@@ -1273,6 +1289,10 @@ impl Command {
             Self::AppDefaultBrowser => "app.defaultBrowser",
             Self::AppSetDefaultBrowser => "app.setDefaultBrowser",
             Self::BlockerUpdateNow => "blocker.updateNow",
+            Self::BlockerPickElement { .. } => "blocker.pickElement",
+            Self::BlockerHidden { .. } => "blocker.hidden",
+            Self::BlockerUnhide { .. } => "blocker.unhide",
+            Self::BlockerSetCustomFilters { .. } => "blocker.setCustomFilters",
             Self::ExtensionInstall { .. } => "extension.install",
             Self::ExtensionConfirmInstall { .. } => "extension.confirmInstall",
             Self::ExtensionList => "extension.list",
@@ -1337,6 +1357,7 @@ impl Command {
                 | Self::ImportDetect
                 | Self::AppDefaultBrowser
                 | Self::ExtensionList
+                | Self::BlockerHidden { .. }
         )
     }
 }

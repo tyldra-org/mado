@@ -4605,3 +4605,179 @@ fn extensions_are_managed_and_shown_in_the_toolbar() {
     assert!(state_of(&core).extensions.installed.is_empty());
     eventually("unloaded", || engine().extensions.is_empty());
 }
+
+/// M3-T13 (10 §6): each allowed main-frame navigation gets the blocker's
+/// cosmetic data and scriptlets before it loads; reported class names get
+/// generic rules back; the picker's choice is kept for the host.
+#[test]
+fn cosmetic_filters_reach_the_page_and_the_picker_hides_for_the_host() {
+    let dir = tempfile::tempdir().expect("dir");
+    std::fs::create_dir_all(dir.path().join("Blocker")).expect("dir");
+    use base64::Engine as _;
+    let content = base64::engine::general_purpose::STANDARD.encode("window.mark = '{{1}}';");
+    std::fs::write(
+        dir.path().join("Blocker/resources.json"),
+        json!([{ "name": "mark.js", "aliases": ["mark"], "kind": "template", "content": content }])
+            .to_string(),
+    )
+    .expect("resources");
+    crate::testing::BLOCKER.with_borrow_mut(|b| {
+        *b = Some(crate::BlockerConfig {
+            dir: dir.path().join("Blocker"),
+            update: false,
+        });
+    });
+    let core = TestCore::start();
+    crate::testing::BLOCKER.with_borrow_mut(|b| *b = None);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while state_of(&core).blocker.filters == 0 {
+        assert!(std::time::Instant::now() < deadline, "no engine");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    ask(
+        &core,
+        Origin::Settings,
+        Command::BlockerSetCustomFilters {
+            text: "news.example##.card:has-text(Sponsored)\nnews.example##+js(mark, ok)\n##.mado-generic\n||custom-blocked.example^".into(),
+        },
+    )
+    .expect("filters");
+    let check = |url: &str| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        core.handle.send(Input::Internal(Internal::BlockerCheck {
+            url: url.into(),
+            source: "https://news.example/".into(),
+            kind: "script".into(),
+            reply: tx,
+        }));
+        rx.recv().expect("answer")
+    };
+    eventually("the custom engine", || {
+        check("https://custom-blocked.example/x.js")
+    });
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://news.example/");
+    // The fake engine decides only navigations a page starts.
+    core.page
+        .page_navigates(tab, "https://news.example/story", true);
+    let scripts = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .navigation_scripts
+            .get(&tab)
+            .cloned()
+            .unwrap_or_default()
+    };
+    for _ in 0..400 {
+        if scripts().len() == 2 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        scripts().len(),
+        2,
+        "{:?} {:?}",
+        scripts()
+            .iter()
+            .map(|s| s.source.chars().take(300).collect::<String>())
+            .collect::<Vec<_>>(),
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .decisions
+            .iter()
+            .map(|d| format!("{d:?}"))
+            .collect::<Vec<_>>()
+    );
+    let s = scripts();
+    assert!(
+        s[0].source.contains("has-text") && s[0].source.contains("Sponsored"),
+        "{}",
+        s[0].source
+    );
+    assert!(
+        s[1].source.contains("window.mark = 'ok'"),
+        "{}",
+        s[1].source
+    );
+
+    // Generic hiding for reported names.
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Mado,
+        frame: frame(true, "https://news.example"),
+        message: mado_engine::page::PageMessage::CosmeticClasses(
+            mado_engine::page::CosmeticClasses {
+                classes: vec!["mado-generic".into(), "plain".into()],
+                ids: vec![],
+            },
+        ),
+    });
+    let posted = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .clone()
+    };
+    eventually("selectors", || {
+        posted().iter().any(|(t, m)| {
+            *t == tab
+                && m["type"] == "cosmeticSelectors"
+                && m["selectors"].to_string().contains("mado-generic")
+        })
+    });
+
+    // The picker.
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::BlockerPickElement { tab_id: tab },
+    )
+    .expect("picker");
+    eventually("picker start", || {
+        posted()
+            .iter()
+            .any(|(t, m)| *t == tab && m["type"] == "pickerStart")
+    });
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Mado,
+        frame: frame(true, "https://news.example"),
+        message: mado_engine::page::PageMessage::PickerResult(mado_engine::page::PickerResult {
+            selector: Some("#promo".into()),
+        }),
+    });
+    eventually("hidden", || {
+        ask(
+            &core,
+            Origin::Settings,
+            Command::BlockerHidden {
+                host: "news.example".into(),
+            },
+        )
+        .ok()
+        .is_some_and(|v| v[0]["selector"] == "#promo")
+    });
+    let notice = state_of(&core)
+        .notices
+        .iter()
+        .find(|n| n.message_key == "notice.elementHidden")
+        .cloned();
+    let undo = notice.and_then(|n| n.undo).expect("undo");
+    ask(&core, Origin::Ui { window: w }, undo).expect("undone");
+    eventually("unhidden", || {
+        ask(
+            &core,
+            Origin::Settings,
+            Command::BlockerHidden {
+                host: "news.example".into(),
+            },
+        )
+        .ok()
+        .is_some_and(|v| v.as_array().is_some_and(Vec::is_empty))
+    });
+}

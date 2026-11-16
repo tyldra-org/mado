@@ -278,6 +278,10 @@ pub enum TabCommand {
         page: GeneratedPage,
         html: String,
     },
+    /// The scripts of the next main-frame document only, put before the
+    /// profile's: the blocker's cosmetic data and scriptlets (spec 10 §6).
+    /// Sent before the navigation is allowed.
+    SetNavigationScripts(Vec<crate::PageScript>),
     /// Stored; applies from the next navigation (spec 02 §4.4).
     SetJavaScriptEnabled(bool),
     SetImagesEnabled(bool),
@@ -323,6 +327,7 @@ impl TabCommand {
             Self::ShowDevTools => "showDevTools",
             Self::ShowCertificate => "showCertificate",
             Self::ShowPage { .. } => "showPage",
+            Self::SetNavigationScripts(_) => "setNavigationScripts",
             Self::SetJavaScriptEnabled(_) => "setJavaScriptEnabled",
             Self::SetImagesEnabled(_) => "setImagesEnabled",
             Self::ExitFullscreen => "exitFullscreen",

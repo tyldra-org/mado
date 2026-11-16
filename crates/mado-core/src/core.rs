@@ -4,6 +4,7 @@
 mod applinks;
 mod blocker;
 mod clear;
+mod cosmetic;
 mod dialogs;
 mod dl;
 mod errors;
@@ -103,6 +104,8 @@ pub enum Internal {
     },
     /// The blocker's engine was built or found in the cache (spec 10 §3).
     BlockerBuilt(Box<blocker::Built>),
+    /// The profile's custom filters or hidden elements changed on disk.
+    BlockerProfileChanged,
     /// A filter list update finished (spec 10 §2).
     BlockerUpdated(mado_blocker::UpdateReport),
     /// Whether the blocker's engines block a request; tests only.
@@ -492,6 +495,10 @@ pub struct Core {
     blocker_off_hosts: Vec<String>,
     /// The rules last sent to the engine.
     blocker_sent: Option<mado_engine::BlockerRules>,
+    /// The resources (scriptlets, redirects) the engines use.
+    blocker_resources: Vec<mado_blocker::Resource>,
+    /// Tabs whose document has cosmetic filtering, with its exceptions.
+    cosmetic_tabs: BTreeMap<TabId, std::collections::HashSet<String>>,
     /// Packages waiting for their install prompt's answer.
     extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
     /// Installed extensions' files and pages.
@@ -757,6 +764,8 @@ impl Core {
             blocker_profile_rules: None,
             blocker_off_hosts: Vec::new(),
             blocker_sent: None,
+            blocker_resources: Vec::new(),
+            cosmetic_tabs: BTreeMap::new(),
             extension_installs: BTreeMap::new(),
             extension_loads: BTreeMap::new(),
             extension_info: BTreeMap::new(),
@@ -1261,6 +1270,10 @@ impl Core {
                 self.update_blocker(true, rec);
                 Ok(Value::Null)
             }
+            cmd @ (Command::BlockerPickElement { .. }
+            | Command::BlockerHidden { .. }
+            | Command::BlockerUnhide { .. }
+            | Command::BlockerSetCustomFilters { .. }) => self.blocker_command(cmd),
             cmd @ (Command::ExtensionInstall { .. } | Command::ExtensionConfirmInstall { .. }) => {
                 self.extension_command(origin, cmd, rec)
             }
@@ -1405,6 +1418,7 @@ impl Core {
             Internal::ListsLoaded(updated) => self.lists_loaded(&updated, rec),
             Internal::BlockerBuilt(built) => self.blocker_built(*built, rec),
             Internal::BlockerUpdated(report) => self.blocker_updated(report, rec),
+            Internal::BlockerProfileChanged => self.load_custom_filters(),
             #[cfg(test)]
             Internal::BlockerCheck {
                 url,

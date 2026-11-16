@@ -3,6 +3,9 @@
 //!   mado-lists check <dir>                 every list in <dir> is well formed
 //!   mado-lists sign <dir> <out> <serial>   check, then copy each list and its
 //!                                          signature to <out>
+//!   mado-lists sign-file <file> <out> <serial>
+//!                                          sign one more published file
+//!                                          (the blocker's resources)
 //!   mado-lists keygen <secret-key-file>    a new key pair; prints the public key
 //!
 //! `sign` reads the secret key from `LISTS_SIGNING_KEY` and its password
@@ -13,7 +16,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use mado_lists::{List, PUBLIC_KEY, Store, trusted_comment};
+use mado_lists::{List, PUBLIC_KEY, Store, file_comment, trusted_comment, verify_file};
 
 fn check(dir: &Path) -> Result<(), String> {
     let mut known: Vec<String> = List::ALL.iter().map(|l| l.file().to_owned()).collect();
@@ -75,6 +78,45 @@ fn sign(dir: &Path, out: &Path, serial: &str) -> Result<(), String> {
     std::fs::remove_dir_all(scratch).map_err(|e| e.to_string())
 }
 
+fn secret_key() -> Result<minisign::SecretKey, String> {
+    let secret = std::env::var("LISTS_SIGNING_KEY")
+        .map_err(|_| "LISTS_SIGNING_KEY is not set".to_owned())?;
+    let pass = password()?;
+    minisign::SecretKeyBox::from_string(&secret)
+        .and_then(|b| b.into_secret_key(Some(pass)))
+        .map_err(|e| format!("the secret key: {e}"))
+}
+
+fn sign_file(file: &Path, out: &Path, serial: &str) -> Result<(), String> {
+    let serial: u64 = serial
+        .parse()
+        .map_err(|_| format!("{serial:?} is not a serial"))?;
+    let name = file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("no file name")?
+        .to_owned();
+    let bytes = std::fs::read(file).map_err(|e| format!("{name}: {e}"))?;
+    let signature = minisign::sign(
+        None,
+        &secret_key()?,
+        std::io::Cursor::new(&bytes),
+        Some(&file_comment(&name, serial)),
+        None,
+    )
+    .map_err(|e| format!("{name}: {e}"))?
+    .into_string();
+    verify_file(&name, &bytes, &signature)
+        .map_err(|e| format!("not signed with Mado's key: {e}"))?;
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    if file.parent() != Some(out) {
+        std::fs::write(out.join(&name), &bytes).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(out.join(format!("{name}.minisig")), signature).map_err(|e| e.to_string())?;
+    println!("signed {name} as {serial}");
+    Ok(())
+}
+
 fn keygen(secret_out: &Path) -> Result<(), String> {
     if secret_out.exists() {
         return Err(format!("{} exists", secret_out.display()));
@@ -97,6 +139,7 @@ fn main() -> ExitCode {
     let result = match args.as_slice() {
         ["check", dir] => check(Path::new(dir)),
         ["sign", dir, out, serial] => sign(Path::new(dir), Path::new(out), serial),
+        ["sign-file", file, out, serial] => sign_file(Path::new(file), Path::new(out), serial),
         ["keygen", file] => keygen(Path::new(file)),
         _ => {
             Err("usage: mado-lists check <dir> | sign <dir> <out> <serial> | keygen <file>".into())

@@ -40,6 +40,8 @@ struct Tab {
     controller: Retained<WKUserContentController>,
     window: WindowId,
     observing: Vec<&'static str>,
+    /// The next main-frame document's own scripts (spec 10 §6).
+    navigation_scripts: Vec<mado_engine::PageScript>,
 }
 
 /// A tab view's place, for the extension host's cache (M3-T04).
@@ -156,6 +158,19 @@ impl Adapter {
             .collect()
     }
 
+    /// The blocker's scripts for the tab's next document.
+    pub fn set_navigation_scripts(&mut self, tab: TabId, scripts: Vec<mado_engine::PageScript>) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        if t.navigation_scripts == scripts {
+            return;
+        }
+        t.navigation_scripts = scripts;
+        let controller = t.controller.clone();
+        self.install_scripts(tab, &controller);
+    }
+
     /// A window's content view.
     pub(crate) fn content(&self, window: WindowId) -> Option<Retained<NSView>> {
         content_view(window)
@@ -196,6 +211,13 @@ impl Adapter {
             InjectAt::DocumentStart,
             false,
         )];
+        if let Some(t) = self.tabs.get(&tab) {
+            all.extend(
+                t.navigation_scripts
+                    .iter()
+                    .map(|s| (s.source.clone(), s.world, s.at, s.main_frame_only)),
+            );
+        }
         all.extend(
             self.scripts
                 .scripts
@@ -325,6 +347,7 @@ impl Adapter {
                 controller,
                 window,
                 observing,
+                navigation_scripts: Vec::new(),
             },
         );
     }
@@ -929,6 +952,9 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 let url = page.url(tab);
                 crate::scheme::set_page(&url, html);
                 load(tab, &view, &url, None)?;
+            }
+            TabCommand::SetNavigationScripts(scripts) => {
+                crate::with(|a| a.set_navigation_scripts(tab, scripts));
             }
             TabCommand::SetJavaScriptEnabled(js) => INFO.with_borrow_mut(|i| {
                 if let Some(info) = i.get_mut(&tab) {

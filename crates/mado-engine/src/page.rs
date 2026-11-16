@@ -144,8 +144,6 @@ empty_payloads!(
     WebauthnCreate,
     WebauthnGet,
     NotificationRequest,
-    CosmeticClasses,
-    PickerResult,
     AiSnapshot,
     AiText,
     AiActionResult,
@@ -224,6 +222,23 @@ pub struct StoreInstall {
     pub id: String,
     #[serde(default)]
     pub remove: bool,
+}
+
+/// `cosmetic`: class and id names seen on the page since the last batch
+/// (spec 10 §6 step 3), at most 1,000 each.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CosmeticClasses {
+    pub classes: Vec<String>,
+    pub ids: Vec<String>,
+}
+
+/// `cosmetic`: the element picker's choice (spec 10 §8): a selector to
+/// hide on the page's host, or nothing when cancelled.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PickerResult {
+    pub selector: Option<String>,
 }
 
 /// `apple-pay`: a checkout asked whether Apple Pay works (spec 07 §9).
@@ -419,6 +434,10 @@ const GEOLOCATION: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/geolocation.js"
 ));
+const COSMETIC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/cosmetic.js"
+));
 const STORE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/store.js"
@@ -505,6 +524,7 @@ pub fn bundled(geolocation_shim: bool) -> crate::PageScriptSet {
         ),
         s("apple-pay", Page, DocumentStart, true, APPLE_PAY),
         s("store", Mado, DocumentEnd, true, STORE),
+        s("cosmetic", Mado, DocumentStart, false, COSMETIC),
     ];
     if geolocation_shim {
         scripts.push(s("geolocation", Page, DocumentStart, true, GEOLOCATION));
@@ -696,7 +716,8 @@ mod tests {
                 "notifications",
                 "protocol-handlers",
                 "apple-pay",
-                "store"
+                "store",
+                "cosmetic"
             ]
         );
         assert!(set.scripts.iter().all(|s| !s.source.is_empty()));

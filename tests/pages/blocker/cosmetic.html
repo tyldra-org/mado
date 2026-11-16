@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pending</title>
+  </head>
+  <body>
+    <!-- Spec 10 §9 check 1, cosmetic and scriptlet cases (tests/e2e/blocker.test.ts). -->
+    <div class="card" id="sponsored">Sponsored by an advertiser</div>
+    <div class="card" id="news">Real news</div>
+    <div id="pick" style="width: 200px; height: 80px; background: #ccc">Pick me</div>
+    <script>
+      setTimeout(() => {
+        const shown = (id) => getComputedStyle(document.getElementById(id)).display !== "none";
+        document.title = [
+          `sponsored:${shown("sponsored") ? "shown" : "hidden"}`,
+          `news:${shown("news") ? "shown" : "hidden"}`,
+          `pick:${shown("pick") ? "shown" : "hidden"}`,
+          `scriptlet:${window.madoScriptlet ?? "none"}`,
+        ].join(" ");
+      }, 1500);
+    </script>
+  </body>
+</html>

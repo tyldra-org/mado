@@ -21,7 +21,7 @@ pub use data::{
     Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload, ListKind,
     MinSafeEngine, SensitiveHosts, Status, TopDomainList, TrackingParams,
 };
-pub use signature::{PUBLIC_KEY, signed_serial, trusted_comment};
+pub use signature::{PUBLIC_KEY, file_comment, signed_serial, trusted_comment, verify_file};
 pub use store::{Installed, Store};
 
 /// Where the published lists live (spec 15 §7, `lists.yml`).

@@ -84,6 +84,8 @@ struct Session {
 pub struct FakeState {
     /// Loaded extensions.
     pub extensions: Vec<mado_engine::ExtensionLoad>,
+    /// The scripts each tab's next document gets (spec 10 §6).
+    pub navigation_scripts: BTreeMap<TabId, Vec<mado_engine::PageScript>>,
     /// Extension calls, as text.
     pub extension_ops: Vec<String>,
     /// The blocker's rules the core last sent.
@@ -628,6 +630,9 @@ impl Engine for FakeEngine {
             }
             TabCommand::PostToPage { message, .. } => {
                 state.posted.push((tab, message));
+            }
+            TabCommand::SetNavigationScripts(scripts) => {
+                state.navigation_scripts.insert(tab, scripts);
             }
             TabCommand::StopCapture(kind) => {
                 let (camera, microphone, screen) = t.capture;
