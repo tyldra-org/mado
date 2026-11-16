@@ -986,5 +986,8 @@
   "prompt.save.updateButton": "Update",
   "prompt.save.notNow": "Not now",
   "prompt.save.never": "Never on this site",
-  "notice.passwordSaved": "Password saved for {site}"
+  "notice.passwordSaved": "Password saved for {site}",
+  "fill.source.mado": "Mado",
+  "fill.source.onePassword": "1Password",
+  "fill.source.bitwarden": "Bitwarden"
 }

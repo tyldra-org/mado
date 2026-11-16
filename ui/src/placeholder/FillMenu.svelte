@@ -53,6 +53,8 @@
         <button type="button" role="menuitem" onclick={() => fill(item.itemRef)}>
           {item.kind === "generate" ? t("fill.generate") : item.title}{#if item.subtitle}<small>
               {item.subtitle}</small
+            >{/if}{#if item.kind !== "generate"}<span class="sources"
+              >{item.sources.map((x) => t(`fill.source.${x}`)).join(" · ")}</span
             >{/if}
         </button>
       {/each}

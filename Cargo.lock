@@ -2687,8 +2687,14 @@ dependencies = [
  "data-encoding",
  "getrandom 0.4.3",
  "hmac 0.13.0",
+ "mado-storage",
+ "mado-vault",
+ "rusqlite",
+ "serde",
  "sha1",
  "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
  "url",
 ]
 
