@@ -112,6 +112,9 @@ const DOCS = [
  */
 const PROTO = [/^proto\//];
 
+/** Fuzz targets: their own Cargo workspace, built by hand with nightly Rust. */
+const FUZZ = [/^fuzz\//];
+
 /** Every list above. A path in none of them runs everything. */
 const LISTED = [
   ...FULL,
@@ -124,6 +127,7 @@ const LISTED = [
   ...WORKFLOWS,
   ...DOCS,
   ...PROTO,
+  ...FUZZ,
 ];
 
 const any = (file: string, patterns: RegExp[]) => patterns.some((p) => p.test(file));
