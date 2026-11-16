@@ -16,6 +16,42 @@ pub fn package_url(id: &str) -> String {
     )
 }
 
+/// The update check for an installed store extension (spec 09 §10).
+pub fn update_check_url(id: &str, installed: &str) -> String {
+    format!(
+        "https://clients2.google.com/service/update2/crx?prodversion={CHROMIUM_VERSION}&acceptformat=crx3&x=id%3D{id}%26v%3D{installed}%26uc"
+    )
+}
+
+/// What a gupdate answer offers for `id`: the new version and where its
+/// package is, when `status="ok"`.
+pub fn parse_update(xml: &str, id: &str) -> Option<(String, String)> {
+    let doc = roxmltree::Document::parse(xml).ok()?;
+    let app = doc
+        .descendants()
+        .find(|n| n.has_tag_name("app") && n.attribute("appid") == Some(id))?;
+    let check = app.children().find(|n| n.has_tag_name("updatecheck"))?;
+    if check.attribute("status") != Some("ok") {
+        return None;
+    }
+    Some((
+        check.attribute("version")?.to_owned(),
+        check.attribute("codebase")?.to_owned(),
+    ))
+}
+
+/// Whether dotted version `a` is newer than `b`.
+pub fn newer(a: &str, b: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
+    let (a, b) = (parts(a), parts(b));
+    let n = a.len().max(b.len());
+    let get = |v: &[u64], i: usize| v.get(i).copied().unwrap_or(0);
+    (0..n)
+        .map(|i| get(&a, i).cmp(&get(&b, i)))
+        .find(|o| o.is_ne())
+        .is_some_and(std::cmp::Ordering::is_gt)
+}
+
 /// Whether a download may go to `url`: https on Google's update and
 /// download hosts only.
 pub fn allowed(url: &reqwest::Url) -> bool {
@@ -92,6 +128,34 @@ pub async fn download(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_answers_parse_and_versions_compare() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gupdate xmlns="http://www.google.com/update2/response" protocol="2.0" server="prod">
+  <daystart elapsed_days="7000"/>
+  <app appid="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" cohort="1::" status="ok">
+    <updatecheck codebase="https://clients2.googleusercontent.com/crx/blobs/x.crx" hash_sha256="00" size="10" status="ok" version="2.0.1"/>
+  </app>
+</gupdate>"#;
+        assert_eq!(
+            parse_update(xml, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            Some((
+                "2.0.1".into(),
+                "https://clients2.googleusercontent.com/crx/blobs/x.crx".into()
+            ))
+        );
+        assert_eq!(
+            parse_update(
+                &xml.replace("status=\"ok\" version", "status=\"noupdate\" version"),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ),
+            None
+        );
+        assert_eq!(parse_update(xml, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), None);
+        assert!(newer("2.0.1", "2.0") && newer("10.0", "9.9.9") && !newer("1.0", "1.0.0"));
+        assert!(update_check_url("x", "1.2").contains("v%3D1.2"));
+    }
 
     #[test]
     fn only_googles_download_hosts_over_https() {

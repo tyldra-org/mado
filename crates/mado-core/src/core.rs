@@ -9,6 +9,7 @@ mod dialogs;
 mod dl;
 mod errors;
 mod ext_manage;
+mod ext_update;
 mod extensions;
 mod import;
 mod internal;
@@ -116,6 +117,8 @@ pub enum Internal {
         kind: String,
         reply: std::sync::mpsc::Sender<bool>,
     },
+    /// A store extension's update was verified and unpacked (spec 09 §10).
+    ExtensionUpdateStaged(Box<extensions::Staged>),
     /// The last good copies of the signed lists were read (spec 09 §7).
     ListsLoaded(Vec<mado_lists::List>),
     /// The daily lists fetch finished.
@@ -258,6 +261,8 @@ pub enum TestHook {
     SecurityCheck,
     /// Fetches the signed lists now, as their timer would.
     ListsFetch,
+    /// Checks for extension updates now, as their timer would.
+    ExtensionUpdateCheck,
 }
 
 /// A security update relaunches on its own after this long ready, once
@@ -853,6 +858,9 @@ impl Core {
         }
         let mut rec = PatchRecorder::new();
         self.state.tx(&mut rec).set_extensions(ext);
+        self.apply_blocked_extensions(&mut rec);
+        self.timers
+            .schedule(Timer::ExtensionUpdate, ext_update::FIRST);
         // Before any tab view, so every tab gets the extensions.
         for op in std::mem::take(&mut self.outbox) {
             self.engine.send(op);
@@ -1419,6 +1427,7 @@ impl Core {
             Internal::BlockerBuilt(built) => self.blocker_built(*built, rec),
             Internal::BlockerUpdated(report) => self.blocker_updated(report, rec),
             Internal::BlockerProfileChanged => self.load_custom_filters(),
+            Internal::ExtensionUpdateStaged(staged) => self.extension_update_staged(*staged, rec),
             #[cfg(test)]
             Internal::BlockerCheck {
                 url,
@@ -1543,6 +1552,7 @@ impl Core {
                 TestHook::PrivateLockCheck => self.private_lock_check(),
                 TestHook::SecurityCheck => self.fire(Timer::SecurityRelaunch),
                 TestHook::ListsFetch => self.fire(Timer::ListsFetch),
+                TestHook::ExtensionUpdateCheck => self.fire(Timer::ExtensionUpdate),
             },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {
@@ -1726,6 +1736,7 @@ impl Core {
             Timer::UpgradeTimeout(tab) => self.upgrade_timed_out(tab),
             Timer::ListsFetch => self.fetch_lists(),
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
+            Timer::ExtensionUpdate => self.check_extension_updates(),
             Timer::AutoRevoke => {
                 self.auto_revoke(&mut rec);
                 self.timers

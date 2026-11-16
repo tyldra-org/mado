@@ -3993,6 +3993,10 @@ fn a_store_extension_installs_through_the_prompt() {
         dir: dir.path().join("Extensions"),
         package_url: std::sync::Arc::new(move |id| format!("http://127.0.0.1:{port}/crx/{id}")),
         extra_publishers: vec![key_hash(&publisher.public_key())],
+        update_url: std::sync::Arc::new(move |id, _| {
+            format!("http://127.0.0.1:{port}/update/{id}")
+        }),
+        check_hosts: false,
     };
     crate::testing::EXTENSIONS.with_borrow_mut(|e| *e = Some(config.clone()));
     let core = TestCore::start();
@@ -4780,4 +4784,236 @@ fn cosmetic_filters_reach_the_page_and_the_picker_hides_for_the_host() {
         .ok()
         .is_some_and(|v| v.as_array().is_some_and(Vec::is_empty))
     });
+}
+
+/// M3-T08, 09 §12 check 3: an update that adds <all_urls> is installed
+/// turned off with Review; turning it on grants it. An extension that the
+/// compatibility list blocks turns off and stays off.
+#[test]
+fn an_update_asking_for_more_waits_for_review() {
+    use mado_extensions::fixtures::{Signer, key_hash};
+    use mado_types::state::PromptState;
+    let publisher = Signer::ec(9);
+    let v1 = r#"{"name":"Grower","version":"1.0","manifest_version":3,"permissions":["storage"]}"#;
+    let v2 = r#"{"name":"Grower","version":"2.0","manifest_version":3,"permissions":["storage"],"host_permissions":["<all_urls>"]}"#;
+    let (id, p1) = test_extension(v1, Some(&publisher));
+    let (_, p2) = test_extension(v2, Some(&publisher));
+    let files = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let (port, _) = serve_files(std::sync::Arc::clone(&files));
+    let put = |path: String, bytes: Vec<u8>| {
+        files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(path, bytes);
+    };
+    put(format!("/crx/{id}"), p1);
+    put(format!("/v2/{id}"), p2);
+    put(
+        format!("/update/{id}"),
+        format!(
+            r#"<gupdate xmlns="http://www.google.com/update2/response" protocol="2.0"><app appid="{id}" status="ok"><updatecheck codebase="http://127.0.0.1:{port}/v2/{id}" status="ok" version="2.0"/></app></gupdate>"#
+        )
+        .into_bytes(),
+    );
+    let dir = tempfile::tempdir().expect("dir");
+    let config = crate::ExtensionsConfig {
+        dir: dir.path().join("Extensions"),
+        package_url: std::sync::Arc::new(move |id| format!("http://127.0.0.1:{port}/crx/{id}")),
+        extra_publishers: vec![key_hash(&publisher.public_key())],
+        update_url: std::sync::Arc::new(move |id, _| {
+            format!("http://127.0.0.1:{port}/update/{id}")
+        }),
+        check_hosts: false,
+    };
+    crate::testing::EXTENSIONS.with_borrow_mut(|e| *e = Some(config.clone()));
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::ExtensionInstall {
+            id: Some(id.parse().expect("id")),
+            source: mado_types::command::ExtensionSource::Store,
+            path: None,
+        },
+    )
+    .expect("asked");
+    eventually("the prompt", || {
+        state_of(&core)
+            .prompts
+            .values()
+            .any(|p| matches!(p, PromptState::ExtensionInstall(_)))
+    });
+    let prompt = *state_of(&core).prompts.keys().next().expect("prompt");
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::ExtensionConfirmInstall {
+            prompt_id: prompt,
+            add: true,
+        },
+    )
+    .expect("added");
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::ExtensionUpdateCheck,
+    )));
+    eventually("the update", || {
+        state_of(&core).extensions.installed[0].version == "2.0"
+    });
+    let e = state_of(&core).extensions.installed[0].clone();
+    assert!(!e.enabled);
+    assert_eq!(e.disabled_reason.as_deref(), Some("permissionsIncrease"));
+    let review = state_of(&core)
+        .notices
+        .iter()
+        .find(|n| n.message_key == "notice.extensionNeedsReview")
+        .cloned()
+        .expect("review notice");
+    assert!(matches!(
+        review.action.map(|a| a.command),
+        Some(Command::AppOpenSettings { section: Some(ref s) }) if s == "extensions"
+    ));
+    assert!(config.dir.join(&id).join("2.0/manifest.json").exists());
+    assert!(!config.dir.join(&id).join("1.0").exists());
+    let engine = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extensions
+            .clone()
+    };
+    eventually("unloaded", || engine().is_empty());
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionSetEnabled {
+            id: id.parse().expect("id"),
+            enabled: true,
+        },
+    )
+    .expect("reviewed");
+    eventually("loaded with all sites", || {
+        engine()
+            .first()
+            .is_some_and(|l| l.hosts.contains(&"<all_urls>".to_owned()))
+    });
+}
+
+/// M3-T08, 09 §7: a signed compatibility list that blocks an installed
+/// extension turns it off at once, and it cannot be turned back on.
+#[test]
+fn a_blocked_extension_turns_off_and_stays_off() {
+    use mado_lists::List;
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().expect("keys");
+    let files = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let (port, log) = serve_files(std::sync::Arc::clone(&files));
+    let dir = tempfile::tempdir().expect("dir");
+    let store = std::sync::Arc::new(
+        mado_lists::Store::new(dir.path().join("Lists"), &keys.pk.to_base64()).expect("store"),
+    );
+    crate::testing::LISTS.with_borrow_mut(|l| {
+        *l = Some(crate::ListsConfig {
+            store,
+            url: format!("http://127.0.0.1:{port}/lists/"),
+        });
+    });
+    let core = TestCore::start();
+    crate::testing::LISTS.with_borrow_mut(|l| *l = None);
+    startup(&core);
+    let folder = tempfile::tempdir().expect("dir");
+    std::fs::write(
+        folder.path().join("manifest.json"),
+        r#"{"name":"Bad","version":"1","manifest_version":3}"#,
+    )
+    .expect("manifest");
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let token = ask(
+        &core,
+        Origin::Settings,
+        Command::AppAuthenticate { reason: "t".into() },
+    )
+    .ok()
+    .and_then(|v| v["token"].as_str().map(str::to_owned));
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "extensions.developerMode".into(),
+            value: json!(true),
+            token,
+        },
+    )
+    .expect("developer mode");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionInstall {
+            id: None,
+            source: mado_types::command::ExtensionSource::Unpacked,
+            path: Some(folder.path().to_string_lossy().into_owned()),
+        },
+    )
+    .expect("asked");
+    eventually("the prompt", || !state_of(&core).prompts.is_empty());
+    let prompt = *state_of(&core).prompts.keys().next().expect("prompt");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionConfirmInstall {
+            prompt_id: prompt,
+            add: true,
+        },
+    )
+    .expect("added");
+    let id = state_of(&core).extensions.installed[0].id.clone();
+
+    let compat = format!(
+        r#"{{"blocked":{{"{id}":{{"reason":"malware","since":"2026-11-16"}}}},"minSafeEngine":{{"webkit":"1"}}}}"#
+    )
+    .into_bytes();
+    let sig = minisign::sign(
+        None,
+        &keys.sk,
+        std::io::Cursor::new(&compat),
+        Some(&mado_lists::trusted_comment(List::Compat, u64::MAX / 2)),
+        None,
+    )
+    .expect("sign")
+    .into_string()
+    .into_bytes();
+    {
+        let mut f = files.lock().unwrap_or_else(|e| e.into_inner());
+        f.insert("/lists/compat.json".to_owned(), compat);
+        f.insert("/lists/compat.json.minisig".to_owned(), sig);
+    }
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::ListsFetch)));
+    eventually("the fetch", || {
+        log.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|p| p == "/lists/compat.json")
+    });
+    eventually("turned off", || {
+        state_of(&core).extensions.installed[0]
+            .disabled_reason
+            .as_deref()
+            == Some("blocked")
+    });
+    assert!(!state_of(&core).extensions.installed[0].enabled);
+    assert!(
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.extensionDisabledHarmful")
+    );
+    let refused = ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionSetEnabled { id, enabled: true },
+    );
+    assert!(refused.is_err(), "blocked extensions stay off");
 }
