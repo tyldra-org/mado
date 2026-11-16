@@ -20,6 +20,8 @@ pub enum Timer {
     AutoRevoke,
     /// The daily fetch of the signed lists (spec 09 §7).
     ListsFetch,
+    /// The daily filter list update (spec 10 §2).
+    BlockerUpdate,
     /// An HTTPS-first upgrade had its time (spec 05 §5).
     UpgradeTimeout(mado_types::TabId),
     /// Quit even if downloads did not pause in time.

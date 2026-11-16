@@ -1,0 +1,67 @@
+{
+  "lists": [
+    {
+      "id": "ubo-filters",
+      "url": "https://ublockorigin.github.io/uAssets/filters/filters.min.txt",
+      "default": true,
+      "kind": "ads"
+    },
+    {
+      "id": "ubo-privacy",
+      "url": "https://ublockorigin.github.io/uAssets/filters/privacy.min.txt",
+      "default": true,
+      "kind": "trackers"
+    },
+    {
+      "id": "ubo-badware",
+      "url": "https://ublockorigin.github.io/uAssets/filters/badware.min.txt",
+      "default": true,
+      "kind": "ads"
+    },
+    {
+      "id": "ubo-quick",
+      "url": "https://ublockorigin.github.io/uAssets/filters/quick-fixes.min.txt",
+      "default": true,
+      "kind": "ads"
+    },
+    {
+      "id": "ubo-unbreak",
+      "url": "https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt",
+      "default": true,
+      "kind": "ads"
+    },
+    {
+      "id": "easylist",
+      "url": "https://easylist.to/easylist/easylist.txt",
+      "default": true,
+      "kind": "ads"
+    },
+    {
+      "id": "easyprivacy",
+      "url": "https://easylist.to/easylist/easyprivacy.txt",
+      "default": true,
+      "kind": "trackers"
+    },
+    {
+      "id": "pgl",
+      "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext",
+      "default": true,
+      "kind": "trackers"
+    },
+    {
+      "id": "cookie-notices",
+      "url": "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
+      "default": false,
+      "kind": "annoyances"
+    },
+    {
+      "id": "annoyances",
+      "url": "https://ublockorigin.github.io/uAssets/filters/annoyances.min.txt",
+      "default": false,
+      "kind": "annoyances"
+    }
+  ],
+  "resources": [
+    "https://raw.githubusercontent.com/brave/adblock-resources/master/dist/resources.json"
+  ]
+}

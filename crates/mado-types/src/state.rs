@@ -692,7 +692,29 @@ pub struct MediaState {
 #[ts(export)]
 pub struct BlockerState {
     pub enabled: bool,
+    /// The last download that changed a list, Unix milliseconds.
     pub lists_updated_at: Option<i64>,
+    /// Filters in the engine in use; 0 until the first build.
+    pub filters: u32,
+    /// The bundled EasyList stands in: no list was downloaded yet.
+    pub bundled: bool,
+    /// The lists the profile uses, with their state (spec 10 §2).
+    pub lists: Vec<BlockerList>,
+    /// An update is running.
+    pub updating: bool,
+}
+
+/// One filter list in use (spec 10 §2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BlockerList {
+    pub id: String,
+    /// `ads`, `trackers`, `annoyances` or `other`.
+    pub kind: String,
+    /// Filters in the stored copy; 0 before the first download.
+    pub filters: u32,
+    pub updated_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]

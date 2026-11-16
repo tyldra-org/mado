@@ -832,6 +832,9 @@ pub enum Command {
     /// from Mado's own windows.
     #[serde(rename = "app.setDefaultBrowser")]
     AppSetDefaultBrowser,
+    /// Downloads the filter lists now and rebuilds the blocker (spec 10 §8).
+    #[serde(rename = "blocker.updateNow")]
+    BlockerUpdateNow,
     // Extensions (spec 09). Protected: only Mado's own windows.
     /// Installs from the Chrome Web Store (`id`), or in Developer mode from
     /// a folder, a `.crx` or a `.zip` (`path`). Shows the install prompt.
@@ -1027,6 +1030,7 @@ impl Command {
             | Self::AppFinishFirstRun
             | Self::AppDefaultBrowser
             | Self::AppSetDefaultBrowser => CommandFamily::App,
+            Self::BlockerUpdateNow => CommandFamily::Blocker,
             Self::ExtensionInstall { .. } | Self::ExtensionConfirmInstall { .. } => {
                 CommandFamily::Extension
             }
@@ -1168,6 +1172,7 @@ impl Command {
             Self::AppFinishFirstRun => "app.finishFirstRun",
             Self::AppDefaultBrowser => "app.defaultBrowser",
             Self::AppSetDefaultBrowser => "app.setDefaultBrowser",
+            Self::BlockerUpdateNow => "blocker.updateNow",
             Self::ExtensionInstall { .. } => "extension.install",
             Self::ExtensionConfirmInstall { .. } => "extension.confirmInstall",
             Self::ProfileList => "profile.list",

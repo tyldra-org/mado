@@ -19,6 +19,7 @@ workspace = true
 ammonia = "4.2.5"
 base64 = "0.23"
 jiff = "0.2.44"
+mado-blocker = { version = "0.0.0", path = "../mado-blocker" }
 mado-engine = { version = "0.0.0", path = "../mado-engine" }
 mado-extensions = { version = "0.0.0", path = "../mado-extensions" }
 mado-import = { version = "0.0.0", path = "../mado-import" }

@@ -24,6 +24,12 @@ export const DATA: Credit[] = [
     source: "data",
   },
   {
+    name: "EasyList (bundled until the first filter list download)",
+    version: "2026-11",
+    license: "CC-BY-SA-3.0",
+    source: "data",
+  },
+  {
     name: "Chromium top domains, HSTS preload list and IDN spoof checks",
     version: "2023-09",
     license: "BSD-3-Clause",

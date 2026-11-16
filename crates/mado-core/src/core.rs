@@ -2,6 +2,7 @@
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
 mod applinks;
+mod blocker;
 mod clear;
 mod dialogs;
 mod dl;
@@ -44,6 +45,7 @@ use crate::tabs::{ClosedEntry, Model};
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
 use crate::ui::{UiSink, Updates};
+pub use blocker::BlockerConfig;
 pub use extensions::ExtensionsConfig;
 pub use lists::ListsConfig;
 use session::CloseAction;
@@ -97,6 +99,18 @@ pub enum Internal {
     ExtensionStaged {
         result: Result<Box<extensions::Staged>, &'static str>,
         window: Option<WindowId>,
+    },
+    /// The blocker's engine was built or found in the cache (spec 10 §3).
+    BlockerBuilt(Box<blocker::Built>),
+    /// A filter list update finished (spec 10 §2).
+    BlockerUpdated(mado_blocker::UpdateReport),
+    /// Whether the blocker's engines block a request; tests only.
+    #[cfg(test)]
+    BlockerCheck {
+        url: String,
+        source: String,
+        kind: String,
+        reply: std::sync::mpsc::Sender<bool>,
     },
     /// The last good copies of the signed lists were read (spec 09 §7).
     ListsLoaded(Vec<mado_lists::List>),
@@ -281,6 +295,8 @@ pub struct CoreConfig {
     pub lists: Option<ListsConfig>,
     /// Extensions (spec 09); `None` for private and guest profiles.
     pub extensions: Option<ExtensionsConfig>,
+    /// The blocker's shared files (spec 10); `None` turns it off.
+    pub blocker: Option<BlockerConfig>,
     /// macOS privacy permissions (spec 07 §4); tests pass fakes.
     pub os: OsPermissions,
     /// The app's profiles (spec 12 §1).
@@ -459,6 +475,14 @@ pub struct Core {
     captive_probe: Option<String>,
     lists: Option<ListsConfig>,
     extensions: Option<ExtensionsConfig>,
+    blocker: Option<BlockerConfig>,
+    /// The shared engine, once built (spec 10 §3).
+    blocker_engine: Option<mado_blocker::Engine>,
+    /// The profile's custom filters and hidden elements.
+    blocker_custom: Option<mado_blocker::Engine>,
+    blocker_building: bool,
+    /// The lists changed during a build: build again after it.
+    blocker_rebuild_again: bool,
     /// Packages waiting for their install prompt's answer.
     extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
     /// Extensions loaded in the engine.
@@ -711,6 +735,11 @@ impl Core {
             captive_probe: config.captive_probe.clone(),
             lists: config.lists.clone(),
             extensions: config.extensions.clone(),
+            blocker: config.blocker.clone(),
+            blocker_engine: None,
+            blocker_custom: None,
+            blocker_building: false,
+            blocker_rebuild_again: false,
             extension_installs: BTreeMap::new(),
             extension_loads: BTreeMap::new(),
             extension_windows: mado_engine::ExtensionWindows::default(),
@@ -764,6 +793,7 @@ impl Core {
             .schedule(Timer::AutoRevoke, std::time::Duration::from_secs(600));
         core.load_lists();
         core.load_extensions();
+        core.start_blocker();
         core
     }
 
@@ -1206,6 +1236,10 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            Command::BlockerUpdateNow => {
+                self.update_blocker(true, rec);
+                Ok(Value::Null)
+            }
             cmd @ (Command::ExtensionInstall { .. } | Command::ExtensionConfirmInstall { .. }) => {
                 self.extension_command(origin, cmd, rec)
             }
@@ -1338,6 +1372,17 @@ impl Core {
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
             Internal::ListsLoaded(updated) => self.lists_loaded(&updated, rec),
+            Internal::BlockerBuilt(built) => self.blocker_built(*built, rec),
+            Internal::BlockerUpdated(report) => self.blocker_updated(report, rec),
+            #[cfg(test)]
+            Internal::BlockerCheck {
+                url,
+                source,
+                kind,
+                reply,
+            } => {
+                let _ = reply.send(self.blocker_blocks(&url, &source, &kind));
+            }
             Internal::ExtensionStaged { result, window } => {
                 self.extension_staged(result, window, rec);
             }
@@ -1556,6 +1601,9 @@ impl Core {
             let shortcuts = self.shortcuts();
             self.ui.shortcuts(&shortcuts);
         }
+        if out.changes.iter().any(|c| c.key == "blocker.lists") {
+            self.blocker_lists_changed(rec);
+        }
         if out.changes.iter().any(|c| c.key == "privacy.gpc") {
             self.outbox.push(EngineOp::SetPageScripts(self.scripts()));
         }
@@ -1629,6 +1677,7 @@ impl Core {
             }
             Timer::UpgradeTimeout(tab) => self.upgrade_timed_out(tab),
             Timer::ListsFetch => self.fetch_lists(),
+            Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::AutoRevoke => {
                 self.auto_revoke(&mut rec);
                 self.timers

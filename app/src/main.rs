@@ -462,6 +462,10 @@ fn start_owner(
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
         lists: lists(&owner.paths),
+        blocker: Some(mado_core::BlockerConfig {
+            dir: owner.paths.blocker(),
+            update: blocker_updates(),
+        }),
         extensions: (!(info.is_private || info.is_guest))
             .then(|| mado_core::ExtensionsConfig::store(owner.paths.extensions(id))),
         os: mado_core::OsPermissions::system(),
@@ -1125,6 +1129,16 @@ fn lists(paths: &Paths) -> Option<mado_core::ListsConfig> {
             None
         }
     }
+}
+
+/// Whether filter lists download (spec 10 §2). End-to-end tests turn it
+/// off with `MADO_BLOCKER_UPDATE=0`, so they use the bundled EasyList.
+fn blocker_updates() -> bool {
+    #[cfg(feature = "test-hooks")]
+    if std::env::var("MADO_BLOCKER_UPDATE").is_ok_and(|v| v == "0") {
+        return false;
+    }
+    true
 }
 
 /// Apple's captive portal probe (spec 05 §8). End-to-end tests point it
