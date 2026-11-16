@@ -10,3 +10,10 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+data-encoding = "2.11.1"
+hmac = "0.13.0"
+sha1 = "0.11.0"
+sha2 = "0.11.1"
+url = "2.5.8"

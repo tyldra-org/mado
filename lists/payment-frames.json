@@ -1,0 +1,13 @@
+{
+  "hosts": [
+    "js.stripe.com",
+    "checkoutshopper-live.adyen.com",
+    "checkoutshopper-test.adyen.com",
+    "assets.braintreegateway.com",
+    "checkout-web-components.checkout.com",
+    "js.checkout.com",
+    "www.paypal.com",
+    "web.squarecdn.com",
+    "pci-connect.squareup.com"
+  ]
+}

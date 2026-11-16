@@ -360,6 +360,7 @@ fn frame_info(frame: &WKFrameInfo) -> FrameInfo {
     unsafe {
         FrameInfo {
             is_main_frame: frame.isMainFrame(),
+            handle: 0,
             origin: origin_string(&frame.securityOrigin()),
             url: convert::url_string(frame.request().URL()),
         }
@@ -1052,10 +1053,12 @@ define_class!(
         ) {
             let tab = self.ivars().tab;
             // SAFETY: reading the message on the main thread.
-            let (body, frame) = unsafe {
+            let (body, mut frame, frame_ref) = unsafe {
+                let frame_ref = message.frameInfo();
                 (
                     convert::to_json(Some(&message.body())),
-                    frame_info(&message.frameInfo()),
+                    frame_info(&frame_ref),
+                    frame_ref,
                 )
             };
             let checked = INFO.with_borrow_mut(|i| {
@@ -1071,6 +1074,14 @@ define_class!(
             if let Some(message) = checked {
                 if let mado_engine::page::PageMessage::ContextTarget(c) = &message {
                     crate::menu::remember_target(tab, c);
+                }
+                // Messages the core may answer in that frame alone.
+                if matches!(
+                    message,
+                    mado_engine::page::PageMessage::Forms(_)
+                        | mado_engine::page::PageMessage::FieldFocused(_)
+                ) {
+                    frame.handle = crate::frames::remember(tab, frame_ref);
                 }
                 send(EngineEvent::PageMessage {
                     tab,

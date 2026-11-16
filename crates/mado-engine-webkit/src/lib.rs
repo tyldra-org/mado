@@ -17,7 +17,9 @@ mod convert;
 mod delegate;
 mod download;
 pub mod extensions;
+mod frames;
 mod fullscreen;
+mod gesture;
 mod keys;
 
 pub use keys::{set_reserved as set_reserved_shortcuts, synthesize as synthesize_key};
@@ -98,8 +100,11 @@ thread_local! {
 
 /// Creates the adapter on the main thread. Call once, before any tab.
 pub fn install(mtm: MainThreadMarker, config: Config) {
+    gesture::install();
     ADAPTER.with_borrow_mut(|a| *a = Some(view::Adapter::new(mtm, config)));
 }
+
+pub use gesture::last_gesture;
 
 /// Runs `f` with the adapter. `None` before [`install`] or off the main
 /// thread.

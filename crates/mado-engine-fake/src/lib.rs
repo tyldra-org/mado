@@ -111,6 +111,8 @@ pub struct FakeState {
     pub privacy: Option<mado_engine::PrivacyConfig>,
     /// Messages posted to pages, in order.
     pub posted: Vec<(TabId, serde_json::Value)>,
+    /// Messages posted to one frame: tab, frame handle, message.
+    pub frame_posts: Vec<(TabId, u64, serde_json::Value)>,
     /// Answers to `EvaluateInWorld`: the first whose marker starts the
     /// source; null otherwise.
     pub eval_answers: Vec<(String, Value)>,
@@ -630,6 +632,9 @@ impl Engine for FakeEngine {
             }
             TabCommand::PostToPage { message, .. } => {
                 state.posted.push((tab, message));
+            }
+            TabCommand::PostToFrame { frame, message, .. } => {
+                state.frame_posts.push((tab, frame, message));
             }
             TabCommand::SetNavigationScripts(scripts) => {
                 state.navigation_scripts.insert(tab, scripts);
