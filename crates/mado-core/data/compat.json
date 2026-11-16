@@ -1,6 +1,0 @@
-{
-  "_comment": "The bundled copy of the compatibility list's fields Mado reads before the signed list arrives (M3-T01, spec 09 §7). minSafeEngine.webkit is the oldest WebKit without known security fixes pending.",
-  "minSafeEngine": {
-    "webkit": "620.1.15"
-  }
-}

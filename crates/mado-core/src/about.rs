@@ -1,6 +1,5 @@
 //! About (spec 15 §5): whether the web engine under Mado is older than the
-//! compatibility list's `minSafeEngine`, from the bundled copy until the
-//! signed list arrives (M3-T01).
+//! compatibility list's `minSafeEngine`.
 
 /// `"620.1.15"` as numbers; anything not a number counts as 0.
 fn parts(v: &str) -> Vec<u64> {
@@ -34,15 +33,10 @@ pub fn older(engine: &str, min: &str) -> bool {
         .is_some_and(std::cmp::Ordering::is_lt)
 }
 
-/// Whether `engine` (an engine version) is older than the bundled list's
-/// `minSafeEngine.webkit`. An unknown version is not reported.
+/// Whether `engine` (an engine version) is older than the compatibility
+/// list's `minSafeEngine.webkit`. An unknown version is not reported.
 pub fn engine_outdated(engine: &str) -> bool {
-    let list: serde_json::Value =
-        serde_json::from_str(include_str!("../data/compat.json")).unwrap_or_default();
-    match list["minSafeEngine"]["webkit"].as_str() {
-        Some(min) if !engine.is_empty() => older(engine, min),
-        _ => false,
-    }
+    !engine.is_empty() && older(engine, &mado_lists::compat().min_safe_engine.webkit)
 }
 
 #[cfg(test)]

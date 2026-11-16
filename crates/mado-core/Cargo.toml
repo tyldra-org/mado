@@ -21,6 +21,7 @@ base64 = "0.23"
 jiff = "0.2.44"
 mado-engine = { version = "0.0.0", path = "../mado-engine" }
 mado-import = { version = "0.0.0", path = "../mado-import" }
+mado-lists = { version = "0.0.0", path = "../mado-lists" }
 mado-navigation = { version = "0.0.0", path = "../mado-navigation" }
 mado-permissions = { version = "0.0.0", path = "../mado-permissions" }
 mado-platform = { version = "0.0.0", path = "../mado-platform" }
@@ -43,6 +44,7 @@ uuid = { version = "1.29.2", features = ["v7"] }
 json-patch = "5.0.0"
 mado-engine-fake = { version = "0.0.0", path = "../mado-engine-fake" }
 mado-import = { version = "0.0.0", path = "../mado-import", features = ["fixtures"] }
+minisign = "0.10.0"
 proptest = "1.12.0"
 serde_norway = "0.9.42"
 tempfile = "3.27.0"

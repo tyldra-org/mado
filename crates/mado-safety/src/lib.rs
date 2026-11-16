@@ -2,47 +2,12 @@
 //!
 //! Specification: `mado-docs/spec/08-safety-privacy.md`. Roadmap: M2-T08.
 
-use std::collections::HashMap;
-use std::io::Read;
-use std::sync::LazyLock;
-
 use mado_navigation::TopDomains;
 
-/// Chromium's HSTS preload list, bundled gzipped until the signed lists
-/// carry it (spec 08 §3, M3-T01): host, and whether subdomains are included.
-static HSTS: LazyLock<HashMap<String, bool>> = LazyLock::new(|| {
-    let mut text = String::new();
-    let gz = include_bytes!("../data/hsts-preload.txt.gz");
-    if flate2::read::GzDecoder::new(&gz[..])
-        .read_to_string(&mut text)
-        .is_err()
-    {
-        return HashMap::new();
-    }
-    text.lines()
-        .filter(|l| !l.starts_with('#'))
-        .filter_map(|l| {
-            let mut parts = l.split(' ');
-            Some((parts.next()?.to_owned(), parts.next() == Some("+")))
-        })
-        .collect()
-});
-
-/// Whether `host` is on the HSTS preload list, itself or under an entry
-/// that includes subdomains.
+/// Whether `host` is on Chromium's HSTS preload list (spec 08 §3), itself
+/// or under an entry that includes subdomains.
 pub fn hsts_preloaded(host: &str) -> bool {
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    if HSTS.contains_key(&host) {
-        return true;
-    }
-    let mut rest = host.as_str();
-    while let Some((_, parent)) = rest.split_once('.') {
-        if HSTS.get(parent) == Some(&true) {
-            return true;
-        }
-        rest = parent;
-    }
-    false
+    mado_lists::hsts_preload().preloaded(host)
 }
 
 /// The sites phishing imitates most. Edit-distance and embedded-name
@@ -160,12 +125,48 @@ pub fn lookalike(host: &str, known: &Known<'_>, top: &TopDomains) -> Option<Stri
         })
 }
 
+/// A link without its tracking parameters (`utm_*`, `fbclid`, `gclid`,
+/// `si` on youtu.be and the rest of `lists/tracking-params.json`), for
+/// Copy clean link (spec 08 §8).
+pub fn clean_link(url: &str) -> String {
+    let Ok(mut u) = url::Url::parse(url) else {
+        return url.to_owned();
+    };
+    let list = mado_lists::tracking_params();
+    let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+    let on_host: Vec<&str> = list
+        .hosts
+        .iter()
+        .filter(|(h, _)| host == **h || host.ends_with(&format!(".{h}")))
+        .flat_map(|(_, p)| p.iter().map(String::as_str))
+        .collect();
+    let tracking = |k: &str| {
+        list.prefixes.iter().any(|p| k.starts_with(p.as_str()))
+            || list.params.iter().any(|p| p == k)
+            || on_host.contains(&k)
+    };
+    if u.query().is_none() {
+        return u.to_string();
+    }
+    let kept: Vec<(String, String)> = u
+        .query_pairs()
+        .filter(|(k, _)| !tracking(k))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    if kept.is_empty() {
+        u.set_query(None);
+    } else {
+        u.query_pairs_mut().clear().extend_pairs(kept);
+    }
+    u.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn check(host: &str) -> Option<String> {
-        lookalike(host, &Known::default(), TopDomains::bundled())
+        lookalike(host, &Known::default(), &TopDomains::current())
     }
 
     #[test]
@@ -218,8 +219,34 @@ mod tests {
             frequent: &frequent,
         };
         assert_eq!(
-            lookalike("mycorp-intranct.com", &known, TopDomains::bundled()).as_deref(),
+            lookalike("mycorp-intranct.com", &known, &TopDomains::current()).as_deref(),
             Some("mycorp-intranet.com")
         );
+    }
+
+    #[test]
+    fn clean_links_lose_tracking() {
+        assert_eq!(
+            clean_link("https://a.example/p?utm_source=x&id=7&fbclid=y"),
+            "https://a.example/p?id=7"
+        );
+        assert_eq!(
+            clean_link("https://a.example/p?gclid=1"),
+            "https://a.example/p"
+        );
+        assert_eq!(
+            clean_link("https://youtu.be/dQw4w9WgXcQ?si=abc&t=42"),
+            "https://youtu.be/dQw4w9WgXcQ?t=42"
+        );
+        assert_eq!(
+            clean_link("https://open.spotify.com/track/1?si=x"),
+            "https://open.spotify.com/track/1"
+        );
+        // `si` means something else elsewhere.
+        assert_eq!(
+            clean_link("https://a.example/?si=1"),
+            "https://a.example/?si=1"
+        );
+        assert_eq!(clean_link("not a url"), "not a url");
     }
 }

@@ -1,5 +1,4 @@
 {
-  "comment": "Banking sites whose pages history never indexes (spec 12 §2.2). A bundled copy until the signed lists/sensitive-hosts.json arrives (M3-T01).",
   "banking": [
     "chase.com",
     "bankofamerica.com",

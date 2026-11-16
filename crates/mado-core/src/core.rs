@@ -8,6 +8,7 @@ mod dl;
 mod errors;
 mod import;
 mod internal;
+mod lists;
 mod lock;
 mod marks;
 mod menus;
@@ -42,6 +43,7 @@ use crate::tabs::{ClosedEntry, Model};
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
 use crate::ui::{UiSink, Updates};
+pub use lists::ListsConfig;
 use session::CloseAction;
 pub use session::Power;
 
@@ -88,6 +90,10 @@ pub enum Internal {
     VisitRecorded { tab: TabId, visit: i64 },
     /// A bookmark change was written.
     BookmarksChanged,
+    /// The last good copies of the signed lists were read (spec 09 §7).
+    ListsLoaded(Vec<mado_lists::List>),
+    /// The daily lists fetch finished.
+    ListsFetched(lists::Fetched),
     /// The captive portal probe found a portal after a failed load.
     CaptivePortal {
         tab: TabId,
@@ -224,6 +230,8 @@ pub enum TestHook {
     PrivateLockCheck,
     /// Runs the security update check now, as its timer would.
     SecurityCheck,
+    /// Fetches the signed lists now, as their timer would.
+    ListsFetch,
 }
 
 /// A security update relaunches on its own after this long ready, once
@@ -261,6 +269,8 @@ pub struct CoreConfig {
     pub clock: fn() -> i64,
     /// The captive portal probe (spec 05 §8); `None` turns detection off.
     pub captive_probe: Option<String>,
+    /// The signed lists' fetch (spec 09 §7); `None` turns it off.
+    pub lists: Option<ListsConfig>,
     /// macOS privacy permissions (spec 07 §4); tests pass fakes.
     pub os: OsPermissions,
     /// The app's profiles (spec 12 §1).
@@ -437,6 +447,7 @@ pub struct Core {
     /// http URLs the user chose to continue to, allowed once.
     continue_once: std::collections::BTreeSet<String>,
     captive_probe: Option<String>,
+    lists: Option<ListsConfig>,
     os: OsPermissions,
     profiles: std::sync::Arc<dyn crate::ui::Profiles>,
     /// The profile's search engines (spec 05 §3).
@@ -681,6 +692,7 @@ impl Core {
             http_allowed,
             continue_once: std::collections::BTreeSet::new(),
             captive_probe: config.captive_probe.clone(),
+            lists: config.lists.clone(),
             os: config.os,
             profiles: std::sync::Arc::clone(&config.profiles),
             engines,
@@ -729,6 +741,7 @@ impl Core {
         core.timers.schedule(Timer::DailyBackup, DAY);
         core.timers
             .schedule(Timer::AutoRevoke, std::time::Duration::from_secs(600));
+        core.load_lists();
         core
     }
 
@@ -837,7 +850,7 @@ impl Core {
     /// spoof checks (spec 05 §4).
     fn refresh_display_urls(&mut self) {
         let full = self.settings.value(lookup_def("addressBar.show")) == "fullUrl";
-        let top = mado_navigation::TopDomains::bundled();
+        let top = mado_navigation::TopDomains::current();
         self.displayed
             .retain(|t, _| self.model.tabs.contains_key(t));
         for (id, tab) in &mut self.model.tabs {
@@ -848,7 +861,7 @@ impl Core {
             {
                 continue;
             }
-            let d = mado_navigation::display(&tab.url, full, top);
+            let d = mado_navigation::display(&tab.url, full, &top);
             tab.display_url = mado_types::state::DisplayUrl {
                 text: d.text,
                 emphasis_start: d.emphasis.0,
@@ -1266,6 +1279,8 @@ impl Core {
             Internal::DownloadVerdict { id, danger } => self.download_verdict(id, danger, rec),
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
+            Internal::ListsLoaded(updated) => self.lists_loaded(&updated, rec),
+            Internal::ListsFetched(fetched) => self.lists_fetched(fetched, rec),
             Internal::EngineDiscovered(engine) => self.engine_discovered(engine),
             Internal::ProfileChanged(info) => self.profile_changed(info, rec),
             Internal::OsAnswered { token, granted } => self.os_answered(token, granted),
@@ -1376,6 +1391,7 @@ impl Core {
                 TestHook::ErrorAction { tab, action } => self.press_error_action(tab, &action),
                 TestHook::PrivateLockCheck => self.private_lock_check(),
                 TestHook::SecurityCheck => self.fire(Timer::SecurityRelaunch),
+                TestHook::ListsFetch => self.fire(Timer::ListsFetch),
             },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {
@@ -1551,6 +1567,7 @@ impl Core {
                     .schedule(Timer::HeartbeatCheck, pages::HEARTBEAT_CHECK);
             }
             Timer::UpgradeTimeout(tab) => self.upgrade_timed_out(tab),
+            Timer::ListsFetch => self.fetch_lists(),
             Timer::AutoRevoke => {
                 self.auto_revoke(&mut rec);
                 self.timers

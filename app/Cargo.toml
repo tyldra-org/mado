@@ -26,6 +26,7 @@ mado-control = { version = "0.0.0", path = "../crates/mado-control" }
 mado-core = { version = "0.0.0", path = "../crates/mado-core" }
 mado-engine = { version = "0.0.0", path = "../crates/mado-engine" }
 mado-engine-webkit = { version = "0.0.0", path = "../crates/mado-engine-webkit" }
+mado-lists = { version = "0.0.0", path = "../crates/mado-lists" }
 mado-platform = { version = "0.0.0", path = "../crates/mado-platform" }
 mado-settings = { version = "0.0.0", path = "../crates/mado-settings" }
 mado-storage = { version = "0.0.0", path = "../crates/mado-storage" }

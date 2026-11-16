@@ -24,7 +24,7 @@ export const DATA: Credit[] = [
     source: "data",
   },
   {
-    name: "Chromium top domains and IDN spoof checks",
+    name: "Chromium top domains, HSTS preload list and IDN spoof checks",
     version: "2023-09",
     license: "BSD-3-Clause",
     source: "data",

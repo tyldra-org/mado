@@ -49,6 +49,8 @@ const RUST_GLOBAL = [
   /^\.config\/nextest\.toml$/,
   // Fixtures and the end-to-end harness, which any crate's tests may read.
   /^tests\//,
+  // The signed lists, bundled by mado-lists, which most crates read.
+  /^lists\/(?!README\.md$)/,
 ];
 
 /** Rust code lives in these workspace member roots. */

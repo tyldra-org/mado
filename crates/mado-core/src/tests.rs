@@ -3830,3 +3830,117 @@ fn certificate_errors_offer_proceed_except_on_hsts_hosts() {
             .any(|(t, c)| *t == hsts && *c == "showCertificate")
     });
 }
+
+/// Serves `files` by path over HTTP and logs each path asked for.
+fn serve_files(
+    files: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>>,
+) -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = std::sync::Arc::clone(&log);
+    std::thread::spawn(move || {
+        for mut s in listener.incoming().flatten() {
+            let mut buf = [0u8; 2048];
+            let n = s.read(&mut buf).unwrap_or(0);
+            let head = String::from_utf8_lossy(&buf[..n]).into_owned();
+            let path = head.split(' ').nth(1).unwrap_or("/").to_owned();
+            let body = files
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&path)
+                .cloned();
+            seen.lock().unwrap_or_else(|e| e.into_inner()).push(path);
+            let (status, body) = match body {
+                Some(b) => ("200 OK", b),
+                None => ("404 Not Found", Vec::new()),
+            };
+            let _ = write!(
+                s,
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = s.write_all(&body);
+        }
+    });
+    (port, log)
+}
+
+/// M3-T01, Done when: the daily fetch installs a signed list (About's
+/// engine check follows the new compatibility list), rejects a tampered
+/// one, and the last good copy stays in use and on disk.
+#[test]
+fn a_tampered_list_is_rejected_and_the_last_good_copy_stays_in_use() {
+    use mado_lists::List;
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().expect("keys");
+    let sign = |serial: u64, bytes: &[u8]| {
+        minisign::sign(
+            None,
+            &keys.sk,
+            std::io::Cursor::new(bytes),
+            Some(&mado_lists::trusted_comment(List::Compat, serial)),
+            None,
+        )
+        .expect("sign")
+        .into_string()
+        .into_bytes()
+    };
+    let compat =
+        |engine: &str| format!(r#"{{"minSafeEngine":{{"webkit":"{engine}"}}}}"#).into_bytes();
+    let files = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let publish = |bytes: Vec<u8>, sig: Vec<u8>| {
+        let mut f = files.lock().unwrap_or_else(|e| e.into_inner());
+        f.insert("/lists/compat.json".to_owned(), bytes);
+        f.insert("/lists/compat.json.minisig".to_owned(), sig);
+    };
+    let (port, log) = serve_files(std::sync::Arc::clone(&files));
+    let dir = tempfile::tempdir().expect("dir");
+    let store = std::sync::Arc::new(
+        mado_lists::Store::new(dir.path().join("Lists"), &keys.pk.to_base64()).expect("store"),
+    );
+    crate::testing::LISTS.with_borrow_mut(|l| {
+        *l = Some(crate::ListsConfig {
+            store,
+            url: format!("http://127.0.0.1:{port}/lists/"),
+        });
+    });
+    let core = TestCore::start();
+    crate::testing::LISTS.with_borrow_mut(|l| *l = None);
+    let outdated = || state_of(&core).about.engine_outdated;
+    let fetches = || {
+        log.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|p| p.ends_with("hsts-preload.txt.gz.minisig"))
+            .count()
+    };
+    let fetch = |n: usize| {
+        core.handle
+            .send(Input::Internal(Internal::Hook(crate::TestHook::ListsFetch)));
+        eventually("the fetch", || fetches() == n);
+        // The install runs off the core thread after the last request.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    };
+    assert!(!outdated(), "625.2.8 is newer than the bundled minimum");
+
+    // Tampered: signed over one list, serving another.
+    publish(compat("900.1"), sign(100, &compat("600.1")));
+    fetch(1);
+    assert!(!outdated(), "a tampered list changes nothing");
+
+    publish(compat("900.1"), sign(200, &compat("900.1")));
+    fetch(2);
+    eventually("the new minimum", outdated);
+    let cached = dir.path().join("Lists/compat.json.signed");
+    let good = std::fs::read(&cached).expect("the last good copy");
+
+    // A newer tampered copy and a replayed older one leave the good copy.
+    publish(compat("100.1"), sign(300, &compat("900.1")));
+    fetch(3);
+    publish(compat("100.1"), sign(150, &compat("100.1")));
+    fetch(4);
+    assert!(outdated(), "still the good copy");
+    assert_eq!(std::fs::read(&cached).expect("cached"), good);
+    assert_eq!(mado_lists::serial(List::Compat), 200);
+}

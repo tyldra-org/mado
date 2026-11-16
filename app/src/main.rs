@@ -461,6 +461,7 @@ fn start_owner(
         restore_session: update::take_restore(&owner.app_db, id),
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
+        lists: lists(&owner.paths),
         os: mado_core::OsPermissions::system(),
         hsts_extra: hsts_extra(),
         home: std::env::var_os("HOME")
@@ -1097,6 +1098,31 @@ fn open_links(core: &CoreHandle, urls: Vec<String>) {
             .command(Origin::System, Command::LaunchForward(request))
             .await;
     });
+}
+
+/// The signed lists (spec 09 §7), fetched from GitHub Pages. End-to-end
+/// tests point the fetch elsewhere (`MADO_LISTS_URL`), or turn it off
+/// with an empty value.
+fn lists(paths: &Paths) -> Option<mado_core::ListsConfig> {
+    #[allow(unused_mut, reason = "only test builds change it")]
+    let mut url = mado_lists::URL.to_owned();
+    #[cfg(feature = "test-hooks")]
+    if let Ok(u) = std::env::var("MADO_LISTS_URL") {
+        if u.is_empty() {
+            return None;
+        }
+        url = u;
+    }
+    match mado_lists::Store::new(paths.lists(), mado_lists::PUBLIC_KEY) {
+        Ok(store) => Some(mado_core::ListsConfig {
+            store: Arc::new(store),
+            url,
+        }),
+        Err(e) => {
+            tracing::error!(error = %e, "the lists key");
+            None
+        }
+    }
 }
 
 /// Apple's captive portal probe (spec 05 §8). End-to-end tests point it

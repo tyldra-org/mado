@@ -12,6 +12,7 @@ members = [
     "crates/mado-engine-webkit",
     "crates/mado-settings",
     "crates/mado-safety",
+    "crates/mado-lists",
     "crates/mado-permissions",
     "crates/mado-navigation",
     "crates/mado-extensions",

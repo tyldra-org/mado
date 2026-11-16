@@ -150,6 +150,8 @@ thread_local! {
     pub static PRIVATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The captive portal probe the next `TestCore` on this thread uses.
     pub static CAPTIVE_PROBE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// The lists fetch for the next `start`; off by default.
+    pub static LISTS: std::cell::RefCell<Option<crate::ListsConfig>> = const { std::cell::RefCell::new(None) };
 }
 
 pub struct TestCore {
@@ -217,6 +219,7 @@ impl TestCore {
                 settings: Settings::new(Strings::english()),
                 engine,
                 captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
+                lists: LISTS.with_borrow(Clone::clone),
                 profiles: PROFILES.with_borrow(Clone::clone),
                 hsts_extra: ["hsts.example".to_owned()].into(),
                 home: IMPORT_HOME.with_borrow(Clone::clone),

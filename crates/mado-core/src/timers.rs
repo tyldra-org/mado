@@ -18,6 +18,8 @@ pub enum Timer {
     HeartbeatCheck,
     /// The daily permission auto-revoke (spec 07 §5).
     AutoRevoke,
+    /// The daily fetch of the signed lists (spec 09 §7).
+    ListsFetch,
     /// An HTTPS-first upgrade had its time (spec 05 §5).
     UpgradeTimeout(mado_types::TabId),
     /// Quit even if downloads did not pause in time.

@@ -1,0 +1,77 @@
+# Publishes the signed lists (spec 15 §7, lists/README.md). Each push to main
+# that changes lists/ or their checks, and each manual run, checks every list
+# with the app's own parsers, signs it with LISTS_SIGNING_KEY and deploys the
+# lists and their .minisig signatures to GitHub Pages under /lists/. The
+# serial in each signature is the time of the commit signed, so Mado never
+# replaces a newer copy with an older one.
+#
+# Pull requests need no run here: CI's Rust tests read every list in lists/.
+name: Lists
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "lists/**"
+      - "crates/mado-lists/**"
+      - ".github/workflows/lists.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lists
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    name: Check and sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Check and sign
+        env:
+          LISTS_SIGNING_KEY: ${{ secrets.LISTS_SIGNING_KEY }}
+          LISTS_SIGNING_KEY_PASSWORD: ${{ secrets.LISTS_SIGNING_KEY_PASSWORD }}
+        run: |
+          serial=$(git log -1 --format=%ct)
+          cargo run --locked --release -p mado-lists --features tool -- sign lists site/lists "$serial"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/
+
+  publish:
+    name: Publish
+    needs: sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}lists/
+    steps:
+      # Pages must be on, with GitHub Actions as its source (Settings, Pages).
+      # Until then this run signs and checks the lists but deploys nothing.
+      - name: Is GitHub Pages on?
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/$REPO/pages" --silent 2>/dev/null; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::GitHub Pages is off: the lists were signed but not published."
+            echo "on=false" >> "$GITHUB_OUTPUT"
+          fi
+      - id: deploy
+        if: steps.pages.outputs.on == 'true'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

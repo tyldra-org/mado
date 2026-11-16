@@ -386,7 +386,7 @@ impl Core {
             frequent: &frequent,
         };
         let Some(target) =
-            mado_safety::lookalike(&host, &known, mado_navigation::TopDomains::bundled())
+            mado_safety::lookalike(&host, &known, &mado_navigation::TopDomains::current())
         else {
             return false;
         };

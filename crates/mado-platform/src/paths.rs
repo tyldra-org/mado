@@ -69,6 +69,10 @@ impl Paths {
     pub fn app_db(&self) -> PathBuf {
         self.root.join("app.sqlite")
     }
+    /// The last good copies of the signed lists (spec 09 §7).
+    pub fn lists(&self) -> PathBuf {
+        self.root.join("Lists")
+    }
     pub fn profile(&self, id: ProfileId) -> PathBuf {
         self.profiles.join(id.to_string())
     }
