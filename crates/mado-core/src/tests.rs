@@ -4207,3 +4207,75 @@ fn developer_mode_installs_an_unpacked_folder() {
         "left in place"
     );
 }
+
+/// M3-T10, 10 §9 check 4 in the core: with no list downloaded and no
+/// network, the profile's engine blocks with the bundled EasyList, and its
+/// custom filters block too.
+#[test]
+fn the_blocker_starts_with_the_bundled_easylist_and_custom_filters() {
+    let dir = tempfile::tempdir().expect("dir");
+    crate::testing::BLOCKER.with_borrow_mut(|b| {
+        *b = Some(crate::BlockerConfig {
+            dir: dir.path().join("Blocker"),
+            update: false,
+        });
+    });
+    let core = TestCore::start();
+    crate::testing::BLOCKER.with_borrow_mut(|b| *b = None);
+    // The engine takes a second to build the first time.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while state_of(&core).blocker.filters == 0 {
+        assert!(std::time::Instant::now() < deadline, "no engine");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let st = state_of(&core).blocker;
+    assert!(st.bundled && st.filters > 50_000);
+    assert!(
+        st.lists
+            .iter()
+            .any(|l| l.id == "easylist" && l.updated_at.is_none())
+    );
+    let check = |url: &str| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        core.handle.send(Input::Internal(Internal::BlockerCheck {
+            url: url.into(),
+            source: "https://news.example/".into(),
+            kind: "script".into(),
+            reply: tx,
+        }));
+        rx.recv().expect("answer")
+    };
+    assert!(check(
+        "https://pagead2.googlesyndication.com/pagead/show_ads.js"
+    ));
+    assert!(!check("https://news.example/app.js"));
+    assert!(!check("https://tracker.mine.example/t.js"));
+    let root = core.stop();
+
+    let conn = rusqlite::Connection::open(root.path().join("profile.sqlite")).expect("db");
+    conn.execute(
+        "INSERT INTO blocker_custom_filters (line, created_at) VALUES ('||tracker.mine.example^', 1)",
+        [],
+    )
+    .expect("insert");
+    drop(conn);
+    crate::testing::BLOCKER.with_borrow_mut(|b| {
+        *b = Some(crate::BlockerConfig {
+            dir: dir.path().join("Blocker"),
+            update: false,
+        });
+    });
+    let core = TestCore::start_in(root, false);
+    crate::testing::BLOCKER.with_borrow_mut(|b| *b = None);
+    let check = |url: &str| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        core.handle.send(Input::Internal(Internal::BlockerCheck {
+            url: url.into(),
+            source: "https://news.example/".into(),
+            kind: "script".into(),
+            reply: tx,
+        }));
+        rx.recv().expect("answer")
+    };
+    assert!(check("https://tracker.mine.example/t.js"), "custom filter");
+}

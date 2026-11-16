@@ -3,7 +3,8 @@
 //! disk and the copies bundled from `lists/` at build time.
 //!
 //! Readers call the typed accessors ([`compat`], [`sensitive_hosts`],
-//! [`top_domains`], [`tracking_params`], [`hsts_preload`]), which return
+//! [`top_domains`], [`tracking_params`], [`hsts_preload`], [`filter_lists`]),
+//! which return
 //! the bundled copy until a [`Store`] installs a newer signed one.
 //! [`Derived`] keeps what a reader builds from a list until it changes.
 
@@ -13,11 +14,12 @@ mod signature;
 mod store;
 
 pub use current::{
-    Derived, compat, hsts_preload, sensitive_hosts, serial, top_domains, tracking_params,
+    Derived, compat, filter_lists, hsts_preload, sensitive_hosts, serial, top_domains,
+    tracking_params,
 };
 pub use data::{
-    Blocked, Category, Compat, CompatEntry, HstsPreload, MinSafeEngine, SensitiveHosts, Status,
-    TopDomainList, TrackingParams,
+    Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload, ListKind,
+    MinSafeEngine, SensitiveHosts, Status, TopDomainList, TrackingParams,
 };
 pub use signature::{PUBLIC_KEY, signed_serial, trusted_comment};
 pub use store::{Installed, Store};
@@ -25,9 +27,8 @@ pub use store::{Installed, Store};
 /// Where the published lists live (spec 15 §7, `lists.yml`).
 pub const URL: &str = "https://tyldra-org.github.io/mado/lists/";
 
-/// The lists Mado fetches. The filter list manifest arrives with the
-/// blocker (M3-T10), payment frames with passwords (M4), the action
-/// lexicon and the model catalogue with AI (M5).
+/// The lists Mado fetches. Payment frames arrive with passwords (M4), the
+/// action lexicon and the model catalogue with AI (M5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum List {
     /// Extension statuses and categories, blocked extensions and the
@@ -41,15 +42,18 @@ pub enum List {
     TrackingParams,
     /// Chromium's HSTS preload list, gzipped (08 §3).
     HstsPreload,
+    /// The blocker's filter lists and resources (10 §2).
+    FilterLists,
 }
 
 impl List {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Compat,
         Self::SensitiveHosts,
         Self::TopDomains,
         Self::TrackingParams,
         Self::HstsPreload,
+        Self::FilterLists,
     ];
 
     /// The file name, in `lists/` and where it is published.
@@ -60,6 +64,7 @@ impl List {
             Self::TopDomains => "top-domains.txt",
             Self::TrackingParams => "tracking-params.json",
             Self::HstsPreload => "hsts-preload.txt.gz",
+            Self::FilterLists => "filter-lists.json",
         }
     }
 
@@ -75,6 +80,7 @@ impl List {
             Self::TopDomains => include_bytes!("../../../lists/top-domains.txt"),
             Self::TrackingParams => include_bytes!("../../../lists/tracking-params.json"),
             Self::HstsPreload => include_bytes!("../../../lists/hsts-preload.txt.gz"),
+            Self::FilterLists => include_bytes!("../../../lists/filter-lists.json"),
         }
     }
 

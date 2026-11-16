@@ -152,6 +152,8 @@ thread_local! {
     pub static CAPTIVE_PROBE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     /// Extensions for the next `start`; the real store by default.
     pub static EXTENSIONS: std::cell::RefCell<Option<crate::ExtensionsConfig>> = const { std::cell::RefCell::new(None) };
+    /// The blocker for the next `start`; off by default.
+    pub static BLOCKER: std::cell::RefCell<Option<crate::BlockerConfig>> = const { std::cell::RefCell::new(None) };
     /// The lists fetch for the next `start`; off by default.
     pub static LISTS: std::cell::RefCell<Option<crate::ListsConfig>> = const { std::cell::RefCell::new(None) };
 }
@@ -222,6 +224,7 @@ impl TestCore {
                 engine,
                 captive_probe: CAPTIVE_PROBE.with_borrow(Clone::clone),
                 lists: LISTS.with_borrow(Clone::clone),
+                blocker: BLOCKER.with_borrow(Clone::clone),
                 extensions: EXTENSIONS
                     .with_borrow(Clone::clone)
                     .or_else(|| Some(crate::ExtensionsConfig::store(root.join("Extensions")))),

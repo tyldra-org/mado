@@ -22,6 +22,26 @@
       "why": "The signed lists, fetched daily (09 §7, 15 §7)"
     },
     {
+      "pattern": "easylist.to",
+      "why": "Filter lists (10 §2)"
+    },
+    {
+      "pattern": "ublockorigin.github.io",
+      "why": "Filter lists (10 §2)"
+    },
+    {
+      "pattern": "pgl.yoyo.org",
+      "why": "Filter lists (10 §2)"
+    },
+    {
+      "pattern": "secure.fanboy.co.nz",
+      "why": "Filter lists (10 §2), when the cookie notices list is on"
+    },
+    {
+      "pattern": "raw.githubusercontent.com",
+      "why": "Blocker resources (10 §2)"
+    },
+    {
       "pattern": "captive.apple.com",
       "why": "Captive portal probe after a failed load (05 §8)"
     }

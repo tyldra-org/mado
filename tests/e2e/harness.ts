@@ -111,6 +111,8 @@ export class Mado {
             // Tests never reach Apple's captive portal probe or the lists.
             MADO_CAPTIVE_PROBE: "",
             MADO_LISTS_URL: "",
+            // The blocker uses its bundled EasyList.
+            MADO_BLOCKER_UPDATE: "0",
           }),
     } as Record<string, string>;
   }

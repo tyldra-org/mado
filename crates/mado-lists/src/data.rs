@@ -69,6 +69,69 @@ pub struct MinSafeEngine {
     pub webkit: String,
 }
 
+/// `filter-lists.json` (10 §2): the blocker's lists and resources.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FilterLists {
+    pub lists: Vec<FilterList>,
+    /// URLs of JSON arrays of adblock-rust resources (scriptlets and
+    /// redirects), fetched at runtime.
+    #[serde(default)]
+    pub resources: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct FilterList {
+    /// Lowercase letters, digits and `-`.
+    pub id: String,
+    pub url: String,
+    /// On unless the user's `blocker.lists` says otherwise.
+    #[serde(default)]
+    pub default: bool,
+    pub kind: ListKind,
+}
+
+/// What a list blocks, for the statistics (10 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ListKind {
+    Ads,
+    Trackers,
+    Annoyances,
+    /// Also any kind a newer list adds.
+    #[serde(other)]
+    Other,
+}
+
+impl FilterLists {
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, String> {
+        let list: Self = json(bytes)?;
+        if list.lists.is_empty() {
+            return Err("no lists".into());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for l in &list.lists {
+            if l.id.is_empty()
+                || !l
+                    .id
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            {
+                return Err(format!("{:?} is not a list ID", l.id));
+            }
+            if !seen.insert(l.id.as_str()) {
+                return Err(format!("{} appears twice", l.id));
+            }
+            if !l.url.starts_with("https://") {
+                return Err(format!("{}: not an https URL", l.id));
+            }
+        }
+        if let Some(r) = list.resources.iter().find(|r| !r.starts_with("https://")) {
+            return Err(format!("resources: {r:?} is not an https URL"));
+        }
+        Ok(list)
+    }
+}
+
 /// `sensitive-hosts.json` (12 §2.2, 13 §9).
 #[derive(Debug, Clone, Deserialize)]
 pub struct SensitiveHosts {
