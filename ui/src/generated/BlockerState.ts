@@ -26,4 +26,8 @@ updating: boolean,
  * Content rule lists on every tab view; 0 until WebKit compiled them
  * or while blocking is off (spec 10 §4).
  */
-ruleLists: number, };
+ruleLists: number, 
+/**
+ * Hosts, with their subdomains, where the profile's blocker is off.
+ */
+offHosts: Array<string>, };

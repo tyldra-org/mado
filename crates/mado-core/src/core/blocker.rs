@@ -61,7 +61,7 @@ fn build_now(dir: &Path, lists: &[mado_lists::FilterList]) -> Built {
         Ok(b) => Some(b),
         Err((e, kept)) => {
             tracing::warn!(error = %e, "the blocker kept its previous build");
-            kept
+            kept.map(|k| *k)
         }
     };
     let lists = lists
@@ -84,6 +84,10 @@ fn build_now(dir: &Path, lists: &[mado_lists::FilterList]) -> Built {
 }
 
 impl Core {
+    pub(super) fn blocker_selected_ids(&self) -> Vec<String> {
+        self.blocker_lists().into_iter().map(|l| l.id).collect()
+    }
+
     fn blocker_lists(&self) -> Vec<mado_lists::FilterList> {
         let setting: Vec<String> = match self.setting("blocker.lists") {
             Value::Array(a) => a
@@ -104,6 +108,8 @@ impl Core {
         self.rebuild_blocker();
         self.load_custom_filters();
         self.schedule_blocker_update();
+        self.timers
+            .schedule(Timer::BlockerStatsFlush, std::time::Duration::from_secs(60));
     }
 
     /// Builds (or finds) the shared engine off the core thread.
@@ -147,6 +153,10 @@ impl Core {
                 self.load_custom_filters();
             }
             self.blocker_shards.clone_from(&build.shards);
+            self.blocker_trackers = build
+                .trackers
+                .as_ref()
+                .and_then(|t| mado_blocker::engine_from(t, Vec::new()));
             self.push_blocker_rules();
             state.filters = u32::try_from(build.filters).unwrap_or(u32::MAX);
             state.bundled = build.bundled;
@@ -204,6 +214,14 @@ impl Core {
             .collect();
         self.blocker_profile_rules = mado_blocker::rules::profile_rules(&custom, &pairs);
         self.blocker_off_hosts = off;
+        if self.state.blocker.off_hosts != self.blocker_off_hosts {
+            let mut rec = PatchRecorder::new();
+            self.state
+                .tx(&mut rec)
+                .blocker()
+                .set_off_hosts(self.blocker_off_hosts.clone());
+            self.emit(&mut rec);
+        }
         let all: Vec<String> = custom.into_iter().chain(hidden).collect();
         self.blocker_custom = (!all.is_empty())
             .then(|| mado_blocker::custom_engine(&all, self.blocker_resources.clone()));

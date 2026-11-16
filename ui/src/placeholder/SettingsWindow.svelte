@@ -12,6 +12,7 @@
   import ImportSheet from "./ImportSheet.svelte";
   import DefaultBrowser from "./DefaultBrowser.svelte";
   import ExtensionsSection from "./ExtensionsSection.svelte";
+  import BlockerSection from "./BlockerSection.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -102,6 +103,9 @@
         controlledBy={controller(entry.key)}
       />
     {/each}
+    {#if hits === null && section === "privacy"}
+      <BlockerSection {store} />
+    {/if}
     {#if hits === null && section === "extensions"}
       <ExtensionsSection {store} />
     {/if}

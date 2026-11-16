@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The blocker hides page elements its lists name, including by their text, runs uBlock Origin's scriptlets where filters call for them, and lets you pick an element on a page to hide it there from then on, with Undo.
 - Extensions from the Chrome Web Store update daily; an update that asks for more stays off until you review it, and extensions Mado learns are harmful are turned off.
 - When an extension does what Mado already does (blocking ads, filling passwords, putting tabs to sleep), Mado asks which should do it, and gives its settings back when the extension goes. Extensions that change the new tab page, search engine or startup pages ask first, and the settings they control say so.
+- The blocker counts what it blocks: the site-info panel shows a page's count and turns the blocker off for a site, Settings › Privacy chooses filter lists, takes custom filters and shows a privacy report of the ads and trackers blocked, and a page reloaded three times after blocks offers to turn the blocker off there.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

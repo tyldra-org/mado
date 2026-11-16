@@ -19,6 +19,9 @@ pub struct Build {
     pub bundled: bool,
     /// WebKit content rule lists, `(identifier, JSON file)` (10 §4).
     pub shards: Vec<(String, PathBuf)>,
+    /// An engine of the `trackers` lists only, to tell trackers from ads
+    /// in the statistics (10 §7).
+    pub trackers: Option<Vec<u8>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,7 +108,7 @@ impl Drop for Lock {
 /// its hash matches, else a new build, written atomically under the lock.
 /// A build with under half the filters of the last one is refused, and the
 /// last one is returned with the error.
-pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Option<Build>)> {
+pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Option<Box<Build>>)> {
     let lock = Lock::take(dir).map_err(|e| (BuildError::Io(e), None))?;
     let (texts, bundled) = texts(dir, lists);
     let filters: usize = texts.iter().map(|(_, t)| filter_count(t)).sum();
@@ -120,6 +123,7 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
                 filters: p.filters,
                 bundled: false,
                 shards: shard_files(dir, &p.hash),
+                trackers: std::fs::read(dir.join(format!("trackers-{}.dat", p.hash))).ok(),
             })
     };
     if let Some(p) = &previous
@@ -132,7 +136,7 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
                 got: filters,
                 had: p.filters,
             },
-            previous_build(p),
+            previous_build(p).map(Box::new),
         ));
     }
     let path = engine_path(dir, &hash);
@@ -149,6 +153,33 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
         }
         shards = shard_files(dir, &hash);
     }
+    let tracker_path = dir.join(format!("trackers-{hash}.dat"));
+    let tracker_ids: Vec<&str> = lists
+        .iter()
+        .filter(|l| l.kind == mado_lists::ListKind::Trackers)
+        .map(|l| l.id.as_str())
+        .collect();
+    let trackers = match std::fs::read(&tracker_path) {
+        Ok(t) => Some(t),
+        Err(_) => {
+            let tracker_texts: Vec<String> = texts
+                .iter()
+                .filter(|(id, _)| tracker_ids.contains(&id.as_str()))
+                .map(|(_, t)| t.clone())
+                .collect();
+            if tracker_texts.is_empty() {
+                None
+            } else {
+                let mut set = adblock::lists::FilterSet::new(false);
+                for t in tracker_texts {
+                    set.add_filter_list(t, adblock::lists::ParseOptions::default());
+                }
+                let bytes = adblock::Engine::new_with_filter_set(set).serialize();
+                write_file(&tracker_path, &bytes).map_err(|e| (BuildError::Io(e), None))?;
+                Some(bytes)
+            }
+        }
+    };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) if engine_from(&bytes, Vec::new()).is_some() => bytes,
         _ => {
@@ -174,7 +205,8 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
             let name = e.file_name();
             let name = name.to_string_lossy();
             let stale = (name.starts_with("engine-") && name.ends_with(".dat") && e.path() != path)
-                || (name.starts_with("rules-") && !name.starts_with(&format!("rules-{hash}-")));
+                || (name.starts_with("rules-") && !name.starts_with(&format!("rules-{hash}-")))
+                || (name.starts_with("trackers-") && e.path() != tracker_path);
             if stale {
                 let _ = std::fs::remove_file(e.path());
             }
@@ -187,6 +219,7 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
         filters,
         bundled,
         shards,
+        trackers,
     })
 }
 

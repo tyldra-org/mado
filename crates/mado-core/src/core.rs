@@ -3,6 +3,7 @@
 
 mod applinks;
 mod blocker;
+mod blocker_stats;
 mod clear;
 mod cosmetic;
 mod dialogs;
@@ -503,6 +504,12 @@ pub struct Core {
     blocker_sent: Option<mado_engine::BlockerRules>,
     /// The resources (scriptlets, redirects) the engines use.
     blocker_resources: Vec<mado_blocker::Resource>,
+    /// The `trackers` lists' engine, for the statistics.
+    blocker_trackers: Option<mado_blocker::Engine>,
+    /// Blocked counts not yet written.
+    blocker_stats: blocker_stats::StatsBuffer,
+    /// Recent reloads per tab, for "Page not working?".
+    reloads: BTreeMap<TabId, Vec<(i64, String)>>,
     /// Tabs whose document has cosmetic filtering, with its exceptions.
     cosmetic_tabs: BTreeMap<TabId, std::collections::HashSet<String>>,
     /// Packages waiting for their install prompt's answer.
@@ -776,6 +783,9 @@ impl Core {
             blocker_sent: None,
             blocker_resources: Vec::new(),
             cosmetic_tabs: BTreeMap::new(),
+            blocker_trackers: None,
+            blocker_stats: blocker_stats::StatsBuffer::default(),
+            reloads: BTreeMap::new(),
             extension_installs: BTreeMap::new(),
             extension_loads: BTreeMap::new(),
             extension_info: BTreeMap::new(),
@@ -1290,6 +1300,11 @@ impl Core {
                 self.update_blocker(true, rec);
                 Ok(Value::Null)
             }
+            cmd @ (Command::BlockerSetSite { .. }
+            | Command::BlockerSetLists { .. }
+            | Command::BlockerAvailableLists
+            | Command::BlockerCustomFilters
+            | Command::SitePrivacyReport { .. }) => self.blocker_controls(origin, cmd, rec),
             cmd @ (Command::BlockerPickElement { .. }
             | Command::BlockerHidden { .. }
             | Command::BlockerUnhide { .. }
@@ -1753,6 +1768,7 @@ impl Core {
             Timer::ListsFetch => self.fetch_lists(),
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
+            Timer::BlockerStatsFlush => self.flush_blocker_stats_later(),
             Timer::AutoRevoke => {
                 self.auto_revoke(&mut rec);
                 self.timers
@@ -1889,6 +1905,9 @@ impl Core {
     /// Lets queued writes finish; the app then checkpoints and releases the
     /// lock (spec 01 §1.6).
     async fn shutdown(&mut self) {
+        if let Some(stats) = self.flush_blocker_stats() {
+            let _ = stats.await;
+        }
         let _ = self.app_db.writer().write(|_| Ok(())).await;
         let _ = self
             .profile_db

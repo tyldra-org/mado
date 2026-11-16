@@ -85,6 +85,25 @@
         >{t("siteInfo.certificate")}</button
       >
     {/if}
+    {#if store.state?.blocker?.enabled}
+      {@const host = new URL(origin).host}
+      {@const off = (store.state?.blocker?.offHosts ?? []).some(
+        (h) => host === h || host.endsWith(`.${h}`),
+      )}
+      <p data-testid="site-blocker">
+        {t("siteInfo.blocked", { count: tab.blockedCount ?? 0 })}
+        <label
+          ><input
+            type="checkbox"
+            checked={!off}
+            onchange={(e) =>
+              store.client
+                .call({ type: "blocker.setSite", host, enabled: e.currentTarget.checked })
+                .catch(() => {})}
+          />{t("siteInfo.blockerOn")}</label
+        >
+      </p>
+    {/if}
     {#each capturing as kind (kind)}
       <p>
         {t("siteInfo.using", { what: t(`permission.${kind}`) })}

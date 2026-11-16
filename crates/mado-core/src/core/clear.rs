@@ -49,6 +49,7 @@ fn statements(types: &BTreeSet<DataType>) -> Vec<&'static str> {
     if types.contains(&DataType::BlockerStats) {
         // `day` counts days since 1970-01-01 UTC (spec 03).
         out.push("DELETE FROM blocker_stats WHERE day >= ?1 / 86400000");
+        out.push("DELETE FROM blocker_tracker_stats WHERE day >= ?1 / 86400000");
     }
     if types.contains(&DataType::AiChats) {
         out.push("DELETE FROM ai_messages WHERE chat_id IN (SELECT id FROM ai_chats WHERE updated_at >= ?1)");
@@ -257,10 +258,12 @@ mod tests {
     #[test]
     fn every_statement_is_valid_sql() {
         let c = rusqlite::Connection::open_in_memory().expect("db");
-        c.execute_batch(include_str!(
-            "../../../mado-storage/migrations/profile/0001_initial.sql"
-        ))
-        .expect("schema");
+        for sql in [
+            include_str!("../../../mado-storage/migrations/profile/0001_initial.sql"),
+            include_str!("../../../mado-storage/migrations/profile/0005_blocker_tracker_stats.sql"),
+        ] {
+            c.execute_batch(sql).expect("schema");
+        }
         let all = BTreeSet::from([
             DataType::SiteSettings,
             DataType::FormHistory,
