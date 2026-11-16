@@ -150,6 +150,11 @@ impl Core {
     ) -> Result<Value, MadoError> {
         match cmd {
             Command::ExtensionList => Ok(json!(self.state.extensions.installed)),
+            Command::ExtensionDismissImported { id } => {
+                protected(origin)?;
+                self.forget_imported(id.as_ref(), rec);
+                Ok(Value::Null)
+            }
             Command::ExtensionSetEnabled { id, enabled } => {
                 protected(origin)?;
                 let mut e = self.installed(&id)?;

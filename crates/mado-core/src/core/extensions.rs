@@ -110,6 +110,16 @@ fn icon_of(files: &Path, manifest: &Manifest) -> Option<String> {
     ))
 }
 
+/// What the install prompt says of an extension the compatibility list
+/// marks `notSupported` (09 §7, §12 check 6).
+pub(super) fn limitation(entry: Option<&mado_lists::CompatEntry>) -> Option<&'static str> {
+    let e = entry.filter(|e| e.status == mado_lists::Status::NotSupported)?;
+    Some(match e.category {
+        mado_lists::Category::PasswordManager => "prompt.extension.limitation.passwordManager",
+        _ => "prompt.extension.limitation",
+    })
+}
+
 fn refusal_key(r: &Refusal) -> Refused {
     match r {
         Refusal::Theme => "notice.extensionTheme",
@@ -687,7 +697,8 @@ impl Core {
         let summary = staged
             .manifest
             .summary(mado_extensions::manifest::SUPPORTED_PERMISSIONS);
-        let vouched = compat.extensions.get(staged.id.as_str()).is_some_and(|e| {
+        let entry = compat.extensions.get(staged.id.as_str());
+        let vouched = entry.is_some_and(|e| {
             matches!(
                 e.status,
                 mado_lists::Status::Tested | mado_lists::Status::Mostly
@@ -716,6 +727,7 @@ impl Core {
             may_not_work: summary.missing_required && !vouched,
             older_format: staged.manifest.manifest_version < 3,
             replaces,
+            limitation: limitation(entry).map(str::to_owned),
         };
         let mut prompts = self.state.prompts.clone();
         prompts.insert(id, PromptState::ExtensionInstall(prompt));
@@ -810,6 +822,7 @@ impl Core {
                 tracing::error!(error = %e, "an extension row was not saved");
             }
         });
+        self.forget_imported(Some(&id), rec);
         self.extension_notice("notice.extensionAdded", Some(&staged.manifest.name), rec);
         self.extension_turned_on(&id, rec);
         self.refresh_store_pages();

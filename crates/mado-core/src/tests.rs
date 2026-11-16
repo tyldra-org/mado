@@ -3047,6 +3047,36 @@ fn importing_from_each_browser_is_complete_and_idempotent() {
         match browser {
             ImportBrowser::Chrome => {
                 assert_eq!(n("SELECT COUNT(*) FROM imported_extensions"), 1);
+                // Offered for reinstall until installed or dismissed.
+                let offered = state_of(&core).extensions.imported;
+                assert_eq!(offered.len(), 1, "{offered:?}");
+                assert_eq!(offered[0].browser, "chrome");
+                assert!(
+                    state_of(&core)
+                        .notices
+                        .iter()
+                        .any(|n| n.message_key == "notice.importedExtensions")
+                );
+                let dismiss = Command::ExtensionDismissImported {
+                    id: Some(offered[0].id.clone()),
+                };
+                assert_eq!(
+                    ask(
+                        &core,
+                        Origin::Control {
+                            client: ClientId::new()
+                        },
+                        dismiss.clone()
+                    )
+                    .expect_err("protected")
+                    .code,
+                    ErrorCode::Protected
+                );
+                ask(&core, Origin::Settings, dismiss).expect("dismissed");
+                assert!(state_of(&core).extensions.imported.is_empty());
+                eventually("the row goes", || {
+                    n("SELECT COUNT(*) FROM imported_extensions") == 0
+                });
                 let engines =
                     ask(&core, Origin::Settings, Command::NavSearchEngines).expect("engines");
                 let wiki = engines
@@ -4077,6 +4107,18 @@ fn a_store_extension_installs_through_the_prompt() {
     assert!(config.dir.join(&id).join("1.2/manifest.json").exists());
     assert!(notices().contains(&"notice.extensionAdded".to_owned()));
     let root = core.stop();
+    // An import found it and another one: only the one not installed is
+    // offered.
+    let other = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
+    rusqlite::Connection::open(root.path().join("profile.sqlite"))
+        .and_then(|c| {
+            c.execute(
+                "INSERT INTO imported_extensions (id, name, browser, imported_at)
+                 VALUES (?1, 'Test Blocker', 'chrome', 1), (?2, 'Other', 'edge', 2)",
+                [id.as_str(), other],
+            )
+        })
+        .expect("imported rows");
 
     crate::testing::EXTENSIONS.with_borrow_mut(|e| *e = Some(config.clone()));
     let core = TestCore::start_in(root, false);
@@ -4084,6 +4126,14 @@ fn a_store_extension_installs_through_the_prompt() {
     assert_eq!(
         st.extensions.installed.first().map(|e| e.name.as_str()),
         Some("Test Blocker")
+    );
+    assert_eq!(
+        st.extensions
+            .imported
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect::<Vec<_>>(),
+        [other]
     );
     startup(&core);
     let w = *state_of(&core).windows.keys().next().expect("window");
@@ -4125,6 +4175,44 @@ fn a_store_extension_installs_through_the_prompt() {
         state_of(&core).extensions.installed.is_empty()
     });
     assert!(!config.dir.join(&id).exists());
+    // Installing again forgets its import row.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionInstall {
+            id: Some(id.parse().expect("id")),
+            source: mado_types::command::ExtensionSource::Store,
+            path: None,
+        },
+    )
+    .expect("asked");
+    let prompt = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::ExtensionInstall(p) => Some(p.id),
+            _ => None,
+        })
+    };
+    eventually("the prompt", || prompt().is_some());
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionConfirmInstall {
+            prompt_id: prompt().expect("prompt"),
+            add: true,
+        },
+    )
+    .expect("added");
+    let conn = rusqlite::Connection::open(core.dir.path().join("profile.sqlite")).expect("open");
+    eventually("its import row goes", || {
+        conn.query_row(
+            "SELECT COUNT(*) FROM imported_extensions WHERE id = ?1",
+            [&id],
+            |r| r.get::<_, i64>(0),
+        )
+        .expect("count")
+            == 0
+    });
+    assert_eq!(state_of(&core).extensions.imported.len(), 1);
 }
 
 /// 09 §2.3: Developer mode installs an unpacked folder in place, with

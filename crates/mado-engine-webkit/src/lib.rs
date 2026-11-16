@@ -212,10 +212,44 @@ pub fn remove_data_store(profile: ProfileId, done: Callback<Result<(), EngineErr
             });
         }
     });
+    // The extension controller keeps its own storage under the profile's
+    // identifier (extensions' local storage, compiled rules), which WebKit
+    // offers no call to remove.
+    if let Some(dir) = extension_storage(&uuid.UUIDString().to_string()) {
+        match std::fs::remove_dir_all(&dir) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                tracing::warn!(error = %e, "a profile's extension storage was not removed");
+            }
+            _ => {}
+        }
+    }
     // SAFETY: a completion block WebKit calls once on the main thread.
     unsafe {
         WKWebsiteDataStore::removeDataStoreForIdentifier_completionHandler(&uuid, &block, mtm)
     };
+}
+
+/// `~/Library/WebKit/<bundle identifier or executable>/WebExtensions/<UUID>`,
+/// where `WKWebExtensionControllerConfiguration` with that identifier
+/// stores its data.
+fn extension_storage(uuid: &str) -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let app = objc2_foundation::NSBundle::mainBundle()
+        .bundleIdentifier()
+        .map(|s| s.to_string())
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()?
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })?;
+    Some(
+        std::path::Path::new(&home)
+            .join("Library/WebKit")
+            .join(app)
+            .join("WebExtensions")
+            .join(uuid),
+    )
 }
 
 /// Whether a persistent website data store exists for `profile`. Main

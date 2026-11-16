@@ -741,6 +741,41 @@ fn test_access(
                     });
                     return Ok(serde_json::json!(rx.await.unwrap_or(false)));
                 }
+                if method == "test.eval" {
+                    // Runs a function body in a tab's Mado world and answers
+                    // its JSON result: the page's DOM, for checks on pages
+                    // Mado does not serve (the store's labels).
+                    let tab: Option<mado_types::TabId> =
+                        serde_json::from_value(params["tabId"].clone()).ok();
+                    let source = params["source"].as_str().unwrap_or_default().to_owned();
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = app.run_on_main_thread(move || {
+                        let Some(tab) = tab else {
+                            let _ = tx.send(Err("no tab".to_owned()));
+                            return;
+                        };
+                        let sent = mado_engine_webkit::apply(
+                            tab,
+                            mado_engine::TabCommand::EvaluateInWorld {
+                                world: mado_engine::tab::World::Mado,
+                                source,
+                                reply: Box::new(move |r| {
+                                    let _ = tx.send(r.map_err(|e| e.to_string()));
+                                }),
+                            },
+                        );
+                        if let Err(e) = sent {
+                            tracing::warn!(error = %e, "test.eval found no tab");
+                        }
+                    });
+                    return match rx.await {
+                        Ok(Ok(v)) => Ok(v),
+                        _ => Err(mado_types::MadoError::new(
+                            mado_types::ErrorCode::InvalidInput,
+                            "error.control.badCommand",
+                        )),
+                    };
+                }
                 if method == "test.extensionPopup" {
                     // The shown extension popup's URL (spec 09 §6).
                     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -755,6 +790,7 @@ fn test_access(
                 let hook = match method.as_str() {
                     "test.dropNextPatch" => Some(TestHook::DropNextPatch),
                     "test.fakeAuthSuccess" => Some(TestHook::FakeAuthSuccess),
+                    "test.extensionUpdateCheck" => Some(TestHook::ExtensionUpdateCheck),
                     "test.errorAction" => serde_json::from_value(params["tabId"].clone())
                         .ok()
                         .zip(params["action"].as_str())

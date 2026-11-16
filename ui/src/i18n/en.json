@@ -948,5 +948,16 @@
   "tabs.unmute": "Unmute",
   "tabs.unnamedGroup": "Unnamed group",
   "tabs.unpin": "Unpin",
-  "window.pageArea": "Page"
+  "window.pageArea": "Page",
+  "extensions.imported": "From your other browser",
+  "extensions.imported.from": "{name}, from {browser}",
+  "extensions.imported.add": "Add {name} to Mado",
+  "extensions.imported.addShort": "Add",
+  "extensions.imported.dismiss": "Don't offer {name} again",
+  "extensions.imported.dismissShort": "Not now",
+  "extensions.imported.dismissAll": "Don't offer these again",
+  "notice.importedExtensions": "Extensions from {browser} can be added to Mado: {count}",
+  "notice.reviewExtensions": "Review",
+  "prompt.extension.limitation": "Mado doesn't support {name} yet. It installs, but parts of it may not work.",
+  "prompt.extension.limitation.passwordManager": "Mado doesn't support {name} yet: unlocking with its desktop app and filling passwords may not work."
 }

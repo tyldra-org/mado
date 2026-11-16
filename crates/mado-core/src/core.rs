@@ -9,6 +9,7 @@ mod cosmetic;
 mod dialogs;
 mod dl;
 mod errors;
+mod ext_imported;
 mod ext_manage;
 mod ext_overlap;
 mod ext_update;
@@ -879,6 +880,7 @@ impl Core {
         }
         let mut rec = PatchRecorder::new();
         self.state.tx(&mut rec).set_extensions(ext);
+        self.refresh_imported(&mut rec);
         self.apply_blocked_extensions(&mut rec);
         self.refresh_controlled(&mut rec);
         self.timers
