@@ -54,6 +54,38 @@ struct Owner {
     ready: Mutex<Option<Ready>>,
 }
 
+/// Mado Passwords' database and key files (spec 11 §2); none for private
+/// and guest profiles, which keep no passwords.
+fn vault_config(
+    paths: &Paths,
+    id: mado_types::ProfileId,
+    temporary: bool,
+) -> Option<mado_core::VaultConfig> {
+    if temporary {
+        return None;
+    }
+    match open(
+        &paths.vault_db(id),
+        Kind::Vault,
+        &paths.backups(id),
+        &paths.broken(id),
+    ) {
+        Ok(opened) => {
+            if let Some(recovery) = &opened.recovery {
+                tracing::warn!(?recovery, "the vault database was restored");
+            }
+            Some(mado_core::VaultConfig::system(
+                paths.vault_db(id),
+                paths.profile(id),
+            ))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "the vault database did not open");
+            None
+        }
+    }
+}
+
 /// The fallible part of becoming an owner, done before Tauri starts.
 struct Ready {
     profile_db: Storage,
@@ -498,6 +530,7 @@ fn start_owner(
         home: std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
             .unwrap_or_default(),
+        vault: vault_config(paths, id, info.is_private || info.is_guest),
         profiles: Arc::new(profile_service::AppProfiles {
             app_db: Arc::clone(&owner.app_db),
             paths: owner.paths.clone(),
@@ -653,6 +686,13 @@ fn start_owner(
         });
     }
     // Memory pressure and the power source steer tab sleeping (04 §7).
+    // The vault locks with the screen (11 §2.3).
+    let locks = handle.clone();
+    let _ = app.run_on_main_thread(move || {
+        mado_platform::power::watch_screen_lock(move || {
+            locks.send(Input::Internal(Internal::ScreenLocked));
+        });
+    });
     let pressure = handle.clone();
     mado_platform::power::watch_memory_pressure(move |level| {
         pressure.send(Input::Internal(Internal::MemoryPressure {
@@ -775,6 +815,10 @@ fn test_access(
                             "error.control.badCommand",
                         )),
                     };
+                }
+                if method == "test.screenLocked" {
+                    core.send(Input::Internal(mado_core::Internal::ScreenLocked));
+                    return Ok(serde_json::Value::Null);
                 }
                 if method == "test.extensionPopup" {
                     // The shown extension popup's URL (spec 09 §6).

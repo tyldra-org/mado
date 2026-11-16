@@ -959,5 +959,16 @@
   "notice.importedExtensions": "Extensions from {browser} can be added to Mado: {count}",
   "notice.reviewExtensions": "Review",
   "prompt.extension.limitation": "Mado doesn't support {name} yet. It installs, but parts of it may not work.",
-  "prompt.extension.limitation.passwordManager": "Mado doesn't support {name} yet: unlocking with its desktop app and filling passwords may not work."
+  "prompt.extension.limitation.passwordManager": "Mado doesn't support {name} yet: unlocking with its desktop app and filling passwords may not work.",
+  "error.vault.notSetUp": "Mado Passwords is not turned on.",
+  "error.vault.alreadySetUp": "Mado Passwords is already on.",
+  "error.vault.cancelled": "Mado Passwords stayed locked.",
+  "error.vault.badKey": "This Mac can't open these passwords. Use the recovery secret.",
+  "error.vault.badRecoverySecret": "That recovery secret doesn't match.",
+  "error.vault.notFound": "That item no longer exists.",
+  "error.vault.locked": "Mado Passwords is locked.",
+  "error.vault.notAllowed": "Only Mado's own windows can use passwords.",
+  "error.vault.unavailable": "Passwords aren't available in this window.",
+  "error.vault.badItem": "That item isn't valid: {reason}",
+  "error.vault.failed": "Mado Passwords couldn't finish that."
 }

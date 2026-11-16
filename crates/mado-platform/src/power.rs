@@ -161,6 +161,49 @@ pub fn watch_power(every: Duration, report: impl Fn(PowerSource) + Send + 'stati
     }
 }
 
+/// Calls `report` when the screen locks, the displays sleep, the Mac
+/// sleeps or the session switches to another user (spec 11 §2.3: the
+/// vault locks). Call once, on the main thread; the observers live for the
+/// rest of the process and `report` runs on the main queue.
+pub fn watch_screen_lock(report: impl Fn() + Send + Sync + 'static) {
+    use objc2::msg_send;
+    let report = std::sync::Arc::new(report);
+    // SAFETY: the notification centers and the main queue are process-wide
+    // objects; each observer copies its block, which only calls `report`.
+    unsafe {
+        let Ok(queue_class) = crate::objc::class(c"NSOperationQueue") else {
+            return;
+        };
+        let main: Retained<AnyObject> = msg_send![queue_class, mainQueue];
+        let observe = |center: &AnyObject, name: &str| {
+            let r = std::sync::Arc::clone(&report);
+            let block = RcBlock::new(move |_n: *mut AnyObject| r());
+            let _token: Retained<AnyObject> = msg_send![
+                center,
+                addObserverForName: &*NSString::from_str(name),
+                object: std::ptr::null::<AnyObject>(),
+                queue: &*main,
+                usingBlock: &*block
+            ];
+            // The token keeps the observer; it lives as long as the process.
+            std::mem::forget(_token);
+        };
+        let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+        let center = workspace.notificationCenter();
+        for name in [
+            "NSWorkspaceScreensDidSleepNotification",
+            "NSWorkspaceWillSleepNotification",
+            "NSWorkspaceSessionDidResignActiveNotification",
+        ] {
+            observe(&center, name);
+        }
+        if let Ok(dist) = crate::objc::class(c"NSDistributedNotificationCenter") {
+            let center: Retained<AnyObject> = msg_send![dist, defaultCenter];
+            observe(&center, "com.apple.screenIsLocked");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

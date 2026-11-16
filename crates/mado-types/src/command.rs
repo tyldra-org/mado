@@ -1013,6 +1013,49 @@ pub enum Command {
         #[serde(default)]
         id: Option<crate::ExtensionId>,
     },
+    // Mado Passwords (spec 11). Only Mado's own windows send them.
+    /// `{ status }`: `none`, `locked` or `unlocked`.
+    #[serde(rename = "vault.status")]
+    VaultStatus,
+    /// Turns Mado Passwords on; answers `{ recoverySecret }`, shown once.
+    #[serde(rename = "vault.setup")]
+    VaultSetup,
+    /// Unlocks with Touch ID or the account password.
+    #[serde(rename = "vault.unlock")]
+    VaultUnlock,
+    #[serde(rename = "vault.lock")]
+    VaultLock,
+    /// Opens the vault with its recovery secret, as on a new Mac.
+    #[serde(rename = "vault.recover", rename_all = "camelCase")]
+    VaultRecover { secret: String },
+    /// Item summaries without secrets: every item, Recently deleted, or a
+    /// site's items.
+    #[serde(rename = "vault.query", rename_all = "camelCase")]
+    VaultQuery {
+        #[serde(default)]
+        deleted: bool,
+        #[serde(default)]
+        site: Option<String>,
+    },
+    /// One item with its secrets.
+    #[serde(rename = "vault.get", rename_all = "camelCase")]
+    VaultGet { id: String },
+    /// Adds an item, or replaces item `id`. `item` is the item JSON of
+    /// spec 11 §2.2.
+    #[serde(rename = "vault.save", rename_all = "camelCase")]
+    VaultSave {
+        #[serde(default)]
+        id: Option<String>,
+        #[ts(type = "Record<string, unknown>")]
+        item: serde_json::Value,
+    },
+    /// Moves an item to Recently deleted.
+    #[serde(rename = "vault.delete", rename_all = "camelCase")]
+    VaultDelete { id: String },
+    #[serde(rename = "vault.restore", rename_all = "camelCase")]
+    VaultRestore { id: String },
+    #[serde(rename = "vault.deleteForever", rename_all = "camelCase")]
+    VaultDeleteForever { id: String },
     /// Opens the settings window, at `section` when given.
     #[serde(rename = "app.openSettings", rename_all = "camelCase")]
     AppOpenSettings {
@@ -1228,6 +1271,17 @@ impl Command {
             | Self::ExtensionOverlaps
             | Self::ExtensionOverlapReset { .. }
             | Self::ExtensionDismissImported { .. } => CommandFamily::Extension,
+            Self::VaultStatus
+            | Self::VaultSetup
+            | Self::VaultUnlock
+            | Self::VaultLock
+            | Self::VaultRecover { .. }
+            | Self::VaultQuery { .. }
+            | Self::VaultGet { .. }
+            | Self::VaultSave { .. }
+            | Self::VaultDelete { .. }
+            | Self::VaultRestore { .. }
+            | Self::VaultDeleteForever { .. } => CommandFamily::Vault,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1398,6 +1452,17 @@ impl Command {
             Self::ExtensionOverlaps => "extension.overlaps",
             Self::ExtensionOverlapReset { .. } => "extension.overlapReset",
             Self::ExtensionDismissImported { .. } => "extension.dismissImported",
+            Self::VaultStatus => "vault.status",
+            Self::VaultSetup => "vault.setup",
+            Self::VaultUnlock => "vault.unlock",
+            Self::VaultLock => "vault.lock",
+            Self::VaultRecover { .. } => "vault.recover",
+            Self::VaultQuery { .. } => "vault.query",
+            Self::VaultGet { .. } => "vault.get",
+            Self::VaultSave { .. } => "vault.save",
+            Self::VaultDelete { .. } => "vault.delete",
+            Self::VaultRestore { .. } => "vault.restore",
+            Self::VaultDeleteForever { .. } => "vault.deleteForever",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

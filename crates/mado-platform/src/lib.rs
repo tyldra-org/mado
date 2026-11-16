@@ -8,6 +8,7 @@ pub mod applinks;
 pub mod auth;
 pub mod default_browser;
 pub mod dock;
+pub mod enclave;
 pub mod files;
 pub mod keychain;
 pub mod login;

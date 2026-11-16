@@ -3106,6 +3106,155 @@ fn importing_from_each_browser_is_complete_and_idempotent() {
     }
 }
 
+/// Mado Passwords (spec 11 §2): setup with a recovery secret, items by
+/// site, locking with the screen and after inactivity (check 4), and
+/// opening a copied vault only with the recovery secret (check 7).
+#[test]
+fn the_vault_locks_and_opens_only_with_its_keys() {
+    use std::sync::atomic::Ordering;
+    let enclave = std::sync::Arc::new(mado_vault::wrap::SoftEnclave::default());
+    crate::testing::ENCLAVE.with_borrow_mut(|e| *e = std::sync::Arc::clone(&enclave));
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    let status = || state_of(&core).vault.status;
+    assert_eq!(status(), mado_types::state::VaultStatus::None);
+    let control = Origin::Control {
+        client: ClientId::new(),
+    };
+    assert_eq!(
+        ask(&core, control, Command::VaultSetup)
+            .expect_err("protected")
+            .code,
+        ErrorCode::Protected
+    );
+    let setup = ask(&core, user, Command::VaultSetup).expect("set up");
+    let secret = setup["recoverySecret"].as_str().expect("secret").to_owned();
+    assert_eq!(secret.len(), 31);
+    assert_eq!(status(), mado_types::state::VaultStatus::Unlocked);
+    let save = |site: &str| {
+        ask(
+            &core,
+            user,
+            Command::VaultSave {
+                id: None,
+                item: serde_json::json!({
+                    "kind": "login", "title": "", "urls": [format!("https://{site}/login")],
+                    "username": "me", "password": "hunter2", "passwordHistory": [],
+                }),
+            },
+        )
+        .expect("saved")
+    };
+    let id = save("accounts.example.com")["id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    save("other.org");
+    let found = ask(
+        &core,
+        user,
+        Command::VaultQuery {
+            deleted: false,
+            site: Some("https://www.example.com/".into()),
+        },
+    )
+    .expect("query");
+    assert_eq!(found.as_array().map(Vec::len), Some(1));
+    assert_eq!(found[0]["title"], "example.com");
+    assert!(
+        found[0].get("password").is_none(),
+        "no secrets in summaries"
+    );
+    let got = ask(&core, user, Command::VaultGet { id: id.clone() }).expect("get");
+    assert_eq!(got["item"]["password"], "hunter2");
+
+    // Check 4: the screen locks, so the vault locks, and the next use asks.
+    core.handle.send(Input::Internal(Internal::ScreenLocked));
+    eventually("locked", || {
+        status() == mado_types::state::VaultStatus::Locked
+    });
+    assert_eq!(
+        ask(&core, user, Command::VaultGet { id: id.clone() })
+            .expect_err("locked")
+            .code,
+        ErrorCode::Locked
+    );
+    let asked = enclave.asked.load(Ordering::SeqCst);
+    enclave.cancel.store(true, Ordering::SeqCst);
+    assert_eq!(
+        ask(&core, user, Command::VaultUnlock)
+            .expect_err("cancelled")
+            .message_key,
+        "error.vault.cancelled"
+    );
+    ask(&core, user, Command::VaultUnlock).expect("unlocked");
+    assert_eq!(
+        enclave.asked.load(Ordering::SeqCst),
+        asked + 2,
+        "Touch ID asked each time"
+    );
+    assert_eq!(status(), mado_types::state::VaultStatus::Unlocked);
+
+    // Inactivity: `vault.lockAfter` without use locks it.
+    core.handle
+        .send(Input::Internal(Internal::Hook(crate::TestHook::FakeClock(
+            // The test clock reads 1_800_000_000_000.
+            1_800_000_000_000 + 16 * 60_000,
+        ))));
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::VaultLockCheck,
+    )));
+    eventually("locked after inactivity", || {
+        status() == mado_types::state::VaultStatus::Locked
+    });
+
+    // Recently deleted.
+    ask(&core, user, Command::VaultUnlock).expect("unlocked");
+    ask(&core, user, Command::VaultDelete { id: id.clone() }).expect("deleted");
+    let deleted = ask(
+        &core,
+        user,
+        Command::VaultQuery {
+            deleted: true,
+            site: None,
+        },
+    )
+    .expect("deleted");
+    assert_eq!(deleted[0]["id"], id.as_str());
+    ask(&core, user, Command::VaultRestore { id: id.clone() }).expect("restored");
+    let root = core.stop();
+
+    // Check 7: the same files on another Mac open only with the secret.
+    crate::testing::ENCLAVE.with_borrow_mut(|e| *e = std::sync::Arc::default());
+    let core = TestCore::start_in(root, false);
+    assert_eq!(
+        state_of(&core).vault.status,
+        mado_types::state::VaultStatus::Locked
+    );
+    assert_eq!(
+        ask(&core, Origin::Settings, Command::VaultUnlock)
+            .expect_err("another Mac")
+            .message_key,
+        "error.vault.badKey"
+    );
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Settings,
+            Command::VaultRecover {
+                secret: "AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-A".into()
+            }
+        )
+        .expect_err("wrong secret")
+        .message_key,
+        "error.vault.badRecoverySecret"
+    );
+    ask(&core, Origin::Settings, Command::VaultRecover { secret }).expect("recovered");
+    let got = ask(&core, Origin::Settings, Command::VaultGet { id }).expect("get");
+    assert_eq!(got["item"]["username"], "me");
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {
