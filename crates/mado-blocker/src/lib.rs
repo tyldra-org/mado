@@ -175,7 +175,10 @@ mod tests {
 
     #[test]
     fn custom_filters_make_their_own_engine() {
-        let e = custom_engine(&["||tracker.example^".into(), "! a comment".into()]);
+        let e = custom_engine(
+            &["||tracker.example^".into(), "! a comment".into()],
+            Vec::new(),
+        );
         assert!(blocks(
             &e,
             "https://tracker.example/t.gif",
@@ -197,5 +200,50 @@ mod tests {
         assert!(defaults.contains(&"easylist".into()) && !defaults.contains(&"annoyances".into()));
         let chosen = selected(&m, &["annoyances".into()]);
         assert_eq!(chosen.len(), 1);
+    }
+
+    #[test]
+    fn custom_filters_carry_procedural_filters_and_scriptlets() {
+        use base64::Engine as _;
+        let resource: adblock::resources::Resource = serde_json::from_value(serde_json::json!({
+            "name": "mark.js", "aliases": ["mark"], "kind": "template",
+            "content": base64::engine::general_purpose::STANDARD.encode("window.mark = '{{1}}';"),
+        }))
+        .expect("resource");
+        let e = custom_engine(
+            &[
+                "news.example##.card:has-text(Sponsored)".into(),
+                "news.example##+js(mark, ok)".into(),
+            ],
+            vec![resource],
+        );
+        let r = e.url_cosmetic_resources("https://news.example/story");
+        assert!(
+            r.procedural_actions.iter().any(|p| p.contains("Sponsored")),
+            "{r:?}"
+        );
+        assert!(r.injected_script.contains("window.mark = 'ok'"), "{r:?}");
+    }
+
+    /// uBlock Origin's scriptlets as lists.yml publishes them, by hand:
+    /// `MADO_UBO_RESOURCES=<file> cargo nextest run -p mado-blocker
+    /// --run-ignored only`.
+    #[test]
+    #[ignore = "needs a generated ubo-resources.json"]
+    fn ubo_scriptlets_inject() {
+        let path = std::env::var("MADO_UBO_RESOURCES").expect("MADO_UBO_RESOURCES");
+        let resources: Vec<adblock::resources::Resource> =
+            serde_json::from_slice(&std::fs::read(path).expect("file")).expect("resources");
+        let e = custom_engine(
+            &["news.example##+js(set-constant, adsAllowed, true)".into()],
+            resources,
+        );
+        let r = e.url_cosmetic_resources("https://news.example/");
+        assert!(
+            r.injected_script.contains("function setConstant"),
+            "{}",
+            &r.injected_script[..r.injected_script.len().min(300)]
+        );
+        assert!(r.injected_script.contains("adsAllowed"));
     }
 }

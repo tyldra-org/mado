@@ -62,6 +62,7 @@
     }
   ],
   "resources": [
+    "https://tyldra-org.github.io/mado/lists/ubo-resources.json",
     "https://raw.githubusercontent.com/brave/adblock-resources/master/dist/resources.json"
   ]
 }

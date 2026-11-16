@@ -285,6 +285,11 @@ impl Core {
         }
         if request.is_main_frame {
             self.continue_once.remove(&request.url);
+            if decision == NavDecision::Allow
+                && matches!(request.phase, mado_engine::NavPhase::Action { .. })
+            {
+                self.cosmetic_navigation(tab, request);
+            }
             if let NavDecision::Redirect { url } = &decision
                 && request.url.starts_with("http:")
             {

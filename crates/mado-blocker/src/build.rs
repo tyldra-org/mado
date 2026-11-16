@@ -231,8 +231,13 @@ pub fn stored_resources(dir: &Path) -> Vec<adblock::resources::Resource> {
 
 /// A profile's own filters (10 §3): custom filters and hidden elements,
 /// checked after the shared engine.
-pub fn custom_engine(lines: &[String]) -> adblock::Engine {
+pub fn custom_engine(
+    lines: &[String],
+    resources: Vec<adblock::resources::Resource>,
+) -> adblock::Engine {
     let mut set = adblock::lists::FilterSet::new(false);
     set.add_filter_list(lines.join("\n"), adblock::lists::ParseOptions::default());
-    adblock::Engine::new_with_filter_set(set)
+    let mut engine = adblock::Engine::new_with_filter_set(set);
+    engine.use_resources(resources);
+    engine
 }

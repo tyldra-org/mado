@@ -212,6 +212,10 @@ pub async fn update(
     let mut ok = true;
     for url in resources {
         match fetch(client, url, None, MAX_RESOURCES).await {
+            Ok(Fetched::Body { text, .. }) if !signature_ok(client, url, &text).await => {
+                tracing::warn!(%url, "the blocker resources' signature does not verify");
+                ok = false;
+            }
             Ok(Fetched::Body { text, .. }) => {
                 match serde_json::from_str::<Vec<adblock::resources::Resource>>(&text) {
                     Ok(r) => all.extend(r),
@@ -236,6 +240,20 @@ pub async fn update(
         }
     }
     report
+}
+
+/// Resources Mado publishes (`<lists URL>/<file>`) must carry a valid
+/// `<file>.minisig` from the lists key: they are scripts pages run.
+async fn signature_ok(client: &reqwest::Client, url: &str, text: &str) -> bool {
+    let Some(file) = url.strip_prefix(mado_lists::URL) else {
+        return true;
+    };
+    match fetch(client, &format!("{url}.minisig"), None, 4096).await {
+        Ok(Fetched::Body { text: sig, .. }) => {
+            mado_lists::verify_file(file, text.as_bytes(), &sig).is_ok()
+        }
+        _ => false,
+    }
 }
 
 /// The stored resources.

@@ -126,6 +126,8 @@ impl Core {
             PageMessage::OpenSearch(o) => self.open_search_seen(tab, o.href),
             // 07 §9: no Apple Pay in WKWebView here; offer Safari, once per
             // page (the DRM flag doubles as "already offered").
+            PageMessage::CosmeticClasses(c) => self.cosmetic_classes(tab, c),
+            PageMessage::PickerResult(p) if frame.is_main_frame => self.picker_result(tab, p, rec),
             PageMessage::StoreInstall(s) if frame.is_main_frame => {
                 self.store_page_message(tab, s, rec);
             }

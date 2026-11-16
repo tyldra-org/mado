@@ -43,6 +43,33 @@ pub(crate) fn public_key(key: &str) -> Result<PublicKey, ListError> {
     PublicKey::from_base64(key).map_err(|_| ListError::Key)
 }
 
+/// Checks a published file that is not one of the lists (the blocker's
+/// resources, 10 §2): `minisig` must verify over `bytes` with Mado's lists
+/// key and name `file`. Returns its serial.
+pub fn verify_file(file: &str, bytes: &[u8], minisig: &str) -> Result<u64, String> {
+    verify_file_with(PUBLIC_KEY, file, bytes, minisig)
+}
+
+fn verify_file_with(key: &str, file: &str, bytes: &[u8], minisig: &str) -> Result<u64, String> {
+    let key = PublicKey::from_base64(key).map_err(|_| "the lists key".to_owned())?;
+    let signature =
+        Signature::decode(minisig).map_err(|_| format!("{file}: malformed signature"))?;
+    key.verify(bytes, &signature, false)
+        .map_err(|_| format!("{file}: the signature does not verify"))?;
+    match fields(signature.trusted_comment()) {
+        (Some(serial), Some(signed)) if signed == file => Ok(serial),
+        _ => Err(format!(
+            "{file}: signed as {:?}",
+            signature.trusted_comment()
+        )),
+    }
+}
+
+/// The trusted comment for a published file that is not a list.
+pub fn file_comment(file: &str, serial: u64) -> String {
+    format!("timestamp:{serial}\tfile:{file}")
+}
+
 /// Checks `minisig` over `bytes` as `list`; returns its serial.
 pub(crate) fn verify(
     key: &PublicKey,
@@ -61,5 +88,36 @@ pub(crate) fn verify(
             file,
             signed: signature.trusted_comment().to_owned(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_published_file_verifies_only_under_its_own_name() {
+        let keys = minisign::KeyPair::generate_unencrypted_keypair().expect("keys");
+        let bytes = b"[]";
+        let sig = minisign::sign(
+            None,
+            &keys.sk,
+            std::io::Cursor::new(bytes),
+            Some(&file_comment("ubo-resources.json", 7)),
+            None,
+        )
+        .expect("sign")
+        .into_string();
+        let key = keys.pk.to_base64();
+        assert_eq!(
+            verify_file_with(&key, "ubo-resources.json", bytes, &sig),
+            Ok(7)
+        );
+        assert!(verify_file_with(&key, "other.json", bytes, &sig).is_err());
+        assert!(verify_file_with(&key, "ubo-resources.json", b"[1]", &sig).is_err());
+        assert!(
+            verify_file("ubo-resources.json", bytes, &sig).is_err(),
+            "not Mado's key"
+        );
     }
 }
