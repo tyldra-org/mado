@@ -151,6 +151,33 @@ pub struct SensitiveHosts {
     pub banking: Vec<String>,
 }
 
+/// `payment-frames.json` (11 §4.1): hosts whose frames may get card
+/// fills; a host matches itself only.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaymentFrames {
+    pub hosts: Vec<String>,
+}
+
+impl PaymentFrames {
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, String> {
+        let list: Self = json(bytes)?;
+        if list.hosts.is_empty() {
+            return Err("hosts is empty".into());
+        }
+        hosts_ok("hosts", &list.hosts)?;
+        Ok(list)
+    }
+
+    /// Whether a frame at `origin` (`https://host[:port]`) is a payment
+    /// frame. Only https counts.
+    pub fn allows(&self, origin: &str) -> bool {
+        origin
+            .strip_prefix("https://")
+            .map(|h| h.split(':').next().unwrap_or(h))
+            .is_some_and(|h| self.hosts.iter().any(|x| x == h))
+    }
+}
+
 /// `tracking-params.json` (08 §8).
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrackingParams {

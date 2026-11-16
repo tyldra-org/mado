@@ -3,6 +3,7 @@ import type { ClientIdentity } from "./ClientIdentity";
 import type { DialogKind } from "./DialogKind";
 import type { ExtensionId } from "./ExtensionId";
 import type { ExtensionInstallPrompt } from "./ExtensionInstallPrompt";
+import type { FillMenuPrompt } from "./FillMenuPrompt";
 import type { OverlapChoice } from "./OverlapChoice";
 import type { PromptId } from "./PromptId";
 import type { SafariReason } from "./SafariReason";
@@ -17,7 +18,7 @@ import type { WindowId } from "./WindowId";
  * prompts in 11, approvals in 13, pairing in 14, takeover and restore in
  * 04.
  */
-export type PromptState = { "type": "unsavedText", id: PromptId, 
+export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "unsavedText", id: PromptId, 
 /**
  * The window being closed; `None` when quitting.
  */

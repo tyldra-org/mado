@@ -4,7 +4,7 @@
 use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 
 use crate::data::{
-    Compat, FilterLists, HstsPreload, SensitiveHosts, TopDomainList, TrackingParams,
+    Compat, FilterLists, HstsPreload, PaymentFrames, SensitiveHosts, TopDomainList, TrackingParams,
 };
 use crate::{BUNDLED_SERIAL, List};
 
@@ -69,6 +69,11 @@ static TOP: Slot<TopDomainList> = Slot::new(List::TopDomains, TopDomainList::par
 static TRACKING: Slot<TrackingParams> = Slot::new(List::TrackingParams, TrackingParams::parse);
 static HSTS: Slot<HstsPreload> = Slot::new(List::HstsPreload, HstsPreload::parse);
 static FILTERS: Slot<FilterLists> = Slot::new(List::FilterLists, FilterLists::parse);
+static PAYMENT: Slot<PaymentFrames> = Slot::new(List::PaymentFrames, PaymentFrames::parse);
+
+pub fn payment_frames() -> Arc<PaymentFrames> {
+    PAYMENT.get().1
+}
 
 pub fn filter_lists() -> Arc<FilterLists> {
     FILTERS.get().1
@@ -103,6 +108,7 @@ pub fn serial(list: List) -> u64 {
         List::TrackingParams => TRACKING.serial(),
         List::HstsPreload => HSTS.serial(),
         List::FilterLists => FILTERS.serial(),
+        List::PaymentFrames => PAYMENT.serial(),
     }
 }
 
@@ -115,6 +121,7 @@ pub(crate) fn set(list: List, serial: u64, bytes: &[u8]) -> Result<bool, String>
         List::TrackingParams => TRACKING.set(serial, bytes),
         List::HstsPreload => HSTS.set(serial, bytes),
         List::FilterLists => FILTERS.set(serial, bytes),
+        List::PaymentFrames => PAYMENT.set(serial, bytes),
     }
 }
 
@@ -126,6 +133,7 @@ pub(crate) fn parse_only(list: List, bytes: &[u8]) -> Result<(), String> {
         List::TrackingParams => TrackingParams::parse(bytes).map(drop),
         List::HstsPreload => HstsPreload::parse(bytes).map(drop),
         List::FilterLists => FilterLists::parse(bytes).map(drop),
+        List::PaymentFrames => PaymentFrames::parse(bytes).map(drop),
     }
 }
 

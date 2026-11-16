@@ -426,6 +426,9 @@ pub struct DownloadState {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export)]
 pub enum PromptState {
+    /// The fill menu at a form field (spec 11 §4.1), answered with
+    /// `vault.fill` or dismissed with `prompt.dismiss`.
+    FillMenu(FillMenuPrompt),
     /// Quitting or closing a window would lose typed text (spec 04 §9).
     /// Answered with `session.confirmClose`; Show activates a listed tab.
     #[serde(rename_all = "camelCase")]
@@ -741,6 +744,41 @@ pub struct ExtensionShortcut {
     pub command: String,
     pub description: String,
     pub keys: Option<String>,
+}
+
+/// The fill menu (spec 11 §4.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FillMenuPrompt {
+    pub id: PromptId,
+    pub window_id: WindowId,
+    pub tab_id: TabId,
+    pub form_key: String,
+    /// The form's kind: `login`, `usernameOnly`, `signup`,
+    /// `changePassword`, `otp`, `card`, `address`, `identity`.
+    pub form_kind: String,
+    /// The field, in window CSS pixels.
+    pub rect: Rect,
+    /// The vault is locked: the menu offers "Unlock to fill".
+    pub locked: bool,
+    /// Items are still being read.
+    pub loading: bool,
+    pub items: Vec<FillMenuItem>,
+}
+
+/// One entry of the fill menu: no secrets.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FillMenuItem {
+    /// `<source>:<id>`, as `vault.fill` takes it (`mado:<id>`).
+    pub item_ref: String,
+    pub title: String,
+    pub subtitle: String,
+    pub kind: String,
+    /// `mado`, `onePassword` or `bitwarden`.
+    pub source: String,
 }
 
 /// What the extension install prompt shows (spec 09 §2.2 step 7, §4).

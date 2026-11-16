@@ -14,12 +14,12 @@ mod signature;
 mod store;
 
 pub use current::{
-    Derived, compat, filter_lists, hsts_preload, sensitive_hosts, serial, top_domains,
-    tracking_params,
+    Derived, compat, filter_lists, hsts_preload, payment_frames, sensitive_hosts, serial,
+    top_domains, tracking_params,
 };
 pub use data::{
     Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload, ListKind,
-    MinSafeEngine, SensitiveHosts, Status, TopDomainList, TrackingParams,
+    MinSafeEngine, PaymentFrames, SensitiveHosts, Status, TopDomainList, TrackingParams,
 };
 pub use signature::{PUBLIC_KEY, file_comment, signed_serial, trusted_comment, verify_file};
 pub use store::{Installed, Store};
@@ -44,16 +44,19 @@ pub enum List {
     HstsPreload,
     /// The blocker's filter lists and resources (10 §2).
     FilterLists,
+    /// Payment providers whose frames may get card fills (11 §4.1).
+    PaymentFrames,
 }
 
 impl List {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Compat,
         Self::SensitiveHosts,
         Self::TopDomains,
         Self::TrackingParams,
         Self::HstsPreload,
         Self::FilterLists,
+        Self::PaymentFrames,
     ];
 
     /// The file name, in `lists/` and where it is published.
@@ -65,6 +68,7 @@ impl List {
             Self::TrackingParams => "tracking-params.json",
             Self::HstsPreload => "hsts-preload.txt.gz",
             Self::FilterLists => "filter-lists.json",
+            Self::PaymentFrames => "payment-frames.json",
         }
     }
 
@@ -81,6 +85,7 @@ impl List {
             Self::TrackingParams => include_bytes!("../../../lists/tracking-params.json"),
             Self::HstsPreload => include_bytes!("../../../lists/hsts-preload.txt.gz"),
             Self::FilterLists => include_bytes!("../../../lists/filter-lists.json"),
+            Self::PaymentFrames => include_bytes!("../../../lists/payment-frames.json"),
         }
     }
 

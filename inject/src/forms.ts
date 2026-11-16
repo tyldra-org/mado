@@ -1,7 +1,7 @@
 // `forms`: unsaved-input tracking (spec 04 §7, §9), OpenSearch discovery
 // (spec 05 §3) and form detection for Mado Passwords (spec 11 §3). Mado
 // world, document end, all frames.
-import { sender } from "./lib/bridge";
+import { bridge, sender } from "./lib/bridge";
 import { detect, type Field } from "./lib/formdetect";
 
 const send = sender("forms");
@@ -152,3 +152,66 @@ new MutationObserver(later).observe(document.documentElement, {
   attributeFilter: ["type", "autocomplete", "hidden", "style", "class", "disabled"],
 });
 report();
+
+// The fill menu (spec 11 §4.1): a trusted focus or mouse-down on a
+// detected, visible field reports where it is.
+const fieldInfo = new WeakMap<Element, { formKey: string }>();
+const indexFields = () => {
+  for (const f of detect(document)) {
+    const formKey = keyOf(f.root);
+    for (const { el } of f.fields) fieldInfo.set(el, { formKey });
+  }
+};
+const focused = (e: Event) => {
+  if (!e.isTrusted) return;
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) return;
+  if (!fieldInfo.has(el)) indexFields();
+  const info = fieldInfo.get(el);
+  if (!info || !visible(el)) return;
+  const r = el.getBoundingClientRect();
+  send("fieldFocused", {
+    formKey: info.formKey,
+    fieldKey: keyOf(el),
+    rect: { x: r.left, y: r.top, width: r.width, height: r.height },
+  });
+};
+document.addEventListener("focusin", focused, { capture: true, passive: true });
+document.addEventListener("mousedown", focused, { capture: true, passive: true });
+
+// 11 §4.2 step 4: values set with the native setters and announced with
+// input and change; never into a field that is gone or hidden.
+const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+const InputEvent = Event;
+
+function setValue(el: Element, value: string): boolean {
+  if (el instanceof HTMLSelectElement) {
+    const want = value.toLowerCase();
+    const option = [...el.options].find(
+      (o) => o.value.toLowerCase() === want || o.text.trim().toLowerCase() === want,
+    );
+    if (!option || !selectSetter) return false;
+    selectSetter.call(el, option.value);
+  } else if (el instanceof HTMLInputElement && inputSetter) {
+    inputSetter.call(el, value);
+  } else {
+    return false;
+  }
+  el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  el.dispatchEvent(new InputEvent("change", { bubbles: true }));
+  return true;
+}
+
+bridge()?.on("fill", (m) => {
+  const formKey = typeof m.formKey === "string" ? m.formKey : "";
+  const values = (m.values ?? {}) as Record<string, unknown>;
+  let filled = 0;
+  for (const [fieldKey, value] of Object.entries(values)) {
+    const el = byKey.get(fieldKey)?.deref();
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) continue;
+    if (typeof value !== "string" || !el.isConnected || !visible(el)) continue;
+    if (setValue(el, value)) filled += 1;
+  }
+  send("fillDone", { formKey, filled });
+});

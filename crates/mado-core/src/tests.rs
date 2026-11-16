@@ -1722,6 +1722,7 @@ fn a_drm_failure_offers_safari_and_always_remembers_the_site() {
         tab,
         world: mado_engine::tab::World::Mado,
         frame: mado_engine::event::FrameInfo {
+            handle: 0,
             is_main_frame: true,
             origin: "https://tv.example".into(),
             url: "https://tv.example/watch".into(),
@@ -2002,6 +2003,7 @@ fn the_notification_shim_follows_the_site_setting() {
         tab,
         world: mado_engine::tab::World::Page,
         frame: mado_engine::event::FrameInfo {
+            handle: 0,
             is_main_frame: true,
             origin: "https://news.example".into(),
             url: "https://news.example/".into(),
@@ -2127,6 +2129,7 @@ fn a_registered_handler_takes_mailto_links() {
         tab,
         world: mado_engine::tab::World::Page,
         frame: mado_engine::event::FrameInfo {
+            handle: 0,
             is_main_frame: true,
             origin: "https://mail.example".into(),
             url: "https://mail.example/".into(),
@@ -2182,6 +2185,7 @@ fn ask_engine<T: Send + 'static>(
 
 fn frame(main: bool, origin: &str) -> mado_engine::event::FrameInfo {
     mado_engine::event::FrameInfo {
+        handle: 0,
         is_main_frame: main,
         origin: origin.into(),
         url: format!("{origin}/"),
@@ -3255,6 +3259,235 @@ fn the_vault_locks_and_opens_only_with_its_keys() {
     assert_eq!(got["item"]["username"], "me");
 }
 
+/// Spec 11 §4 and §12 checks 1 and 2: the fill menu opens only after a
+/// native gesture, never for a hidden field or a cross-site frame, fills
+/// only visible fields, allows payment frames for cards, and fills the
+/// one-time code after a login.
+#[test]
+fn filling_needs_a_gesture_a_visible_field_and_the_right_frame() {
+    use mado_engine::page::{
+        DetectedField, DetectedForm, FieldClass, FieldFocused, FieldRect, FormKind, Forms,
+        PageMessage,
+    };
+    use mado_types::state::PromptState;
+    use std::sync::atomic::Ordering;
+    const NOW: i64 = 1_800_000_000_000;
+    crate::testing::GESTURE.store(0, Ordering::SeqCst);
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    let save = |item: serde_json::Value| {
+        ask(&core, user, Command::VaultSave { id: None, item }).expect("saved")["id"]
+            .as_str()
+            .expect("id")
+            .to_owned()
+    };
+    let login = save(serde_json::json!({
+        "kind": "login", "title": "", "urls": ["https://example.com/"], "username": "me",
+        "password": "hunter2", "passwordHistory": [],
+        "totp": "otpauth://totp/Example:me?secret=JBSWY3DPEHPK3PXP",
+    }));
+    save(
+        serde_json::json!({ "kind": "card", "nameOnCard": "Me", "number": "4111111111111111", "expMonth": 4, "expYear": 2031, "cvc": "123" }),
+    );
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let field = |key: &str, class: FieldClass, visible: bool| DetectedField {
+        field_key: key.into(),
+        class,
+        rect: FieldRect {
+            x: 10.0,
+            y: 20.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        visible,
+        in_viewport: visible,
+    };
+    let send = |frame: mado_engine::event::FrameInfo, message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame,
+            message,
+        });
+    };
+    let forms = |kind: FormKind, key: &str, fields: Vec<DetectedField>| {
+        PageMessage::Forms(Forms {
+            forms: vec![DetectedForm {
+                form_key: key.into(),
+                kind,
+                action: None,
+                fields,
+            }],
+        })
+    };
+    let focus = |form: &str, field: &str| {
+        PageMessage::FieldFocused(FieldFocused {
+            form_key: form.into(),
+            field_key: field.into(),
+            rect: FieldRect {
+                x: 10.0,
+                y: 20.0,
+                width: 200.0,
+                height: 30.0,
+            },
+        })
+    };
+    let menu = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::FillMenu(m) => Some(m.clone()),
+            _ => None,
+        })
+    };
+    let main = frame(true, "https://www.example.com");
+    send(
+        main.clone(),
+        forms(
+            FormKind::Login,
+            "f1",
+            vec![
+                field("a1", FieldClass::Username, true),
+                field("a2", FieldClass::Password, true),
+                field("a3", FieldClass::Password, false),
+            ],
+        ),
+    );
+    // Check 2: no native gesture, no menu and no fill.
+    send(main.clone(), focus("f1", "a1"));
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(menu().is_none(), "no gesture, no menu");
+    let fill = Command::VaultFill {
+        tab_id: tab,
+        form_key: "f1".into(),
+        item_ref: format!("mado:{login}"),
+    };
+    assert_eq!(
+        ask(&core, user, fill.clone())
+            .expect_err("no gesture")
+            .message_key,
+        "error.vault.noGesture"
+    );
+    crate::testing::GESTURE.store(NOW, Ordering::SeqCst);
+    // Check 1: a hidden field never gets a menu.
+    send(main.clone(), focus("f1", "a3"));
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(menu().is_none(), "hidden field");
+    send(main.clone(), focus("f1", "a1"));
+    eventually("the menu lists the login", || {
+        menu().is_some_and(|m| !m.loading && m.items.len() == 1)
+    });
+    let m = menu().expect("menu");
+    assert_eq!(
+        (m.form_kind.as_str(), m.items[0].subtitle.as_str()),
+        ("login", "me")
+    );
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Control {
+                client: ClientId::new()
+            },
+            fill.clone()
+        )
+        .expect_err("protected")
+        .code,
+        ErrorCode::Protected
+    );
+    ask(&core, user, fill).expect("filled");
+    let posted = |kind: &str| -> Vec<serde_json::Value> {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .filter(|(t, m)| *t == tab && m["type"] == kind)
+            .map(|(_, m)| m.clone())
+            .collect()
+    };
+    eventually("the values went to the page", || !posted("fill").is_empty());
+    let values = &posted("fill")[0]["values"];
+    assert_eq!(
+        (values["a1"].as_str(), values["a2"].as_str()),
+        (Some("me"), Some("hunter2"))
+    );
+    assert!(values.get("a3").is_none(), "never into a hidden field");
+    assert!(menu().is_none(), "the menu closed");
+
+    // The code step after the login fills itself.
+    send(
+        main.clone(),
+        forms(
+            FormKind::Otp,
+            "f2",
+            vec![field("b1", FieldClass::Otp, true)],
+        ),
+    );
+    eventually("the code", || posted("fill").len() == 2);
+    let code = posted("fill")[1]["values"]["b1"]
+        .as_str()
+        .expect("code")
+        .to_owned();
+    assert_eq!(code.len(), 6);
+
+    // Check 1: a cross-site frame gets nothing.
+    let mut evil = frame(false, "https://evil.test");
+    evil.handle = 7;
+    send(
+        evil.clone(),
+        forms(
+            FormKind::Login,
+            "f3",
+            vec![field("c1", FieldClass::Username, true)],
+        ),
+    );
+    send(evil, focus("f3", "c1"));
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(menu().is_none(), "cross-site frame");
+
+    // A payment provider's frame gets card fills, posted to that frame only.
+    let mut stripe = frame(false, "https://js.stripe.com");
+    stripe.handle = 9;
+    send(
+        stripe.clone(),
+        forms(
+            FormKind::Card,
+            "f4",
+            vec![
+                field("d1", FieldClass::CcNumber, true),
+                field("d2", FieldClass::CcCsc, true),
+            ],
+        ),
+    );
+    send(stripe, focus("f4", "d1"));
+    eventually("the card menu", || {
+        menu().is_some_and(|m| m.form_kind == "card" && m.items.len() == 1)
+    });
+    let item = menu().expect("menu").items[0].item_ref.clone();
+    ask(
+        &core,
+        user,
+        Command::VaultFill {
+            tab_id: tab,
+            form_key: "f4".into(),
+            item_ref: item,
+        },
+    )
+    .expect("card filled");
+    eventually("posted to the frame", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .frame_posts
+            .iter()
+            .any(|(t, f, m)| *t == tab && *f == 9 && m["values"]["d1"] == "4111111111111111")
+    });
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {
@@ -3317,6 +3550,7 @@ fn internal_pages_invoke_through_their_allow_lists() {
             tab,
             world: mado_engine::tab::World::Mado,
             frame: FrameInfo {
+                handle: 0,
                 is_main_frame: main,
                 origin: url.split('/').take(3).collect::<Vec<_>>().join("/"),
                 url: url.into(),
@@ -3397,6 +3631,7 @@ fn internal_pages_invoke_through_their_allow_lists() {
         tab: about,
         world: mado_engine::tab::World::Mado,
         frame: FrameInfo {
+            handle: 0,
             is_main_frame: true,
             origin: "mado://about".into(),
             url: "mado://about".into(),

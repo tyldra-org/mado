@@ -1056,6 +1056,14 @@ pub enum Command {
     VaultRestore { id: String },
     #[serde(rename = "vault.deleteForever", rename_all = "camelCase")]
     VaultDeleteForever { id: String },
+    /// Fills a detected form with an item from the fill menu (spec 11
+    /// §4.2). Needs a native click in the last second.
+    #[serde(rename = "vault.fill", rename_all = "camelCase")]
+    VaultFill {
+        tab_id: crate::TabId,
+        form_key: String,
+        item_ref: String,
+    },
     /// Opens the settings window, at `section` when given.
     #[serde(rename = "app.openSettings", rename_all = "camelCase")]
     AppOpenSettings {
@@ -1281,7 +1289,8 @@ impl Command {
             | Self::VaultSave { .. }
             | Self::VaultDelete { .. }
             | Self::VaultRestore { .. }
-            | Self::VaultDeleteForever { .. } => CommandFamily::Vault,
+            | Self::VaultDeleteForever { .. }
+            | Self::VaultFill { .. } => CommandFamily::Vault,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1463,6 +1472,7 @@ impl Command {
             Self::VaultDelete { .. } => "vault.delete",
             Self::VaultRestore { .. } => "vault.restore",
             Self::VaultDeleteForever { .. } => "vault.deleteForever",
+            Self::VaultFill { .. } => "vault.fill",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

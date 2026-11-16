@@ -393,6 +393,7 @@ impl Adapter {
     pub fn destroy_tab(&mut self, tab: TabId) {
         crate::menu::forget(tab);
         crate::blocker::forget(tab);
+        crate::frames::forget(tab);
         crate::certificate::forget(tab);
         crate::scheme::forget_pages(tab);
         let Some(t) = self.tabs.remove(&tab) else {
@@ -629,8 +630,13 @@ pub fn synthesize_click(
         .window()
         .ok_or_else(|| EngineError::Failed("the tab is not in a window".into()))?;
     let bounds = view.bounds();
+    // SAFETY: a property read on the main thread.
+    let insets = unsafe { view.obscuredContentInsets() };
+    // `y` is in the page's viewport, which starts below the obscured top
+    // inset (the title bar over a full-size content view).
+    let y = y + insets.top;
     let local = objc2_foundation::NSPoint::new(
-        x,
+        x + insets.left,
         if view.isFlipped() {
             y
         } else {
@@ -655,6 +661,8 @@ pub fn synthesize_click(
         }
     }
     let time = objc2_foundation::NSProcessInfo::processInfo().systemUptime();
+    // A synthesized click stands for a person's, as test.click means.
+    crate::gesture::record();
     for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
         let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
             kind,
@@ -911,6 +919,17 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 );
             }
             TabCommand::PostToPage { world: w, message } => post(&view, mtm, w, &message),
+            TabCommand::PostToFrame {
+                frame,
+                world: w,
+                message,
+            } => {
+                // A frame the engine no longer knows gets nothing; never the
+                // main frame instead.
+                if let Some(f) = crate::frames::get(tab, frame) {
+                    post_in(&view, mtm, Some(&f), w, &message);
+                }
+            }
             TabCommand::SaveSession { reply } => {
                 let state = view.interactionState();
                 let bytes = state
@@ -1019,6 +1038,17 @@ fn highlight(
 /// A message to the page scripts' inbox (`Symbol.for("mado.inbox")` in
 /// the world), which the page script tasks fill (M2-T04).
 fn post(view: &WKWebView, mtm: MainThreadMarker, w: World, message: &serde_json::Value) {
+    post_in(view, mtm, None, w, message);
+}
+
+/// `post` to one frame, or the main frame without one.
+fn post_in(
+    view: &WKWebView,
+    mtm: MainThreadMarker,
+    frame: Option<&objc2_web_kit::WKFrameInfo>,
+    w: World,
+    message: &serde_json::Value,
+) {
     let Some(arg) = convert::from_json(message) else {
         return;
     };
@@ -1028,7 +1058,7 @@ fn post(view: &WKWebView, mtm: MainThreadMarker, w: World, message: &serde_json:
         view.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
             ns_string!("globalThis[Symbol.for(\"mado.inbox\")]?.(message)"),
             Some(&args),
-            None,
+            frame,
             &world(mtm, w),
             None,
         );

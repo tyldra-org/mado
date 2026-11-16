@@ -395,6 +395,11 @@ impl Core {
             Command::PromptDismiss { id } => {
                 match self.state.prompts.get(&id) {
                     Some(PromptState::Permission { .. }) => {}
+                    Some(PromptState::FillMenu(m)) => {
+                        let tab = m.tab_id;
+                        self.close_fill_menus(tab, rec);
+                        return Ok(Value::Null);
+                    }
                     Some(PromptState::AppLink { .. } | PromptState::ProtocolHandler { .. }) => {
                         self.answer_link_prompt(id, PromptDecision::Never, rec);
                         return Ok(Value::Null);

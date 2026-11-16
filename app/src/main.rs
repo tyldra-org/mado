@@ -74,10 +74,17 @@ fn vault_config(
             if let Some(recovery) = &opened.recovery {
                 tracing::warn!(?recovery, "the vault database was restored");
             }
-            Some(mado_core::VaultConfig::system(
-                paths.vault_db(id),
-                paths.profile(id),
-            ))
+            let config = mado_core::VaultConfig::system(paths.vault_db(id), paths.profile(id));
+            // End-to-end tests cannot press Touch ID: a software enclave
+            // stands in (spec 16 §3).
+            #[cfg(feature = "test-hooks")]
+            if std::env::var_os("MADO_TEST_SOFT_ENCLAVE").is_some() {
+                return Some(mado_core::VaultConfig {
+                    enclave: std::sync::Arc::new(mado_vault::wrap::SoftEnclave::default()),
+                    ..config
+                });
+            }
+            Some(config)
         }
         Err(e) => {
             tracing::error!(error = %e, "the vault database did not open");
@@ -525,7 +532,10 @@ fn start_owner(
         }),
         extensions: (!(info.is_private || info.is_guest))
             .then(|| mado_core::ExtensionsConfig::store(owner.paths.extensions(id))),
-        os: mado_core::OsPermissions::system(),
+        os: mado_core::OsPermissions {
+            last_gesture: mado_engine_webkit::last_gesture,
+            ..mado_core::OsPermissions::system()
+        },
         hsts_extra: hsts_extra(),
         home: std::env::var_os("HOME")
             .map(std::path::PathBuf::from)

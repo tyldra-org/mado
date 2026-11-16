@@ -197,6 +197,9 @@ pub enum DownloadError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameInfo {
     pub is_main_frame: bool,
+    /// The engine's handle for this frame, to post back to it alone
+    /// (`TabCommand::PostToFrame`); 0 when it has none.
+    pub handle: u64,
     /// The frame's security origin, from the engine, never the payload.
     pub origin: String,
     pub url: String,

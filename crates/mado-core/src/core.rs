@@ -14,6 +14,7 @@ mod ext_manage;
 mod ext_overlap;
 mod ext_update;
 mod extensions;
+mod fill;
 mod import;
 mod internal;
 mod lists;
@@ -350,6 +351,9 @@ pub struct OsPermissions {
     pub is_default_browser: fn() -> Result<bool, String>,
     /// Asks macOS to make Mado the default browser; macOS confirms.
     pub make_default_browser: fn() -> Result<(), String>,
+    /// Unix milliseconds of the person's last mouse-down or key-down in a
+    /// Mado window (spec 11 §4.1 step 3).
+    pub last_gesture: fn() -> i64,
 }
 
 impl OsPermissions {
@@ -367,6 +371,8 @@ impl OsPermissions {
             make_default_browser: || {
                 mado_platform::default_browser::make_default().map_err(|e| e.to_string())
             },
+            // The app passes the engine's monitor; without one, no gesture.
+            last_gesture: || 0,
         }
     }
 }
@@ -531,6 +537,12 @@ pub struct Core {
     vault_used_at: i64,
     /// Fills need no new authentication until then (`vault.fillApprovalWindow`).
     vault_fill_until: i64,
+    /// Where each open fill menu's values would go.
+    fill_targets: BTreeMap<PromptId, fill::FillTarget>,
+    /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
+    two_step: BTreeMap<TabId, fill::FollowUp>,
+    /// A login just filled, for the code step (11 §4.2 step 6).
+    otp_after: BTreeMap<TabId, fill::FollowUp>,
     /// Blocked counts not yet written.
     blocker_stats: blocker_stats::StatsBuffer,
     /// Recent reloads per tab, for "Page not working?".
@@ -817,6 +829,9 @@ impl Core {
             vault_unlocking: false,
             vault_used_at: 0,
             vault_fill_until: 0,
+            fill_targets: BTreeMap::new(),
+            two_step: BTreeMap::new(),
+            otp_after: BTreeMap::new(),
             blocker_stats: blocker_stats::StatsBuffer::default(),
             reloads: BTreeMap::new(),
             extension_installs: BTreeMap::new(),

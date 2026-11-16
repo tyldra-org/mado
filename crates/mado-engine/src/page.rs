@@ -137,9 +137,7 @@ macro_rules! empty_payloads {
 }
 
 empty_payloads!(
-    FieldFocused,
     CredentialsSubmitted,
-    FillDone,
     WebauthnCreate,
     WebauthnGet,
     NotificationRequest,
@@ -234,6 +232,24 @@ pub enum FieldClass {
     Country,
     Tel,
     Bday,
+}
+
+/// `forms`: a trusted focus or mouse-down on a detected field (spec 11
+/// §4.1); `rect` in the frame's viewport.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct FieldFocused {
+    pub form_key: String,
+    pub field_key: String,
+    pub rect: FieldRect,
+}
+
+/// `forms`: how many fields a fill set (spec 11 §4.2).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct FillDone {
+    pub form_key: String,
+    pub filled: u32,
 }
 
 /// `forms`: whether editable fields hold typed text (spec 04 §7, §9).
@@ -476,6 +492,16 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::DrmFailed(d) => d.key_system.as_deref().is_none_or(|k| k.len() <= 128),
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
+        PageMessage::FillDone(d) => d.form_key.len() <= 64,
+        PageMessage::FieldFocused(f) => {
+            let key =
+                |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());
+            key(&f.form_key)
+                && key(&f.field_key)
+                && [f.rect.x, f.rect.y, f.rect.width, f.rect.height]
+                    .iter()
+                    .all(|v| v.is_finite())
+        }
         PageMessage::Forms(f) => {
             let key =
                 |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());

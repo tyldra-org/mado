@@ -264,6 +264,13 @@ pub enum TabCommand {
         world: World,
         message: Value,
     },
+    /// Like `PostToPage`, to one frame only: the frame of an event's
+    /// `FrameInfo::handle`. Dropped when the engine no longer knows it.
+    PostToFrame {
+        frame: u64,
+        world: World,
+        message: Value,
+    },
     SaveSession {
         reply: Callback<Result<SessionBlob, EngineError>>,
     },
@@ -323,6 +330,7 @@ impl TabCommand {
             Self::Snapshot { .. } => "snapshot",
             Self::EvaluateInWorld { .. } => "evaluateInWorld",
             Self::PostToPage { .. } => "postToPage",
+            Self::PostToFrame { .. } => "postToFrame",
             Self::SaveSession { .. } => "saveSession",
             Self::ShowDevTools => "showDevTools",
             Self::ShowCertificate => "showCertificate",

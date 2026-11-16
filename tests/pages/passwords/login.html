@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign in</title>
+  </head>
+  <body>
+    <!-- Spec 11 §12 check 1 (tests/e2e/passwords.test.ts): Mado fills the
+         visible fields only, never the hidden or off-screen password, nor the
+         login inside the cross-origin frame. -->
+    <form action="/passwords/done.html" style="margin: 40px">
+      <label for="user">Username</label>
+      <input id="user" name="username" autocomplete="username" style="width: 240px; height: 28px" />
+      <label for="pass">Password</label>
+      <input id="pass" name="password" type="password" style="width: 240px; height: 28px" />
+      <input id="hidden" name="password2" type="password" style="display: none" />
+      <input id="offscreen" name="password3" type="password" style="position: absolute; left: -9999px; top: -9999px" />
+      <button type="submit">Sign in</button>
+    </form>
+    <iframe title="Elsewhere" src="http://other.mado.test/passwords/frame.html" style="width: 320px; height: 120px"></iframe>
+  </body>
+</html>
