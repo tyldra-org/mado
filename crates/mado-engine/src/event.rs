@@ -284,6 +284,14 @@ pub enum GoneReason {
 /// Everything the engine reports.
 #[derive(Debug)]
 pub enum EngineEvent {
+    /// An extension asks for a new tab or window, or its options page
+    /// (spec 09 §5.1).
+    ExtensionOpen {
+        extension: String,
+        url: String,
+        new_window: bool,
+        active: bool,
+    },
     /// `WindowCommand::Create` finished: the window and its UI and overlay
     /// webviews exist.
     WindowCreated {
@@ -477,6 +485,7 @@ impl EngineEvent {
     /// The variant's name, for logs that must not carry URLs or page data.
     pub fn name(&self) -> &'static str {
         match self {
+            Self::ExtensionOpen { .. } => "extensionOpen",
             Self::WindowCreated { .. } => "windowCreated",
             Self::WindowCloseRequested { .. } => "windowCloseRequested",
             Self::WindowFocusChanged { .. } => "windowFocusChanged",

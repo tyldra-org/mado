@@ -1,8 +1,7 @@
 //! The Engine trait, engine events and capabilities shared by every adapter.
 //!
 //! Specification: `mado-docs/spec/02-engine.md` sections 1 to 3. Roadmap:
-//! M2-T01. The blocker's `set_blocker_rules` joins the trait with M3-T11
-//! and the extension host's `extensions` with M3-T04.
+//! M2-T01. The blocker's `set_blocker_rules` joins the trait with M3-T11.
 //!
 //! Adapters run on the main thread. The core reaches them through an
 //! [`EngineHandle`], which queues [`EngineOp`]s for the main thread, and
@@ -170,6 +169,56 @@ pub trait Engine {
     fn allow_certificate(&mut self, host: String);
     /// Applies to every tab view, open ones included.
     fn set_privacy(&mut self, privacy: PrivacyConfig);
+    /// Loads an unpacked extension for every tab view of this profile
+    /// (spec 09 §5).
+    fn load_extension(&mut self, ext: ExtensionLoad, done: Callback<Result<(), EngineError>>) {
+        let _ = ext;
+        done(Err(EngineError::Unsupported("extensions")));
+    }
+    fn unload_extension(&mut self, id: String) {
+        let _ = id;
+    }
+    /// The windows and tabs extensions see, after every change.
+    fn set_extension_windows(&mut self, windows: ExtensionWindows) {
+        let _ = windows;
+    }
+}
+
+/// An unpacked extension to load (spec 09 §5.1), with what it was granted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionLoad {
+    /// The Chrome ID: the context's unique identifier, so
+    /// `chrome.runtime.id` matches.
+    pub id: String,
+    pub path: std::path::PathBuf,
+    pub permissions: Vec<String>,
+    /// Match patterns.
+    pub hosts: Vec<String>,
+}
+
+/// The windows extensions see, focused first (spec 09 §5.1): the
+/// main-thread cache behind Mado's `WKWebExtensionWindow` and
+/// `WKWebExtensionTab` objects.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ExtensionWindows {
+    pub windows: Vec<ExtensionWindow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionWindow {
+    pub id: WindowId,
+    /// In strip order.
+    pub tabs: Vec<ExtensionTab>,
+    pub active: Option<TabId>,
+    pub focused: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionTab {
+    pub id: TabId,
+    pub url: String,
+    pub title: String,
+    pub pinned: bool,
 }
 
 /// One call on the engine, queued from the core for the main thread.
@@ -184,6 +233,9 @@ pub enum EngineOp {
     Download(event::EngineDownloadId, event::DownloadCommand),
     AllowCertificate(String),
     SetPrivacy(PrivacyConfig),
+    LoadExtension(ExtensionLoad, Callback<Result<(), EngineError>>),
+    UnloadExtension(String),
+    ExtensionWindows(ExtensionWindows),
 }
 
 impl std::fmt::Debug for EngineOp {
@@ -198,6 +250,9 @@ impl std::fmt::Debug for EngineOp {
             Self::SetProxy(_) => f.write_str("SetProxy"),
             Self::AllowCertificate(_) => write!(f, "AllowCertificate"),
             Self::SetPrivacy(p) => write!(f, "SetPrivacy({p:?})"),
+            Self::LoadExtension(e, _) => write!(f, "LoadExtension({})", e.id),
+            Self::UnloadExtension(id) => write!(f, "UnloadExtension({id})"),
+            Self::ExtensionWindows(w) => write!(f, "ExtensionWindows({})", w.windows.len()),
             Self::Download(id, cmd) => write!(
                 f,
                 "Download({id:?}, {})",
@@ -241,6 +296,9 @@ impl EngineOp {
             Self::Download(id, cmd) => engine.download(id, cmd),
             Self::AllowCertificate(host) => engine.allow_certificate(host),
             Self::SetPrivacy(privacy) => engine.set_privacy(privacy),
+            Self::LoadExtension(ext, done) => engine.load_extension(ext, done),
+            Self::UnloadExtension(id) => engine.unload_extension(id),
+            Self::ExtensionWindows(w) => engine.set_extension_windows(w),
         }
     }
 }

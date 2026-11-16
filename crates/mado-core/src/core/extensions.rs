@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mado_engine::page::StoreInstall;
-use mado_engine::{EngineOp, TabCommand, World};
+use mado_engine::{EngineOp, ExtensionLoad, TabCommand, World};
 use mado_extensions::store::{MAX_PACKAGE, download};
 use mado_extensions::{Expect, Manifest, Refusal};
 use mado_types::command::{Command, ExtensionSource, Origin};
@@ -219,49 +219,135 @@ fn stage_local(path: &Path, source: ExtensionSource, dir: &Path) -> Result<Stage
     }
 }
 
-/// The `extensions` rows (spec 03).
-pub(super) fn load(
-    conn: &rusqlite::Connection,
-) -> rusqlite::Result<Vec<(InstalledExtension, bool)>> {
+/// One `extensions` row (spec 03).
+pub(super) struct Row {
+    pub installed: InstalledExtension,
+    pub pinned: bool,
+    pub load: ExtensionLoad,
+}
+
+/// The `extensions` rows; files of store and `.crx` installs are in
+/// `<dir>/<id>/<version>/`.
+pub(super) fn load(conn: &rusqlite::Connection, dir: &Path) -> rusqlite::Result<Vec<Row>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, version, enabled, source, path, pinned FROM extensions ORDER BY installed_at, id",
+        "SELECT id, name, version, enabled, source, path, pinned, granted_permissions, granted_hosts
+         FROM extensions ORDER BY installed_at, id",
     )?;
     let rows = stmt.query_map([], |r| {
-        let source: String = r.get(4)?;
-        let path: Option<String> = r.get(5)?;
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, String>(2)?,
             r.get::<_, bool>(3)?,
-            match (source.as_str(), path) {
-                ("store", _) => ExtensionSource::Store,
-                ("crx_file", _) => ExtensionSource::CrxFile,
-                (_, Some(p)) if p.contains("/Extensions/Unpacked/") => ExtensionSource::Zip,
-                _ => ExtensionSource::Unpacked,
-            },
+            r.get::<_, String>(4)?,
+            r.get::<_, Option<String>>(5)?,
             r.get::<_, bool>(6)?,
+            r.get::<_, String>(7)?,
+            r.get::<_, String>(8)?,
         ))
     })?;
+    let list = |s: &str| serde_json::from_str::<Vec<String>>(s).unwrap_or_default();
     Ok(rows
         .filter_map(Result::ok)
-        .filter_map(|(id, name, version, enabled, source, pinned)| {
-            Some((
-                InstalledExtension {
-                    id: id.parse().ok()?,
-                    name,
-                    version,
-                    enabled,
-                    source,
-                },
-                pinned,
-            ))
-        })
+        .filter_map(
+            |(id, name, version, enabled, source, path, pinned, perms, hosts)| {
+                let source = match (source.as_str(), &path) {
+                    ("store", _) => ExtensionSource::Store,
+                    ("crx_file", _) => ExtensionSource::CrxFile,
+                    (_, Some(p)) if p.contains("/Extensions/Unpacked/") => ExtensionSource::Zip,
+                    _ => ExtensionSource::Unpacked,
+                };
+                let files = path
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| dir.join(&id).join(&version));
+                Some(Row {
+                    load: ExtensionLoad {
+                        id: id.clone(),
+                        path: files,
+                        permissions: list(&perms),
+                        hosts: list(&hosts),
+                    },
+                    installed: InstalledExtension {
+                        id: id.parse().ok()?,
+                        name,
+                        version,
+                        enabled,
+                        source,
+                    },
+                    pinned,
+                })
+            },
+        )
         .collect())
 }
 
 impl Core {
-    fn extensions_dir(&self) -> Option<PathBuf> {
+    /// Loads `id` in the engine (spec 09 §5), replacing a loaded version.
+    pub(super) fn load_extension(&mut self, id: &ExtensionId, load: ExtensionLoad) {
+        if self.extension_loads.contains_key(id) {
+            self.outbox.push(EngineOp::UnloadExtension(id.to_string()));
+        }
+        let name = id.to_string();
+        self.outbox.push(EngineOp::LoadExtension(
+            load.clone(),
+            Box::new(move |r| {
+                if let Err(e) = r {
+                    tracing::error!(extension = %name, error = ?e, "an extension did not load");
+                }
+            }),
+        ));
+        self.extension_loads.insert(id.clone(), load);
+    }
+
+    /// What extensions see of windows and tabs, sent when it changes.
+    pub(super) fn sync_extension_windows(&mut self) {
+        if self.extension_loads.is_empty() {
+            return;
+        }
+        let focused = self.current_window();
+        let mut windows: Vec<mado_engine::ExtensionWindow> = self
+            .state
+            .windows
+            .values()
+            .map(|w| mado_engine::ExtensionWindow {
+                id: w.id,
+                tabs: w
+                    .tab_order
+                    .iter()
+                    .filter_map(|t| self.model.tabs.get(t))
+                    .map(|t| mado_engine::ExtensionTab {
+                        id: t.id,
+                        url: t.url.clone(),
+                        title: t.title.clone(),
+                        pinned: t.pinned,
+                    })
+                    .collect(),
+                active: w.active_tab_id,
+                focused: Some(w.id) == focused,
+            })
+            .collect();
+        windows.sort_by_key(|w| !w.focused);
+        let snapshot = mado_engine::ExtensionWindows { windows };
+        if snapshot != self.extension_windows {
+            self.extension_windows = snapshot.clone();
+            self.outbox.push(EngineOp::ExtensionWindows(snapshot));
+        }
+    }
+
+    /// An extension's `tabs.create`, `windows.create` or options page.
+    pub(super) fn extension_open(&mut self, url: String, new_window: bool) {
+        let disposition = if new_window {
+            mado_types::command::OpenDisposition::NewWindow
+        } else {
+            mado_types::command::OpenDisposition::NewTabs
+        };
+        let window = self.current_window();
+        if let Err(e) = self.open_urls(&[url], disposition, window) {
+            tracing::warn!(error = %e.message_key, "an extension's page did not open");
+        }
+    }
+
+    pub(super) fn extensions_dir(&self) -> Option<PathBuf> {
         self.extensions.as_ref().map(|c| c.dir.clone())
     }
 
@@ -516,6 +602,15 @@ impl Core {
             }
         };
         let summary = m.summary(mado_extensions::manifest::SUPPORTED_PERMISSIONS);
+        let load = ExtensionLoad {
+            id: id.to_string(),
+            path: path
+                .clone()
+                .unwrap_or_else(|| dir.join(id.as_str()).join(&m.version)),
+            permissions: summary.permissions.clone(),
+            hosts: summary.hosts.clone(),
+        };
+        self.load_extension(&id, load);
         let mut ext = self.state.extensions.clone();
         let pin = m.has_action
             && !ext.pinned.contains(&id)
@@ -576,6 +671,9 @@ impl Core {
             return;
         };
         let removed = ext.installed.remove(pos);
+        if self.extension_loads.remove(id).is_some() {
+            self.outbox.push(EngineOp::UnloadExtension(id.to_string()));
+        }
         ext.pinned.retain(|p| p != id);
         ext.toolbar.retain(|b| &b.id != id);
         self.state.tx(rec).set_extensions(ext);

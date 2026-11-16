@@ -461,6 +461,10 @@ pub struct Core {
     extensions: Option<ExtensionsConfig>,
     /// Packages waiting for their install prompt's answer.
     extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
+    /// Extensions loaded in the engine.
+    extension_loads: BTreeMap<mado_types::ExtensionId, mado_engine::ExtensionLoad>,
+    /// What extensions last saw of windows and tabs.
+    extension_windows: mado_engine::ExtensionWindows,
     os: OsPermissions,
     profiles: std::sync::Arc<dyn crate::ui::Profiles>,
     /// The profile's search engines (spec 05 §3).
@@ -708,6 +712,8 @@ impl Core {
             lists: config.lists.clone(),
             extensions: config.extensions.clone(),
             extension_installs: BTreeMap::new(),
+            extension_loads: BTreeMap::new(),
+            extension_windows: mado_engine::ExtensionWindows::default(),
             os: config.os,
             profiles: std::sync::Arc::clone(&config.profiles),
             engines,
@@ -766,23 +772,31 @@ impl Core {
         if self.extensions.is_none() || self.state.profile.is_private {
             return;
         }
+        let dir = self.extensions_dir().unwrap_or_default();
         let rows = self
             .profile_db
             .readers()
-            .read(extensions::load)
+            .read(|c| extensions::load(c, &dir))
             .unwrap_or_else(|e| {
                 tracing::error!(error = %e, "the extensions could not be read");
                 Vec::new()
             });
         let mut ext = self.state.extensions.clone();
-        for (installed, pinned) in rows {
-            if pinned {
-                ext.pinned.push(installed.id.clone());
+        for row in rows {
+            if row.pinned {
+                ext.pinned.push(row.installed.id.clone());
             }
-            ext.installed.push(installed);
+            if row.installed.enabled {
+                self.load_extension(&row.installed.id, row.load);
+            }
+            ext.installed.push(row.installed);
         }
         let mut rec = PatchRecorder::new();
         self.state.tx(&mut rec).set_extensions(ext);
+        // Before any tab view, so every tab gets the extensions.
+        for op in std::mem::take(&mut self.outbox) {
+            self.engine.send(op);
+        }
     }
 
     /// Fills `state.settings`, `state.features` and the mirrors of
@@ -878,6 +892,7 @@ impl Core {
             Err(MadoError::internal())
         });
         self.refresh_display_urls();
+        self.sync_extension_windows();
         self.settle(&model_before, &mut rec);
         // A handler that answers later took the reply.
         if let Some(reply) = reply {
