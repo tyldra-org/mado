@@ -483,6 +483,14 @@ pub struct Core {
     blocker_building: bool,
     /// The lists changed during a build: build again after it.
     blocker_rebuild_again: bool,
+    /// The shared engine's WebKit rule lists.
+    blocker_shards: Vec<(String, PathBuf)>,
+    /// The profile's own rule list: custom filters and hidden elements.
+    blocker_profile_rules: Option<String>,
+    /// Hosts where the profile's blocker is off.
+    blocker_off_hosts: Vec<String>,
+    /// The rules last sent to the engine.
+    blocker_sent: Option<mado_engine::BlockerRules>,
     /// Packages waiting for their install prompt's answer.
     extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
     /// Extensions loaded in the engine.
@@ -740,6 +748,10 @@ impl Core {
             blocker_custom: None,
             blocker_building: false,
             blocker_rebuild_again: false,
+            blocker_shards: Vec::new(),
+            blocker_profile_rules: None,
+            blocker_off_hosts: Vec::new(),
+            blocker_sent: None,
             extension_installs: BTreeMap::new(),
             extension_loads: BTreeMap::new(),
             extension_windows: mado_engine::ExtensionWindows::default(),
@@ -1603,6 +1615,9 @@ impl Core {
         }
         if out.changes.iter().any(|c| c.key == "blocker.lists") {
             self.blocker_lists_changed(rec);
+        }
+        if out.changes.iter().any(|c| c.key == "blocker.enabled") {
+            self.push_blocker_rules();
         }
         if out.changes.iter().any(|c| c.key == "privacy.gpc") {
             self.outbox.push(EngineOp::SetPageScripts(self.scripts()));

@@ -124,6 +124,10 @@ impl Engine for TauriWindows {
         mado_engine_webkit::extensions::set_windows(windows);
     }
 
+    fn set_blocker_rules(&mut self, rules: mado_engine::BlockerRules) {
+        mado_engine_webkit::set_blocker_rules(rules);
+    }
+
     fn download(
         &mut self,
         id: mado_engine::event::EngineDownloadId,

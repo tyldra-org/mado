@@ -1,7 +1,7 @@
 //! The Engine trait, engine events and capabilities shared by every adapter.
 //!
 //! Specification: `mado-docs/spec/02-engine.md` sections 1 to 3. Roadmap:
-//! M2-T01. The blocker's `set_blocker_rules` joins the trait with M3-T11.
+//! M2-T01.
 //!
 //! Adapters run on the main thread. The core reaches them through an
 //! [`EngineHandle`], which queues [`EngineOp`]s for the main thread, and
@@ -182,6 +182,56 @@ pub trait Engine {
     fn set_extension_windows(&mut self, windows: ExtensionWindows) {
         let _ = windows;
     }
+    /// The blocker's content rule lists for every tab view (spec 10 §4).
+    fn set_blocker_rules(&mut self, rules: BlockerRules) {
+        let _ = rules;
+    }
+}
+
+/// The blocker's WebKit content rule lists (spec 10 §4), applied in order
+/// to every tab view. Open pages keep their rules until they navigate.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BlockerRules {
+    /// The shared `WKContentRuleListStore` folder, `<root>/Blocker/WebKit/`.
+    pub store: std::path::PathBuf,
+    /// The shared shards, then the profile's own list. Empty turns
+    /// blocking off.
+    pub lists: Vec<RuleList>,
+    /// Hosts, with their subdomains, whose pages get no rules (the site
+    /// switch, spec 10 §8).
+    pub off_hosts: Vec<String>,
+}
+
+/// One content rule list: compiled from `source` unless the store already
+/// has `identifier`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleList {
+    pub identifier: String,
+    pub source: RuleSource,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum RuleSource {
+    /// A JSON file, read only to compile.
+    File(std::path::PathBuf),
+    Json(String),
+}
+
+impl std::fmt::Debug for RuleSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::File(p) => write!(f, "File({})", p.display()),
+            Self::Json(j) => write!(f, "Json({} bytes)", j.len()),
+        }
+    }
+}
+
+/// Whether `host` is one of `hosts` or under one.
+pub fn host_in(host: &str, hosts: &[String]) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    hosts
+        .iter()
+        .any(|h| host == *h || host.ends_with(&format!(".{h}")))
 }
 
 /// An unpacked extension to load (spec 09 §5.1), with what it was granted.
@@ -236,6 +286,7 @@ pub enum EngineOp {
     LoadExtension(ExtensionLoad, Callback<Result<(), EngineError>>),
     UnloadExtension(String),
     ExtensionWindows(ExtensionWindows),
+    SetBlockerRules(BlockerRules),
 }
 
 impl std::fmt::Debug for EngineOp {
@@ -253,6 +304,7 @@ impl std::fmt::Debug for EngineOp {
             Self::LoadExtension(e, _) => write!(f, "LoadExtension({})", e.id),
             Self::UnloadExtension(id) => write!(f, "UnloadExtension({id})"),
             Self::ExtensionWindows(w) => write!(f, "ExtensionWindows({})", w.windows.len()),
+            Self::SetBlockerRules(r) => write!(f, "SetBlockerRules({} lists)", r.lists.len()),
             Self::Download(id, cmd) => write!(
                 f,
                 "Download({id:?}, {})",
@@ -299,6 +351,7 @@ impl EngineOp {
             Self::LoadExtension(ext, done) => engine.load_extension(ext, done),
             Self::UnloadExtension(id) => engine.unload_extension(id),
             Self::ExtensionWindows(w) => engine.set_extension_windows(w),
+            Self::SetBlockerRules(r) => engine.set_blocker_rules(r),
         }
     }
 }

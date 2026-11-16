@@ -702,6 +702,9 @@ pub struct BlockerState {
     pub lists: Vec<BlockerList>,
     /// An update is running.
     pub updating: bool,
+    /// Content rule lists on every tab view; 0 until WebKit compiled them
+    /// or while blocking is off (spec 10 §4).
+    pub rule_lists: u32,
 }
 
 /// One filter list in use (spec 10 §2).

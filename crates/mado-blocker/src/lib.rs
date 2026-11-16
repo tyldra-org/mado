@@ -9,6 +9,7 @@
 
 mod build;
 mod lists;
+pub mod rules;
 
 pub use adblock::Engine;
 pub use adblock::resources::Resource;
@@ -102,6 +103,7 @@ mod tests {
         assert_eq!(report.failed, ["easylist"]);
         let b = build(dir.path(), &lists).map_err(|e| e.0).expect("builds");
         assert!(b.bundled && b.filters > 50_000, "{} filters", b.filters);
+        assert!(!b.shards.is_empty(), "WebKit rules");
         let e = engine(&b);
         assert!(blocks(
             &e,

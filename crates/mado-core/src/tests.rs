@@ -4278,4 +4278,60 @@ fn the_blocker_starts_with_the_bundled_easylist_and_custom_filters() {
         rx.recv().expect("answer")
     };
     assert!(check("https://tracker.mine.example/t.js"), "custom filter");
+
+    // M3-T11: WebKit gets the shared shards then the profile's own list,
+    // and none while the blocker is off.
+    let rules = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .blocker_rules
+            .clone()
+    };
+    for _ in 0..3000 {
+        if rules().is_some_and(|r| r.lists.len() >= 2) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(
+        rules().is_some_and(|r| r.lists.len() >= 2),
+        "{:?} filters {}",
+        rules(),
+        state_of(&core).blocker.filters
+    );
+    let r = rules().expect("rules");
+    assert!(r.lists[0].identifier.starts_with("mado-") && r.store.ends_with("Blocker/WebKit"));
+    assert!(
+        r.lists
+            .last()
+            .is_some_and(|l| l.identifier.starts_with("mado-site-"))
+    );
+    let mado_engine::RuleSource::File(shard) = &r.lists[0].source else {
+        panic!("a shard file");
+    };
+    let shard: Vec<Value> =
+        serde_json::from_slice(&std::fs::read(shard).expect("shard")).expect("json");
+    assert!(shard.len() > 10_000 && shard.len() <= 150_000);
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let token = ask(
+        &core,
+        Origin::Settings,
+        Command::AppAuthenticate { reason: "t".into() },
+    )
+    .ok()
+    .and_then(|v| v["token"].as_str().map(str::to_owned));
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "blocker.enabled".into(),
+            value: json!(false),
+            token,
+        },
+    )
+    .expect("off");
+    eventually("no rules", || rules().is_some_and(|r| r.lists.is_empty()));
 }

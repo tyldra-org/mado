@@ -155,6 +155,26 @@ impl Adapter {
             .collect()
     }
 
+    pub(crate) fn controller(&self, tab: TabId) -> Option<Retained<WKUserContentController>> {
+        self.tabs.get(&tab).map(|t| t.controller.clone())
+    }
+
+    /// Every tab's controller and current URL, for the blocker.
+    pub(crate) fn blocker_tabs(
+        &self,
+    ) -> Vec<(TabId, Retained<WKUserContentController>, Option<String>)> {
+        self.tabs
+            .iter()
+            .map(|(id, t)| {
+                // SAFETY: the URL of a live view on the main thread.
+                let url = unsafe { t.view.URL() }
+                    .and_then(|u| u.absoluteString())
+                    .map(|s| s.to_string());
+                (*id, t.controller.clone(), url)
+            })
+            .collect()
+    }
+
     pub fn view(&self, tab: TabId) -> Option<TabView> {
         self.tabs.get(&tab).map(|t| t.view.clone())
     }
@@ -239,6 +259,7 @@ impl Adapter {
             {
                 controller.addContentRuleList(rules);
             }
+            crate::blocker::attach(tab, &controller);
             prefs.setTextInteractionEnabled(true);
             config
                 .defaultWebpagePreferences()
@@ -342,6 +363,7 @@ impl Adapter {
 
     pub fn destroy_tab(&mut self, tab: TabId) {
         crate::menu::forget(tab);
+        crate::blocker::forget(tab);
         crate::certificate::forget(tab);
         crate::scheme::forget_pages(tab);
         let Some(t) = self.tabs.remove(&tab) else {

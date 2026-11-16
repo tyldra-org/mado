@@ -408,6 +408,37 @@ define_class!(
 
     unsafe impl NSObjectProtocol for TabDelegate {}
 
+    impl TabDelegate {
+        // WebKit's private SPI for applied content rule actions (spec 10 §4
+        // step 7, M0 experiment 7); WebKit calls it only because the
+        // delegate answers it. Only Mado's blocker lists count.
+        #[unsafe(method(_webView:contentRuleListWithIdentifier:performedAction:forURL:))]
+        fn rule_action(
+            &self,
+            _view: &WKWebView,
+            identifier: &NSString,
+            action: &objc2::runtime::AnyObject,
+            url: &objc2_foundation::NSURL,
+        ) {
+            let sel = objc2::sel!(blockedLoad);
+            // SAFETY: respondsToSelector: is safe on any object;
+            // _WKContentRuleListAction.blockedLoad is a BOOL.
+            let blocked = unsafe {
+                let responds: bool = msg_send![action, respondsToSelector: sel];
+                responds && {
+                    let b: bool = msg_send![action, blockedLoad];
+                    b
+                }
+            };
+            if blocked && identifier.to_string().starts_with("mado-") {
+                send(EngineEvent::ContentBlocked {
+                    tab: self.ivars().tab,
+                    url: url.absoluteString().map(|s| s.to_string()).unwrap_or_default(),
+                });
+            }
+        }
+    }
+
     unsafe impl WKNavigationDelegate for TabDelegate {
         #[unsafe(method(webView:decidePolicyForNavigationAction:preferences:decisionHandler:))]
         fn decide_action(
@@ -438,6 +469,9 @@ define_class!(
                 )
             };
             let gesture = user_gesture(action);
+            if main {
+                crate::blocker::navigating(tab, &url);
+            }
             let kind = INFO.with_borrow_mut(|i| {
                 let info = i.get_mut(&tab)?;
                 if main {

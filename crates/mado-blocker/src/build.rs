@@ -17,6 +17,8 @@ pub struct Build {
     pub filters: usize,
     /// The bundled EasyList stood in for lists never downloaded.
     pub bundled: bool,
+    /// WebKit content rule lists, `(identifier, JSON file)` (10 §4).
+    pub shards: Vec<(String, PathBuf)>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -117,6 +119,7 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
                 bytes,
                 filters: p.filters,
                 bundled: false,
+                shards: shard_files(dir, &p.hash),
             })
     };
     if let Some(p) = &previous
@@ -133,6 +136,19 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
         ));
     }
     let path = engine_path(dir, &hash);
+    let mut shards = shard_files(dir, &hash);
+    if shards.is_empty() {
+        let (rules, skipped) = crate::rules::convert(texts.iter().map(|(_, t)| t.clone()));
+        tracing::info!(rules = rules.len(), skipped, "filters converted for WebKit");
+        for (n, json) in crate::rules::shard(rules, crate::rules::MAX_RULES)
+            .iter()
+            .enumerate()
+        {
+            let file = dir.join(format!("rules-{hash}-{n}.json"));
+            write_file(&file, json.as_bytes()).map_err(|e| (BuildError::Io(e), None))?;
+        }
+        shards = shard_files(dir, &hash);
+    }
     let bytes = match std::fs::read(&path) {
         Ok(bytes) if engine_from(&bytes, Vec::new()).is_some() => bytes,
         _ => {
@@ -141,12 +157,7 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
                 set.add_filter_list(text, adblock::lists::ParseOptions::default());
             }
             let bytes = adblock::Engine::new_with_filter_set(set).serialize();
-            let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-            let mut f = std::fs::File::create(&tmp).map_err(|e| (BuildError::Io(e), None))?;
-            f.write_all(&bytes)
-                .and_then(|()| f.sync_all())
-                .and_then(|()| std::fs::rename(&tmp, &path))
-                .map_err(|e| (BuildError::Io(e), None))?;
+            write_file(&path, &bytes).map_err(|e| (BuildError::Io(e), None))?;
             bytes
         }
     };
@@ -162,7 +173,9 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
         for e in entries.flatten() {
             let name = e.file_name();
             let name = name.to_string_lossy();
-            if name.starts_with("engine-") && name.ends_with(".dat") && e.path() != path {
+            let stale = (name.starts_with("engine-") && name.ends_with(".dat") && e.path() != path)
+                || (name.starts_with("rules-") && !name.starts_with(&format!("rules-{hash}-")));
+            if stale {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -173,7 +186,30 @@ pub fn build(dir: &Path, lists: &[FilterList]) -> Result<Build, (BuildError, Opt
         bytes,
         filters,
         bundled,
+        shards,
     })
+}
+
+fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    std::fs::rename(&tmp, path)
+}
+
+/// The rule list files of build `hash`, in order, with their WebKit
+/// identifiers `mado-<hash>-<n>`.
+fn shard_files(dir: &Path, hash: &str) -> Vec<(String, PathBuf)> {
+    (0..)
+        .map(|n| {
+            (
+                format!("mado-{hash}-{n}"),
+                dir.join(format!("rules-{hash}-{n}.json")),
+            )
+        })
+        .take_while(|(_, p)| p.exists())
+        .collect()
 }
 
 /// An engine from serialised bytes, with the stored resources (scriptlets

@@ -11,6 +11,7 @@
 
 #![cfg(target_os = "macos")]
 
+mod blocker;
 mod certificate;
 mod convert;
 mod delegate;
@@ -38,6 +39,7 @@ use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::NSView;
 
+pub use blocker::set_blocker_rules;
 pub use convert::{has_geolocation_delegate, safari_version, webkit_bundle_version};
 pub use menu::Labels;
 pub use scheme::{Resolved, SchemeResolver};
