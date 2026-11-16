@@ -462,6 +462,8 @@ fn start_owner(
         clock: mado_core::system_clock,
         captive_probe: captive_probe(),
         lists: lists(&owner.paths),
+        extensions: (!(info.is_private || info.is_guest))
+            .then(|| mado_core::ExtensionsConfig::store(owner.paths.extensions(id))),
         os: mado_core::OsPermissions::system(),
         hsts_extra: hsts_extra(),
         home: std::env::var_os("HOME")

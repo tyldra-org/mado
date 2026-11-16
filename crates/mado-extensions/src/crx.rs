@@ -10,32 +10,32 @@ use sha2::{Digest, Sha256};
 use crate::id::{id_from_hash_prefix, id_from_key};
 
 #[derive(Clone, PartialEq, prost::Message)]
-struct CrxFileHeader {
+pub(crate) struct CrxFileHeader {
     #[prost(message, repeated, tag = "2")]
-    sha256_with_rsa: Vec<AsymmetricKeyProof>,
+    pub(crate) sha256_with_rsa: Vec<AsymmetricKeyProof>,
     #[prost(message, repeated, tag = "3")]
-    sha256_with_ecdsa: Vec<AsymmetricKeyProof>,
+    pub(crate) sha256_with_ecdsa: Vec<AsymmetricKeyProof>,
     #[prost(bytes = "vec", optional, tag = "10000")]
-    signed_header_data: Option<Vec<u8>>,
+    pub(crate) signed_header_data: Option<Vec<u8>>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
-struct AsymmetricKeyProof {
+pub(crate) struct AsymmetricKeyProof {
     #[prost(bytes = "vec", optional, tag = "1")]
-    public_key: Option<Vec<u8>>,
+    pub(crate) public_key: Option<Vec<u8>>,
     #[prost(bytes = "vec", optional, tag = "2")]
-    signature: Option<Vec<u8>>,
+    pub(crate) signature: Option<Vec<u8>>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
-struct SignedData {
+pub(crate) struct SignedData {
     #[prost(bytes = "vec", optional, tag = "1")]
-    crx_id: Option<Vec<u8>>,
+    pub(crate) crx_id: Option<Vec<u8>>,
 }
 
 const MAGIC: &[u8] = b"Cr24";
 const MAX_HEADER: usize = 1024 * 1024;
-const CONTEXT: &[u8] = b"CRX3 SignedData\0";
+pub(crate) const CONTEXT: &[u8] = b"CRX3 SignedData\0";
 
 /// SHA-256 of the Chrome Web Store's publisher key (DER SPKI,
 /// "ecdsa_2017_public"), Chromium's `kPublisherKeyHash` in
@@ -52,6 +52,8 @@ pub struct Expect<'a> {
     pub id: Option<&'a str>,
     /// Require the Web Store's publisher proof (store installs).
     pub from_store: bool,
+    /// Publisher key hashes accepted besides the store's: tests only.
+    pub extra_publishers: &'a [[u8; 32]],
 }
 
 /// A package that verified.
@@ -164,7 +166,8 @@ pub fn verify<'a>(bytes: &'a [u8], expect: Expect<'_>) -> Result<Verified<'a>, C
         if id_from_key(key) == declared {
             developer = Some(key.to_vec());
         }
-        store |= Sha256::digest(key).as_slice() == PUBLISHER_KEY_HASH;
+        let hash: [u8; 32] = Sha256::digest(key).into();
+        store |= hash == PUBLISHER_KEY_HASH || expect.extra_publishers.contains(&hash);
     }
     let public_key = developer.ok_or(CrxError::NoDeveloperProof)?;
     if expect.from_store && !store {
@@ -186,94 +189,14 @@ pub fn verify<'a>(bytes: &'a [u8], expect: Expect<'_>) -> Result<Verified<'a>, C
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use p256::ecdsa::signature::hazmat::PrehashSigner as _;
-    use rsa::pkcs8::{DecodePrivateKey as _, EncodePublicKey as _};
-
+mod tests {
     use super::*;
-    use crate::unzip::tests::zip_of;
-
-    pub(crate) enum Signer {
-        Rsa(Box<rsa::PrivateKey>),
-        Ec(p256::ecdsa::SigningKey),
-    }
-
-    impl Signer {
-        pub(crate) fn rsa() -> Self {
-            let der = include_bytes!("../testdata/developer-rsa-test-only.der");
-            Self::Rsa(Box::new(
-                rsa::PrivateKey::from_pkcs8_der(der).expect("test key"),
-            ))
-        }
-        pub(crate) fn ec(seed: u8) -> Self {
-            Self::Ec(p256::ecdsa::SigningKey::from_slice(&[seed; 32]).expect("test key"))
-        }
-        pub(crate) fn public_key(&self) -> Vec<u8> {
-            match self {
-                Self::Rsa(k) => k.to_public_key().to_public_key_der().expect("der").to_vec(),
-                Self::Ec(k) => k.verifying_key().to_public_key_der().expect("der").to_vec(),
-            }
-        }
-        fn proof(&self, digest: &[u8]) -> AsymmetricKeyProof {
-            let signature = match self {
-                Self::Rsa(k) => {
-                    let k = rsa::pkcs1v15::SigningKey::<Sha256>::new((**k).clone());
-                    let s: rsa::pkcs1v15::Signature = k.sign_prehash(digest).expect("sign");
-                    Box::<[u8]>::from(s).to_vec()
-                }
-                Self::Ec(k) => {
-                    let s: p256::ecdsa::Signature = k.sign_prehash(digest).expect("sign");
-                    s.to_der().as_bytes().to_vec()
-                }
-            };
-            AsymmetricKeyProof {
-                public_key: Some(self.public_key()),
-                signature: Some(signature),
-            }
-        }
-    }
-
-    /// A CRX3 of `zip` signed by `signers`, declaring the ID of `developer`.
-    pub(crate) fn crx(
-        signers: &[&Signer],
-        developer: &Signer,
-        zip: &[u8],
-        extra: &[u8],
-    ) -> Vec<u8> {
-        let crx_id = Sha256::digest(developer.public_key())[..16].to_vec();
-        let signed = SignedData {
-            crx_id: Some(crx_id),
-        }
-        .encode_to_vec();
-        let mut hasher = Sha256::new();
-        hasher.update(CONTEXT);
-        hasher.update(u32::try_from(signed.len()).expect("len").to_le_bytes());
-        hasher.update(&signed);
-        hasher.update(zip);
-        let digest = hasher.finalize();
-        let mut header = CrxFileHeader {
-            signed_header_data: Some(signed),
-            ..CrxFileHeader::default()
-        };
-        for s in signers {
-            match s {
-                Signer::Rsa(_) => header.sha256_with_rsa.push(s.proof(&digest)),
-                Signer::Ec(_) => header.sha256_with_ecdsa.push(s.proof(&digest)),
-            }
-        }
-        let mut header = header.encode_to_vec();
-        header.extend_from_slice(extra);
-        let mut out = b"Cr24".to_vec();
-        out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(&u32::try_from(header.len()).expect("len").to_le_bytes());
-        out.extend_from_slice(&header);
-        out.extend_from_slice(zip);
-        out
-    }
+    use crate::fixtures::{Signer, crx, zip_of};
 
     const ANY: Expect<'static> = Expect {
         id: None,
         from_store: false,
+        extra_publishers: &[],
     };
 
     /// 09 §12 check 1.
@@ -291,6 +214,7 @@ pub(crate) mod tests {
             Expect {
                 id: Some(&id),
                 from_store: false,
+                extra_publishers: &[],
             },
         )
         .expect("verifies");
@@ -307,7 +231,8 @@ pub(crate) mod tests {
                 &good,
                 Expect {
                     id: Some(&id),
-                    from_store: true
+                    from_store: true,
+                    extra_publishers: &[],
                 }
             )
             .map(drop),
@@ -322,7 +247,8 @@ pub(crate) mod tests {
                 &two,
                 Expect {
                     id: None,
-                    from_store: true
+                    from_store: true,
+                    extra_publishers: &[],
                 }
             )
             .map(drop),
@@ -340,7 +266,8 @@ pub(crate) mod tests {
                 &good,
                 Expect {
                     id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-                    from_store: false
+                    from_store: false,
+                    extra_publishers: &[],
                 }
             ),
             Err(CrxError::WrongId { .. })

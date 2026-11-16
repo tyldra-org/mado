@@ -9,6 +9,12 @@ pub fn id_from_key(spki: &[u8]) -> String {
     id_from_hash_prefix(&Sha256::digest(spki)[..16])
 }
 
+/// An unpacked extension's ID without a `key`: from its folder's absolute
+/// path, as Chrome does (spec 09 §2.3).
+pub fn id_from_path(path: &std::path::Path) -> String {
+    id_from_hash_prefix(&Sha256::digest(path.as_os_str().as_encoded_bytes())[..16])
+}
+
 /// 16 bytes as an extension ID.
 pub fn id_from_hash_prefix(bytes: &[u8]) -> String {
     bytes

@@ -126,6 +126,9 @@ impl Core {
             PageMessage::OpenSearch(o) => self.open_search_seen(tab, o.href),
             // 07 §9: no Apple Pay in WKWebView here; offer Safari, once per
             // page (the DRM flag doubles as "already offered").
+            PageMessage::StoreInstall(s) if frame.is_main_frame => {
+                self.store_page_message(tab, s, rec);
+            }
             PageMessage::ApplePayProbe(_) => {
                 if self.drm_failed.insert(tab) {
                     self.safari_prompt(tab, mado_types::state::SafariReason::ApplePay, rec);

@@ -436,6 +436,9 @@ pub enum PromptState {
         tabs: Vec<UnsavedTab>,
     },
     Unresponsive(UnresponsivePrompt),
+    /// Add an extension (spec 09 §2.2), answered with
+    /// `extension.confirmInstall`.
+    ExtensionInstall(ExtensionInstallPrompt),
     /// A site asks for permissions (spec 07 §3). Answered with
     /// `prompt.respond` or `prompt.dismiss`; buttons work from `armedAt`.
     #[serde(rename_all = "camelCase")]
@@ -629,6 +632,52 @@ pub struct ExtensionButton {
 pub struct ExtensionsState {
     pub toolbar: Vec<ExtensionButton>,
     pub pinned: Vec<ExtensionId>,
+    /// Every installed extension, in install order.
+    pub installed: Vec<InstalledExtension>,
+}
+
+/// An installed extension (spec 09 §1, the `extensions` table).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstalledExtension {
+    pub id: ExtensionId,
+    pub name: String,
+    pub version: String,
+    pub enabled: bool,
+    pub source: crate::command::ExtensionSource,
+}
+
+/// What the extension install prompt shows (spec 09 §2.2 step 7, §4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExtensionInstallPrompt {
+    pub id: PromptId,
+    /// The window it shows in.
+    pub window_id: Option<WindowId>,
+    pub extension_id: ExtensionId,
+    pub name: String,
+    pub version: String,
+    /// A `data:` URL of its icon.
+    pub icon: Option<String>,
+    /// API permissions it gets.
+    pub permissions: Vec<String>,
+    /// Sites it may read and change.
+    pub hosts: Vec<String>,
+    pub all_sites: bool,
+    /// What it may ask for later.
+    pub optional: Vec<String>,
+    /// Permissions Mado does not have ("<feature> isn't available in Mado
+    /// yet").
+    pub unavailable: Vec<String>,
+    /// A required permission is unavailable and the compatibility list
+    /// does not vouch for it: "Some features may not work".
+    pub may_not_work: bool,
+    /// Manifest version 2: "Older format".
+    pub older_format: bool,
+    /// Installing replaces this installed version.
+    pub replaces: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS, Patchable)]

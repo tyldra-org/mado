@@ -3944,3 +3944,266 @@ fn a_tampered_list_is_rejected_and_the_last_good_copy_stays_in_use() {
     assert_eq!(std::fs::read(&cached).expect("cached"), good);
     assert_eq!(mado_lists::serial(List::Compat), 200);
 }
+
+/// A store extension: a CRX signed by its developer and `publisher`.
+fn test_extension(
+    manifest: &str,
+    publisher: Option<&mado_extensions::fixtures::Signer>,
+) -> (String, Vec<u8>) {
+    use mado_extensions::fixtures::{Signer, crx, zip_of};
+    let dev = Signer::ec(3);
+    let id = mado_extensions::id_from_key(&dev.public_key());
+    let zip = zip_of(&[
+        ("manifest.json", manifest.as_bytes()),
+        ("icon.png", b"\x89PNG fake"),
+    ]);
+    let signers: Vec<&Signer> = std::iter::once(&dev).chain(publisher).collect();
+    (id, crx(&signers, &dev, &zip, &[]))
+}
+
+/// M3-T03 (09 §2): "Add to Mado" downloads, verifies and unpacks the
+/// package, the prompt shows what it asks for, Add installs it into the
+/// profile, and it is still there after a restart. Themes and packages
+/// without the store's proof are refused; only Mado's windows may install;
+/// the store page's Remove from Mado removes it.
+#[test]
+fn a_store_extension_installs_through_the_prompt() {
+    use mado_extensions::fixtures::{Signer, key_hash};
+    use mado_types::state::PromptState;
+    let publisher = Signer::ec(9);
+    let manifest = r#"{"name":"Test Blocker","version":"1.2","manifest_version":3,
+        "action":{"default_popup":"popup.html"},"icons":{"128":"icon.png"},
+        "permissions":["storage","history"],"host_permissions":["<all_urls>"]}"#;
+    let (id, package) = test_extension(manifest, Some(&publisher));
+    let theme = test_extension(
+        r#"{"name":"Dark","version":"1","manifest_version":3,"theme":{}}"#,
+        Some(&publisher),
+    )
+    .1;
+    let files = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let (port, _) = serve_files(std::sync::Arc::clone(&files));
+    let serve = |bytes: &[u8]| {
+        files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(format!("/crx/{id}"), bytes.to_vec());
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let config = crate::ExtensionsConfig {
+        dir: dir.path().join("Extensions"),
+        package_url: std::sync::Arc::new(move |id| format!("http://127.0.0.1:{port}/crx/{id}")),
+        extra_publishers: vec![key_hash(&publisher.public_key())],
+    };
+    crate::testing::EXTENSIONS.with_borrow_mut(|e| *e = Some(config.clone()));
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let install = |origin: Origin| {
+        ask(
+            &core,
+            origin,
+            Command::ExtensionInstall {
+                id: Some(id.parse().expect("id")),
+                source: mado_types::command::ExtensionSource::Store,
+                path: None,
+            },
+        )
+    };
+    let err = install(Origin::Control {
+        client: ClientId::new(),
+    })
+    .expect_err("protected");
+    assert_eq!(err.code, ErrorCode::Protected);
+
+    let notices = || -> Vec<String> {
+        state_of(&core)
+            .notices
+            .iter()
+            .map(|n| n.message_key.clone())
+            .collect()
+    };
+    serve(&theme);
+    install(Origin::Ui { window: w }).expect("asked");
+    eventually("the theme refused", || {
+        notices().contains(&"notice.extensionTheme".to_owned())
+    });
+    let unproven = test_extension(manifest, None).1;
+    serve(&unproven);
+    install(Origin::Ui { window: w }).expect("asked");
+    eventually("no store proof", || {
+        notices().contains(&"notice.extensionUnverified".to_owned())
+    });
+    assert!(state_of(&core).prompts.is_empty());
+
+    serve(&package);
+    install(Origin::Ui { window: w }).expect("asked");
+    let prompt = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::ExtensionInstall(p) => Some(p.clone()),
+            _ => None,
+        })
+    };
+    eventually("the prompt", || prompt().is_some());
+    let p = prompt().expect("prompt");
+    assert_eq!(
+        (p.name.as_str(), p.version.as_str(), p.window_id),
+        ("Test Blocker", "1.2", Some(w))
+    );
+    assert!(p.all_sites && p.may_not_work && !p.older_format);
+    assert_eq!(p.permissions, ["storage"]);
+    assert_eq!(p.unavailable, ["history"]);
+    assert!(
+        p.icon
+            .as_deref()
+            .is_some_and(|i| i.starts_with("data:image/png;base64,"))
+    );
+    ask(
+        &core,
+        Origin::Overlay { window: w },
+        Command::ExtensionConfirmInstall {
+            prompt_id: p.id,
+            add: true,
+        },
+    )
+    .expect("added");
+    let st = state_of(&core);
+    assert!(st.prompts.is_empty());
+    assert_eq!(st.extensions.installed.len(), 1);
+    assert_eq!(st.extensions.pinned, [id.parse().expect("id")]);
+    assert!(config.dir.join(&id).join("1.2/manifest.json").exists());
+    assert!(notices().contains(&"notice.extensionAdded".to_owned()));
+    let root = core.stop();
+
+    crate::testing::EXTENSIONS.with_borrow_mut(|e| *e = Some(config.clone()));
+    let core = TestCore::start_in(root, false);
+    let st = state_of(&core);
+    assert_eq!(
+        st.extensions.installed.first().map(|e| e.name.as_str()),
+        Some("Test Blocker")
+    );
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    // Remove from Mado, from a store page only.
+    let send = |tab, remove| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame: frame(true, "https://chromewebstore.google.com"),
+            message: mado_engine::page::PageMessage::StoreInstall(
+                mado_engine::page::StoreInstall {
+                    id: id.clone(),
+                    remove,
+                },
+            ),
+        });
+    };
+    let elsewhere = new_tab(&core, w, "https://evil.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&elsewhere].url == "https://evil.example/"
+    });
+    send(elsewhere, true);
+    let store = new_tab(
+        &core,
+        w,
+        &format!("https://chromewebstore.google.com/detail/x/{id}"),
+    );
+    eventually("loaded", || {
+        state_of(&core).tabs[&store].url.contains("chromewebstore")
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(
+        state_of(&core).extensions.installed.len(),
+        1,
+        "not from another site"
+    );
+    send(store, true);
+    eventually("removed", || {
+        state_of(&core).extensions.installed.is_empty()
+    });
+    assert!(!config.dir.join(&id).exists());
+}
+
+/// 09 §2.3: Developer mode installs an unpacked folder in place, with
+/// the ID Chrome gives it; without Developer mode it is refused.
+#[test]
+fn developer_mode_installs_an_unpacked_folder() {
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let folder = tempfile::tempdir().expect("dir");
+    std::fs::write(
+        folder.path().join("manifest.json"),
+        r#"{"name":"Mine","version":"0.1","manifest_version":3}"#,
+    )
+    .expect("manifest");
+    let install = || {
+        ask(
+            &core,
+            Origin::Settings,
+            Command::ExtensionInstall {
+                id: None,
+                source: mado_types::command::ExtensionSource::Unpacked,
+                path: Some(folder.path().to_string_lossy().into_owned()),
+            },
+        )
+    };
+    assert_eq!(install().expect_err("off").code, ErrorCode::InvalidInput);
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let token = ask(
+        &core,
+        Origin::Settings,
+        Command::AppAuthenticate {
+            reason: "test".into(),
+        },
+    )
+    .expect("faked")["token"]
+        .as_str()
+        .map(str::to_owned);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "extensions.developerMode".into(),
+            value: json!(true),
+            token,
+        },
+    )
+    .expect("developer mode");
+    install().expect("asked");
+    eventually("the prompt", || {
+        state_of(&core)
+            .prompts
+            .values()
+            .any(|p| matches!(p, PromptState::ExtensionInstall(_)))
+    });
+    let p = state_of(&core)
+        .prompts
+        .values()
+        .find_map(|p| match p {
+            PromptState::ExtensionInstall(p) => Some(p.clone()),
+            _ => None,
+        })
+        .expect("prompt");
+    let expected = mado_extensions::id_from_path(&folder.path().canonicalize().expect("path"));
+    assert_eq!(p.extension_id.as_str(), expected);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionConfirmInstall {
+            prompt_id: p.id,
+            add: true,
+        },
+    )
+    .expect("added");
+    let st = state_of(&core);
+    assert_eq!(
+        st.extensions.installed[0].source,
+        mado_types::command::ExtensionSource::Unpacked
+    );
+    assert!(
+        folder.path().join("manifest.json").exists(),
+        "left in place"
+    );
+}

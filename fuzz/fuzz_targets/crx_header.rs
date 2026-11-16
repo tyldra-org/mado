@@ -8,6 +8,7 @@ libfuzzer_sys::fuzz_target!(|data: &[u8]| {
         mado_extensions::Expect {
             id: None,
             from_store: true,
+        extra_publishers: &[],
         },
     );
 });
