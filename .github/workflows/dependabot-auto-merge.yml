@@ -1,65 +1,77 @@
-# Dependabot pull requests land on main by themselves once the ruleset's
-# required checks pass: "ci", plus "linked-issue" and "protected-files" from
-# pull-requests.yml, which pass for Dependabot without an issue and with
-# workflow pin updates. Patch and minor updates and all GitHub Actions updates
-# get auto-merge; a major package update stays open for a maintainer. A
-# failing check leaves any of them open.
+# Dependabot pull requests land on main once the ruleset's required checks
+# pass: "ci" from CI, and "linked-issue" and "protected-files" from
+# pull-requests, which pass for Dependabot without an issue and with workflow
+# pin updates. Patch and minor updates and all GitHub Actions updates merge;
+# a major package update stays open for a maintainer. A failing check leaves
+# any of them open.
 #
-# It runs on Dependabot's own branch pushes, not on pull requests, so no
-# other pull request ever starts it or lists it among its checks. Only a push
-# by Dependabot itself counts; forks cannot push here.
-# Needs "Allow auto-merge" on in the repository settings.
+# The repository's "Allow auto-merge" setting is off: nothing waits on a
+# pull request to merge itself. This workflow runs when CI or pull-requests
+# finishes on a Dependabot branch, and merges only when every required check
+# has passed on the pull request's current head. Other pull requests never
+# start it; a fork's runs are ignored.
 name: dependabot-auto-merge
 
 on:
-  push:
-    branches: ["dependabot/**"]
+  workflow_run:
+    workflows: ["CI", "pull-requests"]
+    types: [completed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: dependabot-auto-merge-${{ github.ref }}
-  cancel-in-progress: true
+  group: dependabot-auto-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
 
 jobs:
-  auto-merge:
-    name: auto-merge
-    # The push itself must come from Dependabot; the step then arms only an
-    # open pull request that Dependabot opened from this branch.
-    if: github.event.pusher.name == 'dependabot[bot]' && github.repository == 'tyldra-org/mado'
+  merge:
+    name: merge
+    if: >-
+      github.repository == 'tyldra-org/mado' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
       pull-requests: write
+      checks: read
     steps:
-      - name: Enable auto-merge
+      - name: Merge when every required check passed
         env:
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          url=$(gh pr list --head "$BRANCH" --base main --author "app/dependabot" --state open \
+            --json url,headRefOid --jq ".[] | select(.headRefOid == \"$SHA\") | .url")
+          if [ -z "$url" ]; then
+            echo "No open Dependabot pull request at $SHA on $BRANCH."
+            exit 0
+          fi
           # Dependabot's commit message lists each update with its
           # update-type; a major package update waits for a maintainer.
           case "$BRANCH" in
             dependabot/github_actions/*) ;;
             *)
-              if printf '%s\n' "$COMMIT_MESSAGE" | grep -q 'update-type: version-update:semver-major'; then
+              if gh api "repos/$GH_REPO/commits/$SHA" --jq .commit.message | grep -q 'update-type: version-update:semver-major'; then
                 echo "A major update: left for a maintainer."
                 exit 0
               fi
               ;;
           esac
-          # Dependabot opens the pull request just after it pushes.
-          for _ in $(seq 1 24); do
-            url=$(gh pr list --head "$BRANCH" --base main --author "app/dependabot" --state open --json url --jq '.[0].url // ""')
-            if [ -n "$url" ]; then
-              gh pr merge --auto --squash "$url"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "No open Dependabot pull request for $BRANCH."
+          # The other workflow may still be running; its own completion
+          # runs this again.
+          ready=$(gh pr checks "$url" --required --json bucket \
+            --jq 'length > 0 and all(.[]; .bucket == "pass" or .bucket == "skipping")')
+          if [ "$ready" != "true" ]; then
+            echo "Required checks are not all green yet."
+            exit 0
+          fi
+          gh pr merge "$url" --squash --match-head-commit "$SHA"
