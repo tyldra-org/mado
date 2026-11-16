@@ -333,6 +333,27 @@ pub struct CoreConfig {
     pub home: PathBuf,
     /// Mado Passwords (spec 11); `None` in private and guest profiles.
     pub vault: Option<vault::VaultConfig>,
+    /// The password managers' CLIs (spec 11 §6.2, §6.3); tests pass fakes.
+    pub password_clis: PasswordClis,
+}
+
+/// Where `op` and `bw` are and how they run.
+#[derive(Debug, Clone)]
+pub struct PasswordClis {
+    pub op: Option<PathBuf>,
+    pub bw: Option<PathBuf>,
+    pub runner: std::sync::Arc<dyn mado_autofill::runner::Runner>,
+}
+
+impl PasswordClis {
+    /// The installed CLIs, run as real processes.
+    pub fn system() -> Self {
+        Self {
+            op: mado_autofill::runner::find_binary("op"),
+            bw: mado_autofill::runner::find_binary("bw"),
+            runner: std::sync::Arc::new(mado_autofill::runner::System),
+        }
+    }
 }
 
 /// How the core asks macOS about its own permissions.
@@ -538,6 +559,8 @@ pub struct Core {
     vault_used_at: i64,
     /// Fills need no new authentication until then (`vault.fillApprovalWindow`).
     vault_fill_until: i64,
+    /// 1Password (spec 11 §6.2), used while `passwords.onePassword` is on.
+    onepassword: std::sync::Arc<mado_autofill::onepassword::OnePassword>,
     /// Where each open fill menu's values would go.
     fill_targets: BTreeMap<PromptId, fill::FillTarget>,
     /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
@@ -838,6 +861,10 @@ impl Core {
             vault_unlocking: false,
             vault_used_at: 0,
             vault_fill_until: 0,
+            onepassword: std::sync::Arc::new(mado_autofill::onepassword::OnePassword::new(
+                config.password_clis.op.clone(),
+                std::sync::Arc::clone(&config.password_clis.runner),
+            )),
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
             otp_after: BTreeMap::new(),

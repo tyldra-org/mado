@@ -157,6 +157,12 @@ thread_local! {
     /// test thread, so a restarted core is the same Mac.
     pub static ENCLAVE: std::cell::RefCell<std::sync::Arc<mado_vault::wrap::SoftEnclave>> =
         std::cell::RefCell::new(std::sync::Arc::new(mado_vault::wrap::SoftEnclave::default()));
+    /// The password managers' CLIs for the next `start`: none by default.
+    pub static PASSWORD_CLIS: std::cell::RefCell<crate::PasswordClis> = std::cell::RefCell::new(crate::PasswordClis {
+        op: None,
+        bw: None,
+        runner: std::sync::Arc::new(mado_autofill::runner::System),
+    });
     /// Extensions for the next `start`; the real store by default.
     pub static EXTENSIONS: std::cell::RefCell<Option<crate::ExtensionsConfig>> = const { std::cell::RefCell::new(None) };
     /// The blocker for the next `start`; off by default.
@@ -238,6 +244,7 @@ impl TestCore {
                 profiles: PROFILES.with_borrow(Clone::clone),
                 hsts_extra: ["hsts.example".to_owned()].into(),
                 home: IMPORT_HOME.with_borrow(Clone::clone),
+                password_clis: PASSWORD_CLIS.with_borrow(Clone::clone),
                 vault: (!PRIVATE.get()).then(|| {
                     open(
                         &root.join("vault.sqlite"),

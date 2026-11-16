@@ -7,7 +7,10 @@ use mado_types::command::{Command, Origin, SaveAction};
 use mado_types::patch::PatchRecorder;
 use mado_types::state::{Notice, PromptState, VaultStatus};
 use mado_types::{ErrorCode, MadoError, PromptId, TabId};
-use mado_vault::item::{Item, Login, site_of};
+use std::sync::Arc;
+
+use mado_autofill::source::{FillSource, NewLogin, SourceError};
+use mado_vault::item::{Item, ItemKind, site_of};
 use mado_vault::{Vault, VaultError};
 use serde_json::{Value, json};
 
@@ -36,51 +39,72 @@ pub struct PendingSave {
     pub(super) password: String,
 }
 
-/// The item a save writes: the existing login of that username, updated,
-/// or a new one.
-fn save_into(
-    c: &rusqlite::Connection,
-    keys: &mado_vault::Keys,
-    save: &PendingSave,
-    now: i64,
-) -> Result<bool, VaultError> {
-    let existing = Vault::find(c, keys, &format!("site:{}", save.site))?
-        .into_iter()
-        .find(|s| matches!(&s.item, Item::Login(l) if l.username == save.username));
-    match existing {
-        Some(s) => {
-            let Item::Login(mut l) = s.item else {
-                return Ok(false);
-            };
-            if l.password == save.password {
-                return Ok(false);
-            }
-            l.password.clone_from(&save.password);
-            Vault::update(c, keys, &s.id, &Item::Login(l), now)?;
+/// Saves into `source`: the existing login of that username gets the new
+/// password, or a new login is added. False when nothing changed.
+fn save_into(source: &dyn FillSource, save: &PendingSave) -> Result<bool, VaultError> {
+    match existing(source, save)? {
+        Some((_, pw)) if pw == save.password => Ok(false),
+        Some((id, _)) => {
+            source.update_password(&id, &save.password).map_err(fail)?;
             Ok(true)
         }
         None => {
-            let item = Item::Login(Login {
-                title: String::new(),
-                urls: vec![save.url.clone()],
-                username: save.username.clone(),
-                password: save.password.clone(),
-                ..Login::default()
-            });
-            Vault::add(c, keys, &item, now)?;
+            source
+                .save(&NewLogin {
+                    url: save.url.clone(),
+                    username: save.username.clone(),
+                    password: save.password.clone(),
+                })
+                .map_err(fail)?;
             Ok(true)
         }
     }
 }
 
+/// The source's login for this site and username: its ID and password.
+fn existing(
+    source: &dyn FillSource,
+    save: &PendingSave,
+) -> Result<Option<(String, String)>, VaultError> {
+    let found = source.find(&save.site, &[ItemKind::Login]).map_err(fail)?;
+    for item in found {
+        if item.username.eq_ignore_ascii_case(&save.username)
+            && let Item::Login(l) = source.reveal(&item.id).map_err(fail)?
+            && l.username == save.username
+        {
+            return Ok(Some((item.id, l.password)));
+        }
+    }
+    Ok(None)
+}
+
+fn fail(e: SourceError) -> VaultError {
+    match e {
+        SourceError::NotFound => VaultError::NotFound,
+        SourceError::Locked => VaultError::Cancelled,
+        SourceError::Failed(m) => VaultError::Platform(m),
+    }
+}
+
 impl Core {
+    /// The source logins are saved to (`vault.saveDestination.logins`),
+    /// when it can answer now.
+    fn save_source(&self) -> Option<Arc<dyn FillSource>> {
+        let want = self.preferred_source();
+        self.fill_sources().into_iter().find(|s| s.id() == want)
+    }
+
     /// Whether this tab may offer saving at all (11 §5 step 5).
     fn may_offer_save(&self, tab: TabId) -> bool {
+        let destination = match self.setting_str("vault.saveDestination.logins").as_str() {
+            "onePassword" => self.setting("passwords.onePassword") == true,
+            "bitwarden" => self.setting("passwords.bitwarden") == true,
+            _ => self.state.vault.status != VaultStatus::None,
+        };
         self.vault.is_some()
-            && self.state.vault.status != VaultStatus::None
+            && destination
             && self.setting("vault.offerToSave") == true
             && self.setting_str("passwords.whoFills") != "extension"
-            && self.setting_str("vault.saveDestination.logins") == "mado"
             && self.model.tabs.get(&tab).is_some_and(|t| t.agent.is_none())
     }
 
@@ -167,45 +191,35 @@ impl Core {
         let generated = self.generated.remove(&tab).is_some_and(|(site, pw, at)| {
             site == capture.site && pw == capture.password && now - at <= 10 * 60_000
         });
-        match self.vault_keys.clone() {
-            Some(keys) if generated => {
+        let Some(source) = self.save_source() else {
+            // The destination is locked (Mado): ask, and saving unlocks.
+            self.offer_save(tab, save, false, rec);
+            return;
+        };
+        let keys = self.vault_keys.clone();
+        let _ = self.vault_job(None, move |c, _| {
+            if generated {
                 // A generated password saves itself, with a notice.
-                let _ = self.vault_job(None, move |c, _| {
-                    let changed = save_into(c, &keys, &save, now)?;
-                    Ok(VaultOutcome::Saved {
-                        site: save.site,
-                        changed,
-                    })
+                let changed = save_into(&*source, &save)?;
+                return Ok(VaultOutcome::Saved {
+                    site: save.site,
+                    changed,
                 });
             }
-            Some(keys) => {
-                let _ = self.vault_job(None, move |c, _| {
-                    if Vault::is_never_save(c, &keys, &save.site)? {
-                        return Ok(VaultOutcome::Value(Value::Null));
-                    }
-                    let existing = Vault::find(c, &keys, &format!("site:{}", save.site))?
-                        .into_iter()
-                        .find_map(|s| match s.item {
-                            Item::Login(l) if l.username == save.username => Some(l.password),
-                            _ => None,
-                        });
-                    match existing {
-                        Some(pw) if pw == save.password => Ok(VaultOutcome::Value(Value::Null)),
-                        Some(_) => Ok(VaultOutcome::OfferSave {
-                            tab,
-                            save: Box::new(save),
-                            update: true,
-                        }),
-                        None => Ok(VaultOutcome::OfferSave {
-                            tab,
-                            save: Box::new(save),
-                            update: false,
-                        }),
-                    }
-                });
+            if let Some(keys) = &keys
+                && Vault::is_never_save(c, keys, &save.site)?
+            {
+                return Ok(VaultOutcome::Value(Value::Null));
             }
-            None => self.offer_save(tab, save, false, rec),
-        }
+            match existing(&*source, &save)? {
+                Some((_, pw)) if pw == save.password => Ok(VaultOutcome::Value(Value::Null)),
+                found => Ok(VaultOutcome::OfferSave {
+                    tab,
+                    update: found.is_some(),
+                    save: Box::new(save),
+                }),
+            }
+        });
     }
 
     /// Shows the save or update prompt.
@@ -293,35 +307,43 @@ impl Core {
         if let Some(p) = password.filter(|p| !p.is_empty()) {
             save.password = p;
         }
-        // Saving and Never need the keys; a locked vault answers Locked and
-        // the prompt stays for the unlock.
+        // Saving needs the destination, Never the Mado vault: a locked
+        // Mado vault answers Locked and the prompt stays for the unlock.
+        let source = match action {
+            SaveAction::Save => Some(
+                self.save_source()
+                    .ok_or_else(|| MadoError::new(ErrorCode::Locked, "error.vault.locked"))?,
+            ),
+            _ => None,
+        };
         let keys = match action {
-            SaveAction::NotNow => None,
-            _ => Some(self.vault_keys()?),
+            SaveAction::Never if self.state.vault.status != VaultStatus::None => {
+                Some(self.vault_keys()?)
+            }
+            _ => None,
         };
         self.save_prompts.remove(&prompt_id);
         let mut prompts = self.state.prompts.clone();
         prompts.remove(&prompt_id);
         self.state.tx(rec).set_prompts(prompts);
-        let now = self.now();
         let reply = reply_to.take();
-        match (action, keys) {
-            (SaveAction::Save, Some(keys)) => {
-                self.vault_job(reply, move |c, _| {
-                    save_into(c, &keys, &save, now)?;
+        match (source, keys) {
+            (Some(source), _) => {
+                self.vault_job(reply, move |_, _| {
+                    save_into(&*source, &save)?;
                     Ok(VaultOutcome::Saved {
                         site: save.site,
                         changed: true,
                     })
                 })?;
             }
-            (SaveAction::Never, Some(keys)) => {
+            (None, Some(keys)) => {
                 self.vault_job(reply, move |c, _| {
                     Vault::never_save(c, &keys, &save.site, true)?;
                     Ok(VaultOutcome::Value(Value::Null))
                 })?;
             }
-            _ => {
+            (None, None) => {
                 if let Some(r) = reply {
                     let _ = r.send(Ok(Value::Null));
                 }

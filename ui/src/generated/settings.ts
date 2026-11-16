@@ -69,6 +69,8 @@ export type SettingKey =
   | "vault.fillApprovalWindow"
   | "vault.saveDestination.logins"
   | "vault.offerToSave"
+  | "passwords.onePassword"
+  | "passwords.bitwarden"
   | "extensions.developerMode"
   | "extensions.overlapPrompts"
   | "downloads.folder"
@@ -221,6 +223,8 @@ export interface SettingValues {
   "vault.fillApprovalWindow": number;
   "vault.saveDestination.logins": "mado" | "onePassword" | "bitwarden";
   "vault.offerToSave": boolean;
+  "passwords.onePassword": boolean;
+  "passwords.bitwarden": boolean;
   "extensions.developerMode": boolean;
   "extensions.overlapPrompts": boolean;
   "downloads.folder": string;
@@ -373,6 +377,8 @@ export const settingDefaults: SettingValues = {
   "vault.fillApprovalWindow": 300000,
   "vault.saveDestination.logins": "mado",
   "vault.offerToSave": true,
+  "passwords.onePassword": false,
+  "passwords.bitwarden": false,
   "extensions.developerMode": false,
   "extensions.overlapPrompts": true,
   "downloads.folder": "",

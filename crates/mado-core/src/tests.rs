@@ -3807,6 +3807,238 @@ fn logins_that_work_are_offered_for_saving() {
     assert_eq!(saved[0]["username"], "new@other.org");
 }
 
+/// A stand-in for 1Password's `op` CLI (spec 11 §6.2), recording calls.
+#[derive(Debug, Default)]
+struct FakeOp {
+    calls: std::sync::Mutex<Vec<Vec<String>>>,
+}
+
+impl mado_autofill::runner::Runner for FakeOp {
+    fn run(
+        &self,
+        _: &std::path::Path,
+        args: &[&str],
+        _: &[(&str, &str)],
+        _: Option<&str>,
+        _: std::time::Duration,
+    ) -> Option<mado_autofill::runner::Output> {
+        self.calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(args.iter().map(|s| (*s).to_owned()).collect());
+        let ok = |s: &str| {
+            Some(mado_autofill::runner::Output {
+                ok: true,
+                stdout: s.into(),
+                stderr: String::new(),
+            })
+        };
+        match (args[0], args.get(1).copied().unwrap_or("")) {
+            ("whoami", _) => ok(r#"{"email":"me@example.com"}"#),
+            ("item", "list") => ok(
+                r#"[{"id":"o1","title":"Example","category":"LOGIN","additional_information":"me","urls":[{"href":"https://example.com/"}]},
+                    {"id":"o2","title":"Example work","category":"LOGIN","additional_information":"work","urls":[{"href":"https://example.com/"}]}]"#,
+            ),
+            ("item", "get") if args.contains(&"--otp") => ok("654321"),
+            ("item", "get") => ok(&format!(
+                r#"{{"id":"{0}","title":"Example","category":"LOGIN","urls":[{{"href":"https://example.com/"}}],"fields":[{{"purpose":"USERNAME","value":"{1}"}},{{"purpose":"PASSWORD","value":"op-{0}"}}]}}"#,
+                args[2],
+                if args[2] == "o1" { "me" } else { "work" }
+            )),
+            ("item", "create") => ok(r#"{"id":"o3"}"#),
+            ("item", "edit") => ok("{}"),
+            _ => None,
+        }
+    }
+}
+
+/// Spec 11 §6.2 and §6.4: with 1Password on, the fill menu lists its items
+/// with Mado's, a duplicate shows once with both sources, a 1Password item
+/// fills, and saving goes to 1Password when it is the destination.
+#[test]
+fn onepassword_items_join_the_menu_and_take_saves() {
+    use mado_engine::page::{
+        CredentialsSubmitted, DetectedField, DetectedForm, FieldClass, FieldFocused, FieldRect,
+        FormKind, Forms, PageMessage,
+    };
+    use mado_types::command::SaveAction;
+    use mado_types::state::PromptState;
+    use std::sync::atomic::Ordering;
+    crate::testing::GESTURE.store(1_800_000_000_000, Ordering::SeqCst);
+    let op = std::sync::Arc::new(FakeOp::default());
+    crate::testing::PASSWORD_CLIS.with_borrow_mut(|c| {
+        *c = crate::PasswordClis {
+            op: Some("/opt/homebrew/bin/op".into()),
+            bw: None,
+            runner: std::sync::Arc::clone(&op) as std::sync::Arc<dyn mado_autofill::runner::Runner>,
+        };
+    });
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    ask(
+        &core,
+        user,
+        Command::VaultSave {
+            id: None,
+            item: serde_json::json!({ "kind": "login", "title": "", "urls": ["https://example.com/"],
+                "username": "me", "password": "mado-pw", "passwordHistory": [] }),
+        },
+    )
+    .expect("saved");
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let set = |key: &str, value: serde_json::Value| {
+        let token = ask(&core, user, Command::AppAuthenticate { reason: "t".into() })
+            .expect("auth")["token"]
+            .as_str()
+            .map(str::to_owned);
+        ask(
+            &core,
+            user,
+            Command::SettingsSet {
+                key: key.into(),
+                value,
+                token,
+            },
+        )
+        .expect(key);
+    };
+    set("passwords.onePassword", serde_json::json!(true));
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let send = |message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame: frame(true, "https://www.example.com"),
+            message,
+        });
+    };
+    let field = |key: &str, class: FieldClass| DetectedField {
+        field_key: key.into(),
+        class,
+        rect: FieldRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        visible: true,
+        in_viewport: true,
+    };
+    send(PageMessage::Forms(Forms {
+        forms: vec![DetectedForm {
+            form_key: "f1".into(),
+            kind: FormKind::Login,
+            action: None,
+            fields: vec![
+                field("a1", FieldClass::Username),
+                field("a2", FieldClass::Password),
+            ],
+        }],
+    }));
+    send(PageMessage::FieldFocused(FieldFocused {
+        form_key: "f1".into(),
+        field_key: "a1".into(),
+        rect: FieldRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        password_rules: None,
+    }));
+    let menu = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::FillMenu(m) if !m.loading => Some(m.clone()),
+            _ => None,
+        })
+    };
+    eventually("the merged menu", || {
+        menu().is_some_and(|m| m.items.len() == 2)
+    });
+    let m = menu().expect("menu");
+    let me = m.items.iter().find(|i| i.subtitle == "me").expect("me");
+    assert_eq!(me.source, "mado");
+    assert_eq!(me.sources, ["mado", "onePassword"]);
+    let work = m.items.iter().find(|i| i.subtitle == "work").expect("work");
+    assert_eq!(
+        (work.source.as_str(), work.item_ref.as_str()),
+        ("onePassword", "onePassword:o2")
+    );
+    ask(
+        &core,
+        user,
+        Command::VaultFill {
+            tab_id: tab,
+            form_key: "f1".into(),
+            item_ref: work.item_ref.clone(),
+        },
+    )
+    .expect("filled");
+    let posted = || -> Option<serde_json::Value> {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .find(|(t, m)| *t == tab && m["type"] == "fill")
+            .map(|(_, m)| m["values"].clone())
+    };
+    eventually("filled from 1Password", || posted().is_some());
+    assert_eq!(posted().expect("values")["a2"], "op-o2");
+
+    // 1Password as the destination: a new login saves there.
+    set(
+        "vault.saveDestination.logins",
+        serde_json::json!("onePassword"),
+    );
+    send(PageMessage::CredentialsSubmitted(CredentialsSubmitted {
+        form_key: "f1".into(),
+        kind: FormKind::Login,
+        username: "new".into(),
+        password: "fresh".into(),
+    }));
+    send(PageMessage::Forms(Forms { forms: vec![] }));
+    let prompt = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::SavePassword { id, update, .. } => Some((*id, *update)),
+            _ => None,
+        })
+    };
+    eventually("the save prompt", || prompt().is_some());
+    let (id, update) = prompt().expect("prompt");
+    assert!(!update);
+    ask(
+        &core,
+        user,
+        Command::VaultSaveRespond {
+            prompt_id: id,
+            action: SaveAction::Save,
+            username: None,
+            password: None,
+        },
+    )
+    .expect("saved");
+    eventually("created in 1Password", || {
+        op.calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|c| {
+                c[1] == "create"
+                    && c.contains(&"username=new".to_owned())
+                    && c.contains(&"password=fresh".to_owned())
+            })
+    });
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {
