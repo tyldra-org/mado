@@ -18,8 +18,9 @@
 # - labeler: area labels by changed paths (.github/labeler.yml).
 # - contributors: reads .github/VOUCHED.td (github.com/mitchellh/vouch);
 #   closes issues and pull requests from denounced authors and labels pull
-#   requests "contributor: vouched" or "contributor: new". Collaborators and
-#   bots get no label. collaboration limited: set require-vouch to "true" on
+#   requests "contributor: vouched" or "contributor: new". It skips the
+#   owner, members, collaborators and bots. collaboration limited: set
+#   require-vouch to "true" on
 #   check-pr and add a template-file that says how to get vouched
 #   (references/trust-and-labels.md).
 name: pull-requests
@@ -171,7 +172,13 @@ jobs:
 
   contributors:
     name: contributors
-    if: github.event_name == 'issues' || github.event.action == 'opened' || github.event.action == 'reopened'
+    # Only outside authors: the owner, members, collaborators and bots are
+    # never denounced or labelled, so their issues and pull requests start
+    # no runner.
+    if: >-
+      (github.event_name == 'issues' || github.event.action == 'opened' || github.event.action == 'reopened') &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association || github.event.pull_request.author_association) &&
+      (github.event.issue.user.type || github.event.pull_request.user.type) != 'Bot'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
