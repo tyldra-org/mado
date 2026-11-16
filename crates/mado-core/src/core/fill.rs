@@ -3,11 +3,12 @@
 
 use std::collections::BTreeMap;
 
+use mado_engine::event::FrameInfo;
 use mado_engine::page::{
     DetectedField, DetectedForm, FieldClass, FieldFocused, FillDone, FormKind,
 };
 use mado_engine::tab::World;
-use mado_engine::{EngineOp, FrameInfo, TabCommand};
+use mado_engine::{EngineOp, TabCommand};
 use mado_types::command::Origin;
 use mado_types::patch::PatchRecorder;
 use mado_types::state::{FillMenuItem, FillMenuPrompt, PromptState, Rect, VaultStatus};
@@ -26,15 +27,15 @@ const FOLLOW_UP_MS: i64 = 60_000;
 
 /// Where a fill menu's values would go.
 #[derive(Debug, Clone)]
-pub(super) struct FillTarget {
-    pub tab: TabId,
-    pub frame: u64,
-    pub origin: String,
-    pub main: bool,
-    pub form_key: String,
-    pub kind: FormKind,
+pub struct FillTarget {
+    pub(super) tab: TabId,
+    pub(super) frame: u64,
+    pub(super) origin: String,
+    pub(super) main: bool,
+    pub(super) form_key: String,
+    pub(super) kind: FormKind,
     /// The page's site: the frame's, or the tab's for a payment frame.
-    pub site: String,
+    pub(super) site: String,
 }
 
 /// What the core remembers between fills on one tab.
@@ -254,8 +255,11 @@ impl Core {
         };
         let top_site = site(&tab_url);
         let frame_site = site(&frame.origin);
+        // Subframes: the top frame's own origin, or a payment provider's
+        // frame for card fields (11 §4.1 step 2, §12 check 1).
+        let top_origin = url::Url::parse(&tab_url).map(|u| u.origin().ascii_serialization());
         let allowed = frame.is_main_frame
-            || (frame_site.is_some() && frame_site == top_site)
+            || top_origin.as_deref() == Ok(frame.origin.as_str())
             || (is_card(field.class) && mado_lists::payment_frames().allows(&frame.origin));
         if !allowed {
             tracing::debug!(origin = %frame.origin, "a fill menu refused in a cross-site frame");
@@ -275,7 +279,7 @@ impl Core {
             .state
             .windows
             .get(&window_id)
-            .and_then(|w| w.content_rect.clone())
+            .and_then(|w| w.content_rect)
             .unwrap_or_default();
         // Subframes report rectangles in their own viewport, whose place in
         // the page Mado does not know: anchor at the page's corner.
@@ -377,7 +381,7 @@ impl Core {
             .prompts
             .values()
             .filter_map(|p| match p {
-                PromptState::FillMenu(m) if m.locked => Some((m.id, m.window_id, m.rect.clone())),
+                PromptState::FillMenu(m) if m.locked => Some((m.id, m.window_id, m.rect)),
                 _ => None,
             })
             .collect();
@@ -568,7 +572,7 @@ impl Core {
                 .state
                 .windows
                 .get(&window_id)
-                .and_then(|w| w.content_rect.clone())
+                .and_then(|w| w.content_rect)
                 .unwrap_or_default();
             let rect = Rect {
                 x: content.x + field.rect.x,

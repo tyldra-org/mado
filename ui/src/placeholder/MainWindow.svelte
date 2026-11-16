@@ -13,6 +13,7 @@
   import BookmarksBar from "./BookmarksBar.svelte";
   import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
+  import FillMenu from "./FillMenu.svelte";
   import FindBar from "./FindBar.svelte";
   import FirstRun from "./FirstRun.svelte";
   import Notices from "./Notices.svelte";
@@ -88,6 +89,7 @@
     <UnresponsivePrompt {store} {windowId} />
     <SafariPrompt {store} {windowId} />
     <PermissionPrompt {store} {windowId} />
+    <FillMenu {store} {windowId} />
     <AppLinkPrompt {store} {windowId} />
     <ExtensionInstallPrompt {store} {windowId} />
     <OverlapPrompt {store} />

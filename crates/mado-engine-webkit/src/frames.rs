@@ -12,8 +12,10 @@ use objc2_web_kit::WKFrameInfo;
 
 const PER_TAB: usize = 64;
 
+type Handles = HashMap<TabId, VecDeque<(u64, Retained<WKFrameInfo>)>>;
+
 thread_local! {
-    static FRAMES: RefCell<HashMap<TabId, VecDeque<(u64, Retained<WKFrameInfo>)>>> = RefCell::new(HashMap::new());
+    static FRAMES: RefCell<Handles> = RefCell::new(HashMap::new());
     static NEXT: Cell<u64> = const { Cell::new(1) };
 }
 

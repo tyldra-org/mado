@@ -15,7 +15,7 @@ path = "src/main.rs"
 [features]
 # Test-only hooks (spec 16 §3) and end-to-end access through the control
 # endpoint. Never in release builds.
-test-hooks = ["mado-core/test-hooks"]
+test-hooks = ["mado-core/test-hooks", "mado-vault/testing"]
 
 [lints]
 workspace = true
@@ -31,6 +31,7 @@ mado-platform = { version = "0.0.0", path = "../crates/mado-platform" }
 mado-settings = { version = "0.0.0", path = "../crates/mado-settings" }
 mado-storage = { version = "0.0.0", path = "../crates/mado-storage" }
 mado-types = { version = "0.0.0", path = "../crates/mado-types" }
+mado-vault = { version = "0.0.0", path = "../crates/mado-vault" }
 objc2 = "0.6.5"
 objc2-app-kit = "0.3.2"
 rusqlite = "0.42.0"

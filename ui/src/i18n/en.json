@@ -970,5 +970,11 @@
   "error.vault.notAllowed": "Only Mado's own windows can use passwords.",
   "error.vault.unavailable": "Passwords aren't available in this window.",
   "error.vault.badItem": "That item isn't valid: {reason}",
-  "error.vault.failed": "Mado Passwords couldn't finish that."
+  "error.vault.failed": "Mado Passwords couldn't finish that.",
+  "fill.menu": "Fill from Mado Passwords",
+  "fill.unlock": "Unlock to fill",
+  "fill.loading": "Looking for passwords…",
+  "fill.none": "No saved items for this site",
+  "error.vault.noGesture": "Click the field again to fill it.",
+  "error.vault.noForm": "That form is no longer on the page."
 }

@@ -97,6 +97,8 @@ export class Mado {
       MADO_DATA_DIR: this.dir,
       MADO_TEST_TOKEN: this.token,
       MADO_TEST_HEADLESS: "1",
+      // Mado Passwords without Touch ID (spec 16 §3).
+      MADO_TEST_SOFT_ENCLAVE: "1",
       // A fixture host treated as HSTS-preloaded (spec 08 §12 check 2).
       MADO_HSTS_HOSTS: "hsts.mado.test",
       ...(audit

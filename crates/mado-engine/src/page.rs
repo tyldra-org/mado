@@ -492,6 +492,7 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::DrmFailed(d) => d.key_system.as_deref().is_none_or(|k| k.len() <= 128),
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
+        PageMessage::FillDone(d) => d.form_key.len() <= 64,
         PageMessage::FieldFocused(f) => {
             let key =
                 |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());

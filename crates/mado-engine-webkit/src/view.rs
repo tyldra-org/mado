@@ -630,8 +630,13 @@ pub fn synthesize_click(
         .window()
         .ok_or_else(|| EngineError::Failed("the tab is not in a window".into()))?;
     let bounds = view.bounds();
+    // SAFETY: a property read on the main thread.
+    let insets = unsafe { view.obscuredContentInsets() };
+    // `y` is in the page's viewport, which starts below the obscured top
+    // inset (the title bar over a full-size content view).
+    let y = y + insets.top;
     let local = objc2_foundation::NSPoint::new(
-        x,
+        x + insets.left,
         if view.isFlipped() {
             y
         } else {
