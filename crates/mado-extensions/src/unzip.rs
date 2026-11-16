@@ -95,20 +95,9 @@ fn unzip_with(
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
-
-    /// A ZIP of `(name, contents)`.
-    pub(crate) fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-        for (name, body) in entries {
-            w.start_file(*name, options).expect("start");
-            w.write_all(body).expect("write");
-        }
-        w.finish().expect("finish").into_inner()
-    }
+    use crate::fixtures::zip_of;
 
     #[test]
     fn a_package_unpacks_and_cannot_escape_or_explode() {

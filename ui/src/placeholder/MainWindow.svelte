@@ -7,6 +7,7 @@
   import { t } from "../i18n";
   import AddressBar from "./AddressBar.svelte";
   import AppLinkPrompt from "./AppLinkPrompt.svelte";
+  import ExtensionInstallPrompt from "./ExtensionInstallPrompt.svelte";
   import BookmarksBar from "./BookmarksBar.svelte";
   import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
@@ -85,6 +86,7 @@
     <SafariPrompt {store} {windowId} />
     <PermissionPrompt {store} {windowId} />
     <AppLinkPrompt {store} {windowId} />
+    <ExtensionInstallPrompt {store} {windowId} />
     <DialogSheet {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}>

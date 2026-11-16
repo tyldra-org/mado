@@ -32,6 +32,7 @@ impl Kind {
             Self::Profile => &[
                 include_str!("../migrations/profile/0001_initial.sql"),
                 include_str!("../migrations/profile/0002_imported_extensions.sql"),
+                include_str!("../migrations/profile/0003_unpacked_extensions.sql"),
             ],
             Self::Vault => &[include_str!("../migrations/vault/0001_initial.sql")],
         }

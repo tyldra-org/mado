@@ -146,7 +146,6 @@ empty_payloads!(
     NotificationRequest,
     CosmeticClasses,
     PickerResult,
-    StoreInstall,
     AiSnapshot,
     AiText,
     AiActionResult,
@@ -214,6 +213,17 @@ pub struct ProtocolHandlerRegister {
 #[serde(deny_unknown_fields)]
 pub struct OpenSearch {
     pub href: String,
+}
+
+/// `store`: "Add to Mado" or "Remove from Mado" on a Chrome Web Store
+/// detail page (spec 09 §2.1). Only the ID is trusted, and only after the
+/// core checks it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoreInstall {
+    pub id: String,
+    #[serde(default)]
+    pub remove: bool,
 }
 
 /// `apple-pay`: a checkout asked whether Apple Pay works (spec 07 §9).
@@ -409,6 +419,10 @@ const GEOLOCATION: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/geolocation.js"
 ));
+const STORE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/store.js"
+));
 const APPLE_PAY: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/apple-pay.js"
@@ -490,6 +504,7 @@ pub fn bundled(geolocation_shim: bool) -> crate::PageScriptSet {
             PROTOCOL_HANDLERS,
         ),
         s("apple-pay", Page, DocumentStart, true, APPLE_PAY),
+        s("store", Mado, DocumentEnd, true, STORE),
     ];
     if geolocation_shim {
         scripts.push(s("geolocation", Page, DocumentStart, true, GEOLOCATION));
@@ -680,7 +695,8 @@ mod tests {
                 "internal",
                 "notifications",
                 "protocol-handlers",
-                "apple-pay"
+                "apple-pay",
+                "store"
             ]
         );
         assert!(set.scripts.iter().all(|s| !s.source.is_empty()));

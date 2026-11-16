@@ -203,6 +203,31 @@ pub enum NavSource {
     Agent,
 }
 
+/// Where an extension comes from (spec 09 §2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ExtensionSource {
+    Store,
+    /// A folder, loaded in place (Developer mode).
+    Unpacked,
+    /// A `.crx` file (Developer mode).
+    CrxFile,
+    /// A `.zip` file, unpacked into the profile (Developer mode).
+    Zip,
+}
+
+impl ExtensionSource {
+    /// The `extensions.source` column.
+    pub fn column(self) -> &'static str {
+        match self {
+            Self::Store => "store",
+            Self::Unpacked | Self::Zip => "unpacked",
+            Self::CrxFile => "crx_file",
+        }
+    }
+}
+
 /// An answer to a permission prompt (spec 07 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -807,6 +832,23 @@ pub enum Command {
     /// from Mado's own windows.
     #[serde(rename = "app.setDefaultBrowser")]
     AppSetDefaultBrowser,
+    // Extensions (spec 09). Protected: only Mado's own windows.
+    /// Installs from the Chrome Web Store (`id`), or in Developer mode from
+    /// a folder, a `.crx` or a `.zip` (`path`). Shows the install prompt.
+    #[serde(rename = "extension.install", rename_all = "camelCase")]
+    ExtensionInstall {
+        #[serde(default)]
+        id: Option<crate::ExtensionId>,
+        source: ExtensionSource,
+        #[serde(default)]
+        path: Option<String>,
+    },
+    /// Answers the install prompt: Add or Cancel.
+    #[serde(rename = "extension.confirmInstall", rename_all = "camelCase")]
+    ExtensionConfirmInstall {
+        prompt_id: crate::PromptId,
+        add: bool,
+    },
     /// Opens the macOS privacy pane for `pane` (`camera`, `microphone`,
     /// `location`, `screen`, `speechRecognition`).
     #[serde(rename = "app.openSystemSettings", rename_all = "camelCase")]
@@ -985,6 +1027,9 @@ impl Command {
             | Self::AppFinishFirstRun
             | Self::AppDefaultBrowser
             | Self::AppSetDefaultBrowser => CommandFamily::App,
+            Self::ExtensionInstall { .. } | Self::ExtensionConfirmInstall { .. } => {
+                CommandFamily::Extension
+            }
             Self::ProfileList
             | Self::ProfileCreate { .. }
             | Self::ProfileUpdate { .. }
@@ -1123,6 +1168,8 @@ impl Command {
             Self::AppFinishFirstRun => "app.finishFirstRun",
             Self::AppDefaultBrowser => "app.defaultBrowser",
             Self::AppSetDefaultBrowser => "app.setDefaultBrowser",
+            Self::ExtensionInstall { .. } => "extension.install",
+            Self::ExtensionConfirmInstall { .. } => "extension.confirmInstall",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
             Self::ProfileUpdate { .. } => "profile.update",

@@ -6,6 +6,7 @@ mod clear;
 mod dialogs;
 mod dl;
 mod errors;
+mod extensions;
 mod import;
 mod internal;
 mod lists;
@@ -43,6 +44,7 @@ use crate::tabs::{ClosedEntry, Model};
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
 use crate::ui::{UiSink, Updates};
+pub use extensions::ExtensionsConfig;
 pub use lists::ListsConfig;
 use session::CloseAction;
 pub use session::Power;
@@ -90,6 +92,12 @@ pub enum Internal {
     VisitRecorded { tab: TabId, visit: i64 },
     /// A bookmark change was written.
     BookmarksChanged,
+    /// An extension package was verified and unpacked, or refused (spec 09
+    /// §2.2), with the window it was asked from.
+    ExtensionStaged {
+        result: Result<Box<extensions::Staged>, &'static str>,
+        window: Option<WindowId>,
+    },
     /// The last good copies of the signed lists were read (spec 09 §7).
     ListsLoaded(Vec<mado_lists::List>),
     /// The daily lists fetch finished.
@@ -271,6 +279,8 @@ pub struct CoreConfig {
     pub captive_probe: Option<String>,
     /// The signed lists' fetch (spec 09 §7); `None` turns it off.
     pub lists: Option<ListsConfig>,
+    /// Extensions (spec 09); `None` for private and guest profiles.
+    pub extensions: Option<ExtensionsConfig>,
     /// macOS privacy permissions (spec 07 §4); tests pass fakes.
     pub os: OsPermissions,
     /// The app's profiles (spec 12 §1).
@@ -448,6 +458,9 @@ pub struct Core {
     continue_once: std::collections::BTreeSet<String>,
     captive_probe: Option<String>,
     lists: Option<ListsConfig>,
+    extensions: Option<ExtensionsConfig>,
+    /// Packages waiting for their install prompt's answer.
+    extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
     os: OsPermissions,
     profiles: std::sync::Arc<dyn crate::ui::Profiles>,
     /// The profile's search engines (spec 05 §3).
@@ -693,6 +706,8 @@ impl Core {
             continue_once: std::collections::BTreeSet::new(),
             captive_probe: config.captive_probe.clone(),
             lists: config.lists.clone(),
+            extensions: config.extensions.clone(),
+            extension_installs: BTreeMap::new(),
             os: config.os,
             profiles: std::sync::Arc::clone(&config.profiles),
             engines,
@@ -742,7 +757,32 @@ impl Core {
         core.timers
             .schedule(Timer::AutoRevoke, std::time::Duration::from_secs(600));
         core.load_lists();
+        core.load_extensions();
         core
+    }
+
+    /// The installed extensions, before the first revision.
+    fn load_extensions(&mut self) {
+        if self.extensions.is_none() || self.state.profile.is_private {
+            return;
+        }
+        let rows = self
+            .profile_db
+            .readers()
+            .read(extensions::load)
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "the extensions could not be read");
+                Vec::new()
+            });
+        let mut ext = self.state.extensions.clone();
+        for (installed, pinned) in rows {
+            if pinned {
+                ext.pinned.push(installed.id.clone());
+            }
+            ext.installed.push(installed);
+        }
+        let mut rec = PatchRecorder::new();
+        self.state.tx(&mut rec).set_extensions(ext);
     }
 
     /// Fills `state.settings`, `state.features` and the mirrors of
@@ -1151,6 +1191,9 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            cmd @ (Command::ExtensionInstall { .. } | Command::ExtensionConfirmInstall { .. }) => {
+                self.extension_command(origin, cmd, rec)
+            }
             cmd @ (Command::AppDefaultBrowser | Command::AppSetDefaultBrowser) => {
                 if matches!(cmd, Command::AppSetDefaultBrowser) && !origin.is_user() {
                     return Err(MadoError::new(ErrorCode::Protected, "error.app.notAllowed"));
@@ -1280,6 +1323,9 @@ impl Core {
             Internal::RemoteSuggestions { window, payload } => self.ui.suggest(window, &payload),
             Internal::CaptivePortal { tab, url, portal } => self.captive_portal(tab, url, portal),
             Internal::ListsLoaded(updated) => self.lists_loaded(&updated, rec),
+            Internal::ExtensionStaged { result, window } => {
+                self.extension_staged(result, window, rec);
+            }
             Internal::ListsFetched(fetched) => self.lists_fetched(fetched, rec),
             Internal::EngineDiscovered(engine) => self.engine_discovered(engine),
             Internal::ProfileChanged(info) => self.profile_changed(info, rec),

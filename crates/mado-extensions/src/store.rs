@@ -150,6 +150,7 @@ mod tests {
             crate::Expect {
                 id: Some(id),
                 from_store: true,
+                extra_publishers: &[],
             },
         )
         .expect("verifies");

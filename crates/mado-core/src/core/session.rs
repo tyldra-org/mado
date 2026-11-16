@@ -81,7 +81,7 @@ fn security_of(url: &str, engine: Option<&EngineSecurity>) -> SecurityLevel {
 }
 
 impl Core {
-    fn setting(&self, key: &str) -> Value {
+    pub(super) fn setting(&self, key: &str) -> Value {
         self.settings.value(lookup_def(key))
     }
 
@@ -1445,6 +1445,7 @@ impl Core {
                 }
                 if matches!(event, EngineEvent::NavigationFinished { .. }) {
                     self.reader_probe(tab);
+                    self.store_page_loaded(tab);
                 }
             }
             EngineEvent::TitleChanged { tab, title } => {
