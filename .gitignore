@@ -35,3 +35,10 @@ Thumbs.db
 
 # Local profile data used while developing.
 /.mado-dev/
+
+# cargo-fuzz output and its own lock file.
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/
+/fuzz/Cargo.lock

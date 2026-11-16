@@ -26,6 +26,8 @@ members = [
     "crates/mado-cli",
     "crates/mado-platform",
 ]
+# Built with nightly Rust and cargo-fuzz only (fuzz/README.md).
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.0.0"

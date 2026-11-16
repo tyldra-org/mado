@@ -1,0 +1,24 @@
+# Fuzz targets (spec 16 §1), outside the workspace because they build only
+# with nightly Rust and cargo-fuzz. See README.md.
+[package]
+name = "mado-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mado-extensions = { path = "../crates/mado-extensions" }
+
+[[bin]]
+name = "crx_header"
+path = "fuzz_targets/crx_header.rs"
+test = false
+doc = false
+bench = false

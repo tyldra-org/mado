@@ -139,6 +139,10 @@ describe("classify", () => {
 
   test("a signed list runs every crate's tests, which read the bundled copies", () => {
     expect(classify(["lists/compat.json"])).toMatchObject({ full: false, rust: true, ts: false });
+    expect(classify(["fuzz/fuzz_targets/crx_header.rs"])).toMatchObject({
+      full: false,
+      rust: false,
+    });
   });
 
   test("the CI wiring itself runs everything", () => {
