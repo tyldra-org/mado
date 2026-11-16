@@ -2768,8 +2768,10 @@ dependencies = [
  "objc2-foundation",
  "security-framework",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

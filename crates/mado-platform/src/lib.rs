@@ -11,6 +11,7 @@ pub mod dock;
 pub mod files;
 pub mod keychain;
 pub mod login;
+pub mod native_messaging;
 pub mod notify;
 mod objc;
 pub mod paths;
