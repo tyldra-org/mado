@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 data-encoding = "2.11.1"
+getrandom = "0.4.3"
 hmac = "0.13.0"
 sha1 = "0.11.0"
 sha2 = "0.11.1"

@@ -976,5 +976,15 @@
   "fill.loading": "Looking for passwords…",
   "fill.none": "No saved items for this site",
   "error.vault.noGesture": "Click the field again to fill it.",
-  "error.vault.noForm": "That form is no longer on the page."
+  "error.vault.noForm": "That form is no longer on the page.",
+  "fill.generate": "Use a strong password",
+  "prompt.save.title": "Save password for {site}?",
+  "prompt.save.update": "Update password for {site}?",
+  "prompt.save.username": "Username",
+  "prompt.save.password": "Password",
+  "prompt.save.save": "Save",
+  "prompt.save.updateButton": "Update",
+  "prompt.save.notNow": "Not now",
+  "prompt.save.never": "Never on this site",
+  "notice.passwordSaved": "Password saved for {site}"
 }

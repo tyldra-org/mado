@@ -137,7 +137,6 @@ macro_rules! empty_payloads {
 }
 
 empty_payloads!(
-    CredentialsSubmitted,
     WebauthnCreate,
     WebauthnGet,
     NotificationRequest,
@@ -242,6 +241,20 @@ pub struct FieldFocused {
     pub form_key: String,
     pub field_key: String,
     pub rect: FieldRect,
+    /// The field's `passwordrules` attribute (spec 11 §5), for the
+    /// generator.
+    #[serde(default)]
+    pub password_rules: Option<String>,
+}
+
+/// `forms`: a form was submitted with these values (spec 11 §5 step 1).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CredentialsSubmitted {
+    pub form_key: String,
+    pub kind: FormKind,
+    pub username: String,
+    pub password: String,
 }
 
 /// `forms`: how many fields a fill set (spec 11 §4.2).
@@ -493,11 +506,18 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
         PageMessage::FillDone(d) => d.form_key.len() <= 64,
+        PageMessage::CredentialsSubmitted(c) => {
+            c.form_key.len() <= 64
+                && (c.kind == FormKind::UsernameOnly || !c.password.is_empty())
+                && c.password.len() <= 1024
+                && c.username.len() <= 1024
+        }
         PageMessage::FieldFocused(f) => {
             let key =
                 |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());
             key(&f.form_key)
                 && key(&f.field_key)
+                && opt(&f.password_rules)
                 && [f.rect.x, f.rect.y, f.rect.width, f.rect.height]
                     .iter()
                     .all(|v| v.is_finite())

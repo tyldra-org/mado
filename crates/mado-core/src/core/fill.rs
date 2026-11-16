@@ -36,6 +36,8 @@ pub struct FillTarget {
     pub(super) kind: FormKind,
     /// The page's site: the frame's, or the tab's for a payment frame.
     pub(super) site: String,
+    /// The focused field's `passwordrules`, for the generator.
+    pub(super) rules: Option<String>,
 }
 
 /// What the core remembers between fills on one tab.
@@ -158,6 +160,19 @@ fn wants(kind: FormKind, item: &Item) -> bool {
         FormKind::Address => matches!(item, Item::Address(_)),
         FormKind::Identity => matches!(item, Item::Identity(_) | Item::Address(_)),
     }
+}
+
+/// The fill menu's "Use a strong password" entry (11 §5).
+pub(super) const GENERATE: &str = "generate:";
+
+fn generator_item(kind: FormKind) -> Option<FillMenuItem> {
+    matches!(kind, FormKind::Signup | FormKind::ChangePassword).then(|| FillMenuItem {
+        item_ref: GENERATE.into(),
+        title: String::new(),
+        subtitle: String::new(),
+        kind: "generate".into(),
+        source: "mado".into(),
+    })
 }
 
 fn menu_item(s: &Stored) -> FillMenuItem {
@@ -306,6 +321,7 @@ impl Core {
             form_key: form.form_key.clone(),
             kind: form.kind,
             site,
+            rules: f.password_rules.clone(),
         };
         self.open_fill_menu(window_id, target, rect, None, rec);
     }
@@ -336,7 +352,7 @@ impl Core {
                 rect,
                 locked,
                 loading: !locked,
-                items: Vec::new(),
+                items: generator_item(target.kind).into_iter().collect(),
             }),
         );
         self.state.tx(rec).set_prompts(prompts);
@@ -368,7 +384,12 @@ impl Core {
     ) {
         let mut prompts = self.state.prompts.clone();
         if let Some(PromptState::FillMenu(m)) = prompts.get_mut(&id) {
+            let kind = m.form_kind.clone();
             m.items = items;
+            if kind == "signup" || kind == "changePassword" {
+                m.items
+                    .insert(0, generator_item(FormKind::Signup).expect("an item"));
+            }
             m.loading = false;
             self.state.tx(rec).set_prompts(prompts);
         }
@@ -435,6 +456,9 @@ impl Core {
             .find(|t| t.tab == tab && t.form_key == form_key)
             .cloned()
             .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.vault.noForm"))?;
+        if item_ref == GENERATE {
+            return self.fill_generated(target, reply_to, rec);
+        }
         let id = item_ref
             .strip_prefix("mado:")
             .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.vault.notFound"))?
@@ -519,6 +543,43 @@ impl Core {
         }
     }
 
+    /// "Use a strong password": a new password honouring the field's
+    /// `passwordrules` goes into the form's new-password fields (and a
+    /// sign-up's password field), and is saved when the form succeeds.
+    fn fill_generated(
+        &mut self,
+        target: FillTarget,
+        reply_to: &mut Option<Reply>,
+        rec: &mut PatchRecorder,
+    ) -> Result<Value, MadoError> {
+        let form = self
+            .frame_forms(target.tab, &target.origin, target.main)
+            .and_then(|f| f.iter().find(|x| x.form_key == target.form_key))
+            .cloned()
+            .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.vault.noForm"))?;
+        let rules = mado_autofill::generator::parse_rules(target.rules.as_deref().unwrap_or(""));
+        let password = mado_autofill::generator::generate(&rules);
+        let values: BTreeMap<String, String> = form
+            .fields
+            .iter()
+            .filter(|f| f.visible)
+            .filter(|f| {
+                f.class == FieldClass::NewPassword
+                    || (target.kind == FormKind::Signup && f.class == FieldClass::Password)
+            })
+            .map(|f| (f.field_key.clone(), password.clone()))
+            .collect();
+        let filled = values.len();
+        self.close_fill_menus(target.tab, rec);
+        self.post_fill(&target, values);
+        self.generated
+            .insert(target.tab, (target.site.clone(), password, self.now()));
+        if let Some(r) = reply_to.take() {
+            let _ = r.send(Ok(json!({ "filled": filled })));
+        }
+        Ok(Value::Null)
+    }
+
     fn post_fill(&mut self, target: &FillTarget, values: BTreeMap<String, String>) {
         if values.is_empty() {
             return;
@@ -588,6 +649,7 @@ impl Core {
                 form_key: form.form_key.clone(),
                 kind: form.kind,
                 site: frame_site.clone(),
+                rules: None,
             };
             self.open_fill_menu(window_id, target, rect, Some(step.item), rec);
         }
@@ -606,6 +668,7 @@ impl Core {
                 form_key: form.form_key.clone(),
                 kind: form.kind,
                 site: frame_site,
+                rules: None,
             };
             let id = login.item;
             let _ = self.vault_job(None, move |c, _| {

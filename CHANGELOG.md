@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Extensions found when importing from another browser are offered in Settings › Extensions, and the store's button reads "Add to Mado", "Remove from Mado" or "Not available in Mado" without Chrome's label left beside it. An extension Mado doesn't support yet says so in its install prompt.
 - Mado Passwords has its vault: items are encrypted with a key that the Mac's Secure Enclave wraps and Touch ID unlocks, a recovery secret opens it on another Mac, it locks with the screen and after 15 minutes without use, and deleted items stay in Recently deleted for 30 days.
 - Mado Passwords fills sign-in, card, address and contact forms from a menu at the field you click: only visible fields in the page itself (or a payment provider's frame for cards), the password page of a two-step sign-in is offered the same login, and a saved two-factor code fills itself after signing in.
+- Mado Passwords offers to save a password after a sign-in that worked, or to update one that changed, with the username and password editable and "Never on this site"; sign-up and change-password forms offer a strong password that follows the site's rules and saves itself.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

@@ -429,6 +429,18 @@ pub enum PromptState {
     /// The fill menu at a form field (spec 11 §4.1), answered with
     /// `vault.fill` or dismissed with `prompt.dismiss`.
     FillMenu(FillMenuPrompt),
+    /// "Save password for <site>?" or, with `update`, "Update password"
+    /// (spec 11 §5), answered with `vault.saveRespond`. The password stays
+    /// in the core.
+    #[serde(rename_all = "camelCase")]
+    SavePassword {
+        id: PromptId,
+        window_id: WindowId,
+        tab_id: TabId,
+        site: String,
+        username: String,
+        update: bool,
+    },
     /// Quitting or closing a window would lose typed text (spec 04 §9).
     /// Answered with `session.confirmClose`; Show activates a listed tab.
     #[serde(rename_all = "camelCase")]

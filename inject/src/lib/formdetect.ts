@@ -235,8 +235,10 @@ function fixUp(fields: { el: Field; cls: FieldClass }[]): void {
   }
 }
 
-/** Every form in `doc`, with fields outside forms as one more. */
-export function detect(doc: Document): Detected[] {
+/** Every form in `doc`, with fields outside forms as one more. The kind
+ * reads only fields `shown` accepts (hidden honeypots and off-screen
+ * fields must not turn a login into a password change). */
+export function detect(doc: Document, shown: (el: Field) => boolean = () => true): Detected[] {
   const roots = new Map<HTMLFormElement | Document, Field[]>();
   for (const el of doc.querySelectorAll("input, select")) {
     if (!fillable(el) || el.disabled) continue;
@@ -249,7 +251,10 @@ export function detect(doc: Document): Detected[] {
   for (const [root, els] of roots) {
     const fields = els.map((el) => ({ el, cls: classifyField(el) }));
     fixUp(fields);
-    const kind = classifyForm(fields, root);
+    const kind = classifyForm(
+      fields.filter((f) => shown(f.el)),
+      root,
+    );
     if (kind) out.push({ root, kind, fields: fields.filter((f) => f.cls !== "unknown") });
   }
   return out;

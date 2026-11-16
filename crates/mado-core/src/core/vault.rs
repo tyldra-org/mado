@@ -50,6 +50,17 @@ pub enum VaultOutcome {
     Value(Value),
     /// A fill menu's items (spec 11 §4.1).
     MenuItems(mado_types::PromptId, Vec<mado_types::state::FillMenuItem>),
+    /// A login was saved (spec 11 §5); `changed` when anything was written.
+    Saved {
+        site: String,
+        changed: bool,
+    },
+    /// The save or update prompt should show.
+    OfferSave {
+        tab: mado_types::TabId,
+        save: Box<super::save::PendingSave>,
+        update: bool,
+    },
     /// An item resolved for `vault.fill` (spec 11 §4.2).
     Fill {
         target: Box<super::fill::FillTarget>,
@@ -235,6 +246,16 @@ impl Core {
                 Ok(secret.map_or(Value::Null, |s| json!({ "recoverySecret": s })))
             }
             Ok(VaultOutcome::Value(v)) => Ok(v),
+            Ok(VaultOutcome::Saved { site, changed }) => {
+                if changed {
+                    self.saved_notice(&site, rec);
+                }
+                Ok(Value::Null)
+            }
+            Ok(VaultOutcome::OfferSave { tab, save, update }) => {
+                self.offer_save(tab, *save, update, rec);
+                Ok(Value::Null)
+            }
             Ok(VaultOutcome::MenuItems(id, items)) => {
                 self.fill_menu_items(id, items, rec);
                 return;
@@ -300,6 +321,7 @@ impl Core {
                 form_key,
                 item_ref,
             } => self.vault_fill(origin, tab_id, &form_key, &item_ref, reply_to, rec),
+            cmd @ Command::VaultSaveRespond { .. } => self.save_respond(origin, cmd, reply_to, rec),
             Command::VaultLock => {
                 self.lock_vault(rec);
                 Ok(Value::Null)

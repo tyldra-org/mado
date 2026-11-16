@@ -25,6 +25,7 @@ mod nav;
 mod pages;
 mod profiles;
 mod reader;
+mod save;
 mod session;
 mod site;
 pub(crate) mod vault;
@@ -543,6 +544,14 @@ pub struct Core {
     two_step: BTreeMap<TabId, fill::FollowUp>,
     /// A login just filled, for the code step (11 §4.2 step 6).
     otp_after: BTreeMap<TabId, fill::FollowUp>,
+    /// A submitted login per tab, waiting for the next page (11 §5).
+    captures: BTreeMap<TabId, save::Capture>,
+    /// The username of a two-step sign-in's first page: site, name, time.
+    username_hints: BTreeMap<TabId, (String, String, i64)>,
+    /// A generated password per tab: site, password, time.
+    generated: BTreeMap<TabId, (String, String, i64)>,
+    /// What each open save prompt would store.
+    save_prompts: BTreeMap<PromptId, save::PendingSave>,
     /// Blocked counts not yet written.
     blocker_stats: blocker_stats::StatsBuffer,
     /// Recent reloads per tab, for "Page not working?".
@@ -832,6 +841,10 @@ impl Core {
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
             otp_after: BTreeMap::new(),
+            captures: BTreeMap::new(),
+            username_hints: BTreeMap::new(),
+            generated: BTreeMap::new(),
+            save_prompts: BTreeMap::new(),
             blocker_stats: blocker_stats::StatsBuffer::default(),
             reloads: BTreeMap::new(),
             extension_installs: BTreeMap::new(),

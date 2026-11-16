@@ -18,7 +18,7 @@ import type { WindowId } from "./WindowId";
  * prompts in 11, approvals in 13, pairing in 14, takeover and restore in
  * 04.
  */
-export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "unsavedText", id: PromptId, 
+export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "savePassword", id: PromptId, windowId: WindowId, tabId: TabId, site: string, username: string, update: boolean, } | { "type": "unsavedText", id: PromptId, 
 /**
  * The window being closed; `None` when quitting.
  */
