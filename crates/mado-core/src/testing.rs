@@ -138,6 +138,9 @@ impl crate::Updates for CountUpdates {
 pub static DEFAULT_BROWSER: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// The last native gesture the fake app reports, Unix ms (spec 11 §4.1).
+pub static GESTURE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
 thread_local! {
     /// The profile service the next `TestCore` on this thread uses.
     pub static PROFILES: std::cell::RefCell<std::sync::Arc<dyn crate::ui::Profiles>> =
@@ -285,6 +288,7 @@ impl TestCore {
                         DEFAULT_BROWSER.store(true, std::sync::atomic::Ordering::SeqCst);
                         Ok(())
                     },
+                    last_gesture: || GESTURE.load(std::sync::atomic::Ordering::SeqCst),
                 },
                 user_agent: mado_engine::UserAgent::EngineDefault,
                 clean_start,

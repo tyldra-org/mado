@@ -525,7 +525,10 @@ fn start_owner(
         }),
         extensions: (!(info.is_private || info.is_guest))
             .then(|| mado_core::ExtensionsConfig::store(owner.paths.extensions(id))),
-        os: mado_core::OsPermissions::system(),
+        os: mado_core::OsPermissions {
+            last_gesture: mado_engine_webkit::last_gesture,
+            ..mado_core::OsPermissions::system()
+        },
         hsts_extra: hsts_extra(),
         home: std::env::var_os("HOME")
             .map(std::path::PathBuf::from)

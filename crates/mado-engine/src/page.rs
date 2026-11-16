@@ -493,10 +493,13 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
         PageMessage::FieldFocused(f) => {
-            let key = |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());
+            let key =
+                |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());
             key(&f.form_key)
                 && key(&f.field_key)
-                && [f.rect.x, f.rect.y, f.rect.width, f.rect.height].iter().all(|v| v.is_finite())
+                && [f.rect.x, f.rect.y, f.rect.width, f.rect.height]
+                    .iter()
+                    .all(|v| v.is_finite())
         }
         PageMessage::Forms(f) => {
             let key =

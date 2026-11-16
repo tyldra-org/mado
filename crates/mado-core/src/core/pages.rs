@@ -145,7 +145,10 @@ impl Core {
                         forms: f.forms,
                     });
                 }
+                self.forms_followed_up(tab, frame, rec);
             }
+            PageMessage::FieldFocused(f) => self.field_focused(tab, frame, f, rec),
+            PageMessage::FillDone(d) => self.fill_done(tab, &d),
             // 07 §9: no Apple Pay in WKWebView here; offer Safari, once per
             // page (the DRM flag doubles as "already offered").
             PageMessage::CosmeticClasses(c) => self.cosmetic_classes(tab, c),
@@ -246,6 +249,7 @@ impl Core {
         self.context_targets.remove(&tab);
         self.drm_failed.remove(&tab);
         self.page_forms.remove(&tab);
+        self.close_fill_menus(tab, rec);
     }
 
     pub(super) fn forget_tab(&mut self, tab: TabId) {
@@ -259,6 +263,8 @@ impl Core {
         self.context_targets.remove(&tab);
         self.drm_failed.remove(&tab);
         self.page_forms.remove(&tab);
+        self.two_step.remove(&tab);
+        self.otp_after.remove(&tab);
     }
 
     /// Tab commands that act on the page (spec 01 §4.2).

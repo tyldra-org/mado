@@ -48,6 +48,14 @@ pub enum VaultOutcome {
     /// secret to show once.
     Keys(Arc<Keys>, Option<String>),
     Value(Value),
+    /// A fill menu's items (spec 11 §4.1).
+    MenuItems(mado_types::PromptId, Vec<mado_types::state::FillMenuItem>),
+    /// An item resolved for `vault.fill` (spec 11 §4.2).
+    Fill {
+        target: Box<super::fill::FillTarget>,
+        item: Box<Stored>,
+        reply: Option<Reply>,
+    },
 }
 
 pub(super) fn error(e: &VaultError) -> MadoError {
@@ -223,9 +231,23 @@ impl Core {
                     .unwrap_or(300_000);
                 self.vault_fill_until = now + window;
                 self.set_vault_status(VaultStatus::Unlocked, rec);
+                self.refresh_fill_menus(rec);
                 Ok(secret.map_or(Value::Null, |s| json!({ "recoverySecret": s })))
             }
             Ok(VaultOutcome::Value(v)) => Ok(v),
+            Ok(VaultOutcome::MenuItems(id, items)) => {
+                self.fill_menu_items(id, items, rec);
+                return;
+            }
+            Ok(VaultOutcome::Fill {
+                target,
+                item,
+                reply,
+            }) => {
+                let now = self.now();
+                self.fill_resolved(*target, *item, reply, now);
+                return;
+            }
             Err(e) => {
                 if !matches!(
                     e,
@@ -273,6 +295,11 @@ impl Core {
         let now = self.now();
         match cmd {
             Command::VaultStatus => Ok(json!({ "status": self.state.vault.status })),
+            Command::VaultFill {
+                tab_id,
+                form_key,
+                item_ref,
+            } => self.vault_fill(origin, tab_id, &form_key, &item_ref, reply_to, rec),
             Command::VaultLock => {
                 self.lock_vault(rec);
                 Ok(Value::Null)
