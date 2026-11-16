@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Contact us</title></head>
+<body>
+<form action="/contact" data-expect-kind="identity">
+  <label for="name">Your name</label><input id="name" name="name" data-expect="name" />
+  <label for="email">Email</label><input id="email" name="email" type="email" data-expect="email" />
+  <label for="tel">Phone</label><input id="tel" name="phone" data-expect="tel" />
+  <label for="msg">Message</label><textarea id="msg" name="message"></textarea>
+  <button type="submit">Send</button>
+</form>
+</body>
+</html>

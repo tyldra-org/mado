@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Shipping</title></head>
+<body>
+<form action="/checkout/shipping" data-expect-kind="address">
+  <h2>Shipping address</h2>
+  <select name="country" autocomplete="shipping country" data-expect="country"><option>United States</option></select>
+  <input name="firstName" placeholder="First name" autocomplete="shipping given-name" data-expect="givenName" />
+  <input name="lastName" placeholder="Last name" autocomplete="shipping family-name" data-expect="familyName" />
+  <input name="company" placeholder="Company (optional)" data-expect="organization" />
+  <input name="address1" placeholder="Address" autocomplete="shipping address-line1" data-expect="addressLine1" />
+  <input name="address2" placeholder="Apartment, suite, etc. (optional)" data-expect="addressLine2" />
+  <input name="city" placeholder="City" data-expect="city" />
+  <select name="zone" aria-label="State" data-expect="region"><option>CA</option></select>
+  <input name="postalCode" placeholder="ZIP code" data-expect="postalCode" />
+  <input name="phone" type="tel" placeholder="Phone" data-expect="tel" />
+  <button type="submit">Continue to shipping</button>
+</form>
+</body>
+</html>

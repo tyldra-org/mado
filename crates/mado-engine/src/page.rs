@@ -137,7 +137,6 @@ macro_rules! empty_payloads {
 }
 
 empty_payloads!(
-    Forms,
     FieldFocused,
     CredentialsSubmitted,
     FillDone,
@@ -156,6 +155,85 @@ empty_payloads!(
 pub struct Invoke {
     pub id: u64,
     pub command: Value,
+}
+
+/// `forms`: the frame's forms Mado could fill (spec 11 §3). Keys are the
+/// script's own random IDs; rectangles are in the frame's viewport.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Forms {
+    pub forms: Vec<DetectedForm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DetectedForm {
+    pub form_key: String,
+    pub kind: FormKind,
+    pub action: Option<String>,
+    pub fields: Vec<DetectedField>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FormKind {
+    Login,
+    UsernameOnly,
+    Signup,
+    ChangePassword,
+    Otp,
+    Card,
+    Address,
+    Identity,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DetectedField {
+    pub field_key: String,
+    pub class: FieldClass,
+    pub rect: FieldRect,
+    pub visible: bool,
+    pub in_viewport: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// A field's class (spec 11 §3), as `inject/src/lib/formdetect.ts` names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FieldClass {
+    Username,
+    Email,
+    Password,
+    NewPassword,
+    Otp,
+    CcName,
+    CcNumber,
+    CcExp,
+    CcExpMonth,
+    CcExpYear,
+    CcCsc,
+    GivenName,
+    FamilyName,
+    Name,
+    Organization,
+    AddressLine1,
+    AddressLine2,
+    AddressLine3,
+    City,
+    Region,
+    PostalCode,
+    Country,
+    Tel,
+    Bday,
 }
 
 /// `forms`: whether editable fields hold typed text (spec 04 §7, §9).
@@ -398,6 +476,22 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::DrmFailed(d) => d.key_system.as_deref().is_none_or(|k| k.len() <= 128),
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
+        PageMessage::Forms(f) => {
+            let key =
+                |k: &str| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_hexdigit());
+            let finite =
+                |r: &FieldRect| [r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite());
+            f.forms.len() <= 20
+                && f.forms.iter().all(|form| {
+                    key(&form.form_key)
+                        && opt(&form.action)
+                        && form.fields.len() <= 50
+                        && form
+                            .fields
+                            .iter()
+                            .all(|x| key(&x.field_key) && finite(&x.rect))
+                })
+        }
         _ => true,
     }
 }
@@ -642,6 +736,37 @@ mod tests {
         let b = Nonce::generate().expect("random");
         assert_ne!(a, b);
         assert_eq!(a.as_str().len(), 32);
+    }
+
+    /// `forms` (spec 11 §3): known classes and kinds only, hex keys, and
+    /// bounded counts.
+    #[test]
+    fn detected_forms_validate() {
+        let nonce = Nonce::generate().expect("nonce");
+        let msg = |payload: serde_json::Value| json!({ "v": 1, "nonce": nonce.as_str(), "script": "forms", "type": "forms", "payload": payload });
+        let field = |key: &str, class: &str| json!({ "fieldKey": key, "class": class, "rect": { "x": 1.0, "y": 2.0, "width": 200.0, "height": 30.0 }, "visible": true, "inViewport": true });
+        let form = |fields: Vec<serde_json::Value>| json!({ "forms": [{ "formKey": "a1b2", "kind": "login", "action": "https://a.example/session", "fields": fields }] });
+        let Ok(PageMessage::Forms(f)) = validate(
+            &msg(form(vec![field("c3", "username"), field("d4", "password")])),
+            &nonce,
+        ) else {
+            panic!("valid forms");
+        };
+        assert_eq!(f.forms[0].kind, FormKind::Login);
+        assert_eq!(f.forms[0].fields[1].class, FieldClass::Password);
+        for bad in [
+            form(vec![field("c3", "secretSauce")]),
+            form(vec![field("not hex", "username")]),
+            json!({ "forms": [{ "formKey": "a1", "kind": "bank", "action": null, "fields": [] }] }),
+            form(
+                (0..51)
+                    .map(|i| field(&format!("{i:x}"), "unknownClass"))
+                    .collect(),
+            ),
+            form((0..51).map(|i| field(&format!("{i:x}"), "email")).collect()),
+        ] {
+            assert!(validate(&msg(bad), &nonce).is_err());
+        }
     }
 
     #[test]

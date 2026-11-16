@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Pago</title></head>
+<body>
+<form action="/pago" data-expect-kind="card">
+  <label for="t">Número de tarjeta</label><input id="t" name="tarjeta" data-expect="ccNumber" />
+  <label for="n">Nombre del titular</label><input id="n" name="titular" data-expect="ccName" />
+  <label for="v">Fecha de vencimiento</label><input id="v" name="vencimiento" data-expect="ccExp" />
+  <label for="s">Código de seguridad</label><input id="s" name="cvc" data-expect="ccCsc" />
+  <button type="submit">Pagar</button>
+</form>
+</body>
+</html>

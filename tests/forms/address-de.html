@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Lieferadresse</title></head>
+<body>
+<form action="/kasse" data-expect-kind="address">
+  <label for="v">Vorname</label><input id="v" name="vorname" data-expect="givenName" />
+  <label for="n">Nachname</label><input id="n" name="nachname" data-expect="familyName" />
+  <label for="s">Straße und Hausnummer</label><input id="s" name="strasse" data-expect="addressLine1" />
+  <label for="z">Adresszusatz</label><input id="z" name="zusatz" data-expect="addressLine2" />
+  <label for="plz">PLZ</label><input id="plz" name="plz" data-expect="postalCode" />
+  <label for="o">Ort</label><input id="o" name="ort" data-expect="city" />
+  <label for="l">Land</label><select id="l" name="land" data-expect="country"><option>Deutschland</option></select>
+  <button type="submit">Weiter</button>
+</form>
+</body>
+</html>

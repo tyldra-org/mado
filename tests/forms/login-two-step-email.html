@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Sign in (step 1)</title></head>
+<body>
+<!-- Modelled on a two-step sign-in (Google, Microsoft): the identifier first. -->
+<form action="/signin/identifier" data-expect-kind="usernameOnly">
+  <h1>Sign in</h1>
+  <label for="identifierId">Email or phone</label>
+  <input id="identifierId" type="email" name="identifier" autocomplete="username" data-expect="username" />
+  <a href="/forgot">Forgot email?</a>
+  <button type="submit">Next</button>
+</form>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>お届け先</title></head>
+<body>
+<form action="/order/address" data-expect-kind="address">
+  <label for="a">氏名</label><input id="a" name="fullname" data-expect="name" />
+  <label for="b">郵便番号</label><input id="b" name="zip" data-expect="postalCode" />
+  <label for="c">都道府県</label><select id="c" name="pref" data-expect="region"><option>東京都</option></select>
+  <label for="d">市区町村</label><input id="d" name="city" data-expect="city" />
+  <label for="e">番地</label><input id="e" name="addr1" data-expect="addressLine1" />
+  <label for="f">建物名</label><input id="f" name="addr2" data-expect="addressLine2" />
+  <label for="g">電話番号</label><input id="g" name="tel" type="tel" data-expect="tel" />
+  <button type="submit">次へ</button>
+</form>
+</body>
+</html>
