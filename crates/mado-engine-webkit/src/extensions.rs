@@ -294,6 +294,33 @@ define_class!(
             completion.call((std::ptr::null_mut(), std::ptr::null_mut()));
         }
 
+        #[unsafe(method(webExtensionController:sendMessage:toApplicationWithIdentifier:forExtensionContext:replyHandler:))]
+        fn send_native(
+            &self,
+            _controller: &WKWebExtensionController,
+            message: &objc2::runtime::AnyObject,
+            application: Option<&NSString>,
+            context: &WKWebExtensionContext,
+            reply: &block2::DynBlock<dyn Fn(*mut objc2::runtime::AnyObject, *mut NSError)>,
+        ) {
+            native_send(message, application, context, reply.copy());
+        }
+
+        #[unsafe(method(webExtensionController:connectUsingMessagePort:forExtensionContext:completionHandler:))]
+        fn connect_native(
+            &self,
+            _controller: &WKWebExtensionController,
+            port: &objc2_web_kit::WKWebExtensionMessagePort,
+            context: &WKWebExtensionContext,
+            completion: &block2::DynBlock<dyn Fn(*mut NSError)>,
+        ) {
+            let error = native_connect(port, context).err();
+            match error {
+                Some(e) => completion.call((Retained::as_ptr(&e).cast_mut(),)),
+                None => completion.call((std::ptr::null_mut(),)),
+            }
+        }
+
         #[unsafe(method(webExtensionController:presentPopupForAction:forExtensionContext:completionHandler:))]
         fn present_popup(
             &self,
@@ -355,6 +382,7 @@ thread_local! {
 /// profiles get none.
 pub(crate) fn install(
     mtm: MainThreadMarker,
+    native_host_dirs: Vec<std::path::PathBuf>,
     profile: ProfileId,
     ephemeral: bool,
     store: &WKWebsiteDataStore,
@@ -379,6 +407,7 @@ pub(crate) fn install(
     // SAFETY: the delegate is retained by the host for the controller's life.
     unsafe { controller.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
     HOST_WINDOWS.with_borrow_mut(|f| *f = frame);
+    NATIVE_DIRS.with_borrow_mut(|d| *d = native_host_dirs);
     HOST.with_borrow_mut(|h| {
         *h = Some(Host {
             controller,
@@ -724,6 +753,160 @@ pub fn shown_popup_url() -> Option<String> {
             .and_then(|u| u.absoluteString())
             .map(|s| s.to_string())
     })
+}
+
+type NativeReply = RcBlock<dyn Fn(*mut objc2::runtime::AnyObject, *mut NSError)>;
+
+thread_local! {
+    static NATIVE_DIRS: RefCell<Vec<std::path::PathBuf>> = const { RefCell::new(Vec::new()) };
+    /// `sendNativeMessage` replies waiting for their host, by token.
+    static NATIVE_REPLIES: RefCell<BTreeMap<u64, NativeReply>> = const { RefCell::new(BTreeMap::new()) };
+    /// Open `connectNative` ports, by token.
+    static NATIVE_PORTS: RefCell<BTreeMap<u64, (Retained<objc2_web_kit::WKWebExtensionMessagePort>, mado_platform::native_messaging::Port)>> = const { RefCell::new(BTreeMap::new()) };
+    static NATIVE_NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(1) };
+}
+
+static NATIVE_LIMITS: std::sync::LazyLock<mado_platform::native_messaging::Limits> =
+    std::sync::LazyLock::new(Default::default);
+
+fn native_error(e: &mado_platform::native_messaging::NativeError) -> Retained<NSError> {
+    tracing::warn!(error = %e, "native messaging failed");
+    NSError::new(1, objc2_foundation::ns_string!("MadoNativeMessaging"))
+}
+
+fn native_host(
+    application: Option<&NSString>,
+    context: &WKWebExtensionContext,
+) -> Result<
+    (String, mado_platform::native_messaging::Host),
+    mado_platform::native_messaging::NativeError,
+> {
+    // SAFETY: a property of a loaded context.
+    let extension = unsafe { context.uniqueIdentifier() }.to_string();
+    let name = application.map(|a| a.to_string()).unwrap_or_default();
+    let host =
+        NATIVE_DIRS.with_borrow(|d| mado_platform::native_messaging::find(d, &name, &extension))?;
+    Ok((extension, host))
+}
+
+/// `runtime.sendNativeMessage` (09 §9.2): the host runs on its own thread
+/// and the reply comes back on the main thread.
+fn native_send(
+    message: &objc2::runtime::AnyObject,
+    application: Option<&NSString>,
+    context: &WKWebExtensionContext,
+    reply: NativeReply,
+) {
+    let (extension, host) = match native_host(application, context) {
+        Ok(h) => h,
+        Err(e) => {
+            reply.call((
+                std::ptr::null_mut(),
+                Retained::as_ptr(&native_error(&e)).cast_mut(),
+            ));
+            return;
+        }
+    };
+    let message = crate::convert::to_json(Some(message));
+    let token = NATIVE_NEXT.with(|n| {
+        let t = n.get();
+        n.set(t + 1);
+        t
+    });
+    NATIVE_REPLIES.with_borrow_mut(|r| r.insert(token, reply));
+    let Some(runner) = crate::delegate::main_runner() else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let result =
+            mado_platform::native_messaging::send_once(&NATIVE_LIMITS, &host, &extension, &message);
+        runner(Box::new(move || {
+            let Some(reply) = NATIVE_REPLIES.with_borrow_mut(|r| r.remove(&token)) else {
+                return;
+            };
+            match result.as_ref().map(crate::convert::from_json) {
+                Ok(Some(value)) => {
+                    reply.call((Retained::as_ptr(&value).cast_mut(), std::ptr::null_mut()))
+                }
+                Ok(None) => reply.call((std::ptr::null_mut(), std::ptr::null_mut())),
+                Err(e) => reply.call((
+                    std::ptr::null_mut(),
+                    Retained::as_ptr(&native_error(e)).cast_mut(),
+                )),
+            }
+        }));
+    });
+}
+
+/// `runtime.connectNative` (09 §9.2): one host per port; messages each
+/// way until either side closes, then the host is stopped.
+fn native_connect(
+    port: &objc2_web_kit::WKWebExtensionMessagePort,
+    context: &WKWebExtensionContext,
+) -> Result<(), Retained<NSError>> {
+    // SAFETY: a property of a live port.
+    let application = unsafe { port.applicationIdentifier() };
+    let (extension, host) =
+        native_host(application.as_deref(), context).map_err(|e| native_error(&e))?;
+    let token = NATIVE_NEXT.with(|n| {
+        let t = n.get();
+        n.set(t + 1);
+        t
+    });
+    let Some(runner) = crate::delegate::main_runner() else {
+        return Err(NSError::new(
+            2,
+            objc2_foundation::ns_string!("MadoNativeMessaging"),
+        ));
+    };
+    let native =
+        mado_platform::native_messaging::Port::open(&NATIVE_LIMITS, &host, &extension, move |m| {
+            runner(Box::new(move || {
+                let Some(port) =
+                    NATIVE_PORTS.with_borrow(|p| p.get(&token).map(|(port, _)| port.clone()))
+                else {
+                    return;
+                };
+                match m {
+                    // SAFETY: sending on a live port, on the main thread.
+                    Some(value) => unsafe {
+                        let value = crate::convert::from_json(&value);
+                        port.sendMessage_completionHandler(value.as_deref(), None);
+                    },
+                    None => {
+                        NATIVE_PORTS.with_borrow_mut(|p| p.remove(&token));
+                        // SAFETY: as above.
+                        unsafe { port.disconnect() };
+                    }
+                }
+            }));
+        })
+        .map_err(|e| native_error(&e))?;
+    let on_message = RcBlock::new(
+        move |message: *mut objc2::runtime::AnyObject, _e: *mut NSError| {
+            // SAFETY: WebKit hands a message object or null.
+            let value = crate::convert::to_json(unsafe { message.as_ref() });
+            NATIVE_PORTS.with_borrow(|p| {
+                if let Some((_, native)) = p.get(&token)
+                    && let Err(e) = native.send(&value)
+                {
+                    tracing::warn!(error = %e, "a native port message was not sent");
+                }
+            });
+        },
+    );
+    let on_disconnect = RcBlock::new(move |_e: *mut NSError| {
+        if let Some((_, native)) = NATIVE_PORTS.with_borrow_mut(|p| p.remove(&token)) {
+            native.close();
+        }
+    });
+    // SAFETY: setting a live port's handlers on the main thread.
+    unsafe {
+        port.setMessageHandler(Some(&on_message));
+        port.setDisconnectHandler(Some(&on_disconnect));
+    }
+    NATIVE_PORTS.with_borrow_mut(|p| p.insert(token, (objc2::Message::retain(port), native)));
+    Ok(())
 }
 
 fn context_of(id: &str) -> Option<Retained<WKWebExtensionContext>> {
