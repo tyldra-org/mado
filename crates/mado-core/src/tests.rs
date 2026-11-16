@@ -4335,3 +4335,273 @@ fn the_blocker_starts_with_the_bundled_easylist_and_custom_filters() {
     .expect("off");
     eventually("no rules", || rules().is_some_and(|r| r.lists.is_empty()));
 }
+
+/// M3-T06 (09 §6, §11): management commands, protection, the toolbar,
+/// popups, options pages and shortcut conflicts, on the fake engine.
+#[test]
+fn extensions_are_managed_and_shown_in_the_toolbar() {
+    use mado_types::state::SiteAccessMode;
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let folder = tempfile::tempdir().expect("dir");
+    std::fs::write(
+        folder.path().join("manifest.json"),
+        r#"{"name":"Mine","version":"1","manifest_version":3,"action":{"default_popup":"p.html"},
+            "options_page":"options.html","permissions":["storage"],"optional_permissions":["tabs"],
+            "host_permissions":["https://*.example/*"],
+            "commands":{"go":{"description":"Go","suggested_key":{"default":"Ctrl+Shift+Y"}}}}"#,
+    )
+    .expect("manifest");
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let token = || {
+        ask(
+            &core,
+            Origin::Settings,
+            Command::AppAuthenticate { reason: "t".into() },
+        )
+        .ok()
+        .and_then(|v| v["token"].as_str().map(str::to_owned))
+    };
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "extensions.developerMode".into(),
+            value: json!(true),
+            token: token(),
+        },
+    )
+    .expect("developer mode");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionInstall {
+            id: None,
+            source: mado_types::command::ExtensionSource::Unpacked,
+            path: Some(folder.path().to_string_lossy().into_owned()),
+        },
+    )
+    .expect("asked");
+    eventually("the prompt", || !state_of(&core).prompts.is_empty());
+    let prompt = *state_of(&core).prompts.keys().next().expect("prompt");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionConfirmInstall {
+            prompt_id: prompt,
+            add: true,
+        },
+    )
+    .expect("added");
+    let ext = state_of(&core).extensions.installed[0].clone();
+    let id = ext.id.clone();
+    assert_eq!(ext.optional, ["tabs"]);
+    assert_eq!(ext.shortcuts[0].keys.as_deref(), Some("Ctrl+Shift+Y"));
+    struct Seen {
+        extensions: Vec<mado_engine::ExtensionLoad>,
+        extension_ops: Vec<String>,
+    }
+    let engine = || {
+        let s = core.engine.lock().unwrap_or_else(|e| e.into_inner());
+        Seen {
+            extensions: s.extensions.clone(),
+            extension_ops: s.extension_ops.clone(),
+        }
+    };
+    eventually("loaded", || engine().extensions.len() == 1);
+
+    // Protected from control clients; allowed for Mado's windows.
+    let control = Origin::Control {
+        client: ClientId::new(),
+    };
+    let off = Command::ExtensionSetEnabled {
+        id: id.clone(),
+        enabled: false,
+    };
+    assert_eq!(
+        ask(&core, control, off.clone())
+            .expect_err("protected")
+            .code,
+        ErrorCode::Protected
+    );
+    ask(&core, Origin::Settings, off).expect("off");
+    eventually("unloaded", || engine().extensions.is_empty());
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionSetEnabled {
+            id: id.clone(),
+            enabled: true,
+        },
+    )
+    .expect("on");
+    eventually("loaded again", || engine().extensions.len() == 1);
+
+    // Site access on click loads no hosts; an optional permission adds.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionSetSiteAccess {
+            id: id.clone(),
+            mode: SiteAccessMode::OnClick,
+            hosts: None,
+        },
+    )
+    .expect("on click");
+    eventually("no hosts", || {
+        engine()
+            .extensions
+            .first()
+            .is_some_and(|e| e.hosts.is_empty())
+    });
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionGrantOptional {
+            id: id.clone(),
+            permissions: vec!["tabs".into()],
+        },
+    )
+    .expect("granted");
+    eventually("tabs", || {
+        engine()
+            .extensions
+            .first()
+            .is_some_and(|e| e.permissions.contains(&"tabs".into()))
+    });
+    let not_optional = ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionGrantOptional {
+            id: id.clone(),
+            permissions: vec!["history".into()],
+        },
+    );
+    assert_eq!(
+        not_optional.expect_err("not declared").code,
+        ErrorCode::InvalidInput
+    );
+
+    // Shortcuts: Mado's own is a conflict naming it.
+    let taken = ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionSetShortcut {
+            id: id.clone(),
+            command: "go".into(),
+            keys: Some("Cmd+T".into()),
+        },
+    )
+    .expect_err("taken");
+    assert_eq!(taken.code, ErrorCode::Conflict);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionSetShortcut {
+            id: id.clone(),
+            command: "go".into(),
+            keys: Some("Cmd+Shift+9".into()),
+        },
+    )
+    .expect("set");
+    assert!(
+        state_of(&core).extensions.installed[0].shortcuts[0]
+            .keys
+            .as_deref()
+            .is_some_and(|k| k.contains('9'))
+    );
+
+    // The toolbar follows the engine's actions for the active tab.
+    let tab = state_of(&core).windows[&w].active_tab_id.expect("tab");
+    core.page.send(mado_engine::EngineEvent::ExtensionActions {
+        tab,
+        actions: vec![mado_engine::ExtensionActionInfo {
+            id: id.to_string(),
+            label: "Mine!".into(),
+            badge: "3".into(),
+            icon: None,
+            has_popup: true,
+            enabled: true,
+        }],
+    });
+    eventually("the button", || {
+        state_of(&core)
+            .extensions
+            .toolbar
+            .first()
+            .is_some_and(|b| b.badge_text == "3" && b.has_popup)
+    });
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::ExtensionOpenPopup {
+            id: id.clone(),
+            window_id: w,
+            anchor: mado_types::state::Rect {
+                x: 1.0,
+                y: 2.0,
+                width: 20.0,
+                height: 20.0,
+            },
+        },
+    )
+    .expect("popup");
+    eventually("the action", || {
+        engine()
+            .extension_ops
+            .iter()
+            .any(|o| o.starts_with("Action("))
+    });
+
+    // Options open in a tab under the extension's base URL.
+    core.page.send(mado_engine::EngineEvent::ExtensionLoaded {
+        id: id.to_string(),
+        base_url: "webkit-extension://abc/".into(),
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionOpenOptions { id: id.clone() },
+    )
+    .expect("options");
+    eventually("the options tab", || {
+        state_of(&core)
+            .tabs
+            .values()
+            .any(|t| t.url == "webkit-extension://abc/options.html")
+    });
+    let errors = ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionErrors { id: id.clone() },
+    )
+    .expect("errors");
+    assert!(errors[0].as_str().is_some_and(|e| e.contains("no errors")));
+
+    // Pin, then remove.
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::ExtensionPin {
+            id: id.clone(),
+            pinned: false,
+        },
+    )
+    .expect("unpin");
+    assert!(state_of(&core).extensions.pinned.is_empty());
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionRemove {
+            id: id.clone(),
+            delete_data: true,
+        },
+    )
+    .expect("removed");
+    assert!(state_of(&core).extensions.installed.is_empty());
+    eventually("unloaded", || engine().extensions.is_empty());
+}

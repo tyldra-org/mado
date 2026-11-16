@@ -13,7 +13,10 @@ use mado_extensions::store::{MAX_PACKAGE, download};
 use mado_extensions::{Expect, Manifest, Refusal};
 use mado_types::command::{Command, ExtensionSource, Origin};
 use mado_types::patch::PatchRecorder;
-use mado_types::state::{ExtensionInstallPrompt, InstalledExtension, Notice, PromptState};
+use mado_types::state::{
+    ExtensionInstallPrompt, ExtensionShortcut, InstalledExtension, Notice, PromptState,
+    SiteAccessMode,
+};
 use mado_types::{ErrorCode, ExtensionId, MadoError, PromptId, TabId, WindowId};
 use rusqlite::params;
 use serde_json::{Value, json};
@@ -219,69 +222,173 @@ fn stage_local(path: &Path, source: ExtensionSource, dir: &Path) -> Result<Stage
     }
 }
 
-/// One `extensions` row (spec 03).
+/// What the core keeps about an installed extension besides its state.
+#[derive(Debug, Clone, Default)]
+pub struct ExtInfo {
+    /// Its files.
+    pub path: PathBuf,
+    /// Where its pages are, once loaded.
+    pub base_url: Option<String>,
+    pub options_page: Option<String>,
+    /// The hosts its manifest lists.
+    pub requested_hosts: Vec<String>,
+    /// It has a toolbar action.
+    pub has_action: bool,
+}
+
+/// One `extensions` row (spec 03), with its manifest read.
 pub(super) struct Row {
     pub installed: InstalledExtension,
     pub pinned: bool,
-    pub load: ExtensionLoad,
+    pub info: ExtInfo,
+}
+
+/// The installed state and core record of a manifest at `path`.
+pub(super) fn describe(
+    m: &Manifest,
+    path: PathBuf,
+    shortcuts: &[(String, Option<String>)],
+) -> (Vec<String>, Vec<ExtensionShortcut>, ExtInfo) {
+    let summary = m.summary(mado_extensions::manifest::SUPPORTED_PERMISSIONS);
+    let shortcuts = m
+        .commands
+        .iter()
+        .map(|(name, description, suggested)| ExtensionShortcut {
+            command: name.clone(),
+            description: description.clone(),
+            keys: shortcuts
+                .iter()
+                .find(|(c, _)| c == name)
+                .map_or_else(|| suggested.clone(), |(_, k)| k.clone()),
+        })
+        .collect();
+    let info = ExtInfo {
+        path,
+        base_url: None,
+        options_page: m.options_page.clone(),
+        requested_hosts: m.hosts.clone(),
+        has_action: m.has_action,
+    };
+    (summary.optional, shortcuts, info)
 }
 
 /// The `extensions` rows; files of store and `.crx` installs are in
 /// `<dir>/<id>/<version>/`.
 pub(super) fn load(conn: &rusqlite::Connection, dir: &Path) -> rusqlite::Result<Vec<Row>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, version, enabled, source, path, pinned, granted_permissions, granted_hosts
+        "SELECT id, name, version, enabled, source, path, pinned, granted_permissions, granted_hosts,
+                disabled_reason, site_access, private_allowed
          FROM extensions ORDER BY installed_at, id",
     )?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, bool>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, Option<String>>(5)?,
-            r.get::<_, bool>(6)?,
-            r.get::<_, String>(7)?,
-            r.get::<_, String>(8)?,
-        ))
-    })?;
-    let list = |s: &str| serde_json::from_str::<Vec<String>>(s).unwrap_or_default();
-    Ok(rows
+    type Raw = (
+        String,
+        String,
+        String,
+        bool,
+        String,
+        Option<String>,
+        bool,
+        String,
+        String,
+        Option<String>,
+        String,
+        bool,
+    );
+    let rows: Vec<Raw> = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+                r.get(11)?,
+            ))
+        })?
         .filter_map(Result::ok)
-        .filter_map(
-            |(id, name, version, enabled, source, path, pinned, perms, hosts)| {
-                let source = match (source.as_str(), &path) {
-                    ("store", _) => ExtensionSource::Store,
-                    ("crx_file", _) => ExtensionSource::CrxFile,
-                    (_, Some(p)) if p.contains("/Extensions/Unpacked/") => ExtensionSource::Zip,
-                    _ => ExtensionSource::Unpacked,
-                };
-                let files = path
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| dir.join(&id).join(&version));
-                Some(Row {
-                    load: ExtensionLoad {
-                        id: id.clone(),
-                        path: files,
-                        permissions: list(&perms),
-                        hosts: list(&hosts),
-                    },
-                    installed: InstalledExtension {
-                        id: id.parse().ok()?,
-                        name,
-                        version,
-                        enabled,
-                        source,
-                    },
-                    pinned,
-                })
+        .collect();
+    let mut keys =
+        conn.prepare("SELECT command, keys FROM extension_shortcuts WHERE extension_id = ?1")?;
+    let list = |s: &str| serde_json::from_str::<Vec<String>>(s).unwrap_or_default();
+    let mut out = Vec::new();
+    for (id, name, version, enabled, source, path, pinned, perms, hosts, reason, access, private) in
+        rows
+    {
+        let source = match (source.as_str(), &path) {
+            ("store", _) => ExtensionSource::Store,
+            ("crx_file", _) => ExtensionSource::CrxFile,
+            (_, Some(p)) if p.contains("/Extensions/Unpacked/") => ExtensionSource::Zip,
+            _ => ExtensionSource::Unpacked,
+        };
+        let files = path
+            .map(PathBuf::from)
+            .unwrap_or_else(|| dir.join(&id).join(&version));
+        let shortcuts: Vec<(String, Option<String>)> = keys
+            .query_map([&id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .filter_map(Result::ok)
+            .collect();
+        let manifest = Manifest::read(&files, "en").ok();
+        let (optional, shortcuts, info) = match &manifest {
+            Some(m) => describe(m, files.clone(), &shortcuts),
+            None => (
+                Vec::new(),
+                Vec::new(),
+                ExtInfo {
+                    path: files.clone(),
+                    ..ExtInfo::default()
+                },
+            ),
+        };
+        let Ok(ext_id) = id.parse() else { continue };
+        out.push(Row {
+            installed: InstalledExtension {
+                id: ext_id,
+                name,
+                version,
+                enabled,
+                source,
+                disabled_reason: reason,
+                site_access: SiteAccessMode::from_column(&access),
+                hosts: list(&hosts),
+                permissions: list(&perms),
+                optional,
+                private_allowed: private,
+                has_options: info.options_page.is_some(),
+                shortcuts,
             },
-        )
-        .collect())
+            pinned,
+            info,
+        });
+    }
+    Ok(out)
 }
 
 impl Core {
+    /// Loads an installed extension with what it was granted (spec 09 §5,
+    /// §6): no hosts while its site access is on click.
+    pub(super) fn load_installed(&mut self, e: &InstalledExtension) {
+        let Some(info) = self.extension_info.get(&e.id) else {
+            return;
+        };
+        let load = ExtensionLoad {
+            id: e.id.to_string(),
+            path: info.path.clone(),
+            permissions: e.permissions.clone(),
+            hosts: match e.site_access {
+                SiteAccessMode::OnClick => Vec::new(),
+                _ => e.hosts.clone(),
+            },
+            inspectable: self.setting("extensions.developerMode") == true,
+        };
+        self.load_extension(&e.id, load);
+    }
+
     /// Loads `id` in the engine (spec 09 §5), replacing a loaded version.
     pub(super) fn load_extension(&mut self, id: &ExtensionId, load: ExtensionLoad) {
         if self.extension_loads.contains_key(id) {
@@ -602,15 +709,11 @@ impl Core {
             }
         };
         let summary = m.summary(mado_extensions::manifest::SUPPORTED_PERMISSIONS);
-        let load = ExtensionLoad {
-            id: id.to_string(),
-            path: path
-                .clone()
-                .unwrap_or_else(|| dir.join(id.as_str()).join(&m.version)),
-            permissions: summary.permissions.clone(),
-            hosts: summary.hosts.clone(),
-        };
-        self.load_extension(&id, load);
+        let files = path
+            .clone()
+            .unwrap_or_else(|| dir.join(id.as_str()).join(&m.version));
+        let (optional, shortcuts, info) = describe(m, files, &[]);
+        self.extension_info.insert(id.clone(), info);
         let mut ext = self.state.extensions.clone();
         let pin = m.has_action
             && !ext.pinned.contains(&id)
@@ -622,15 +725,28 @@ impl Core {
             version: m.version.clone(),
             enabled: true,
             source: staged.source,
+            disabled_reason: None,
+            site_access: if summary.all_sites {
+                SiteAccessMode::All
+            } else {
+                SiteAccessMode::Specific
+            },
+            hosts: summary.hosts.clone(),
+            permissions: summary.permissions.clone(),
+            optional,
+            private_allowed: false,
+            has_options: m.options_page.is_some(),
+            shortcuts,
         };
         match ext.installed.iter_mut().find(|e| e.id == id) {
-            Some(e) => *e = entry,
-            None => ext.installed.push(entry),
+            Some(e) => *e = entry.clone(),
+            None => ext.installed.push(entry.clone()),
         }
         if pin {
             ext.pinned.push(id.clone());
         }
         self.state.tx(rec).set_extensions(ext);
+        self.load_installed(&entry);
         let now = self.now();
         let row = (
             id.to_string(),
@@ -665,12 +781,13 @@ impl Core {
 
     /// "Remove from Mado" on the store page: the row and Mado's copy of
     /// the files go.
-    fn remove_extension(&mut self, id: &ExtensionId, rec: &mut PatchRecorder) {
+    pub(super) fn remove_extension(&mut self, id: &ExtensionId, rec: &mut PatchRecorder) {
         let mut ext = self.state.extensions.clone();
         let Some(pos) = ext.installed.iter().position(|e| &e.id == id) else {
             return;
         };
         let removed = ext.installed.remove(pos);
+        self.extension_info.remove(id);
         if self.extension_loads.remove(id).is_some() {
             self.outbox.push(EngineOp::UnloadExtension(id.to_string()));
         }

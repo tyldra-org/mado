@@ -16,6 +16,7 @@ fn reads(page: InternalPage) -> &'static [&'static str] {
     match page {
         InternalPage::Downloads => &["downloads"],
         InternalPage::About => &["update", "about"],
+        InternalPage::Extensions => &["extensions"],
         _ => &[],
     }
 }

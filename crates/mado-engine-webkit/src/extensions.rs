@@ -30,8 +30,8 @@ use std::collections::BTreeMap;
 
 use block2::RcBlock;
 use mado_engine::{
-    Callback, EngineError, EngineEvent, ExtensionLoad, ExtensionTab, ExtensionWindow,
-    ExtensionWindows,
+    Callback, EngineError, EngineEvent, ExtensionActionInfo, ExtensionLoad, ExtensionOp,
+    ExtensionTab, ExtensionWindow, ExtensionWindows,
 };
 use mado_types::{ProfileId, TabId, WindowId};
 use objc2::rc::Retained;
@@ -39,12 +39,12 @@ use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_foundation::{NSArray, NSError, NSString, NSUInteger, NSURL, NSUUID};
 use objc2_web_kit::{
-    WKWebExtension, WKWebExtensionContext, WKWebExtensionContextPermissionStatus,
-    WKWebExtensionController, WKWebExtensionControllerConfiguration,
-    WKWebExtensionControllerDelegate, WKWebExtensionMatchPattern, WKWebExtensionTab,
-    WKWebExtensionTabChangedProperties, WKWebExtensionTabConfiguration, WKWebExtensionWindow,
-    WKWebExtensionWindowConfiguration, WKWebExtensionWindowState, WKWebExtensionWindowType,
-    WKWebView, WKWebsiteDataStore,
+    WKWebExtension, WKWebExtensionAction, WKWebExtensionContext,
+    WKWebExtensionContextPermissionStatus, WKWebExtensionController,
+    WKWebExtensionControllerConfiguration, WKWebExtensionControllerDelegate,
+    WKWebExtensionMatchPattern, WKWebExtensionTab, WKWebExtensionTabChangedProperties,
+    WKWebExtensionTabConfiguration, WKWebExtensionWindow, WKWebExtensionWindowConfiguration,
+    WKWebExtensionWindowState, WKWebExtensionWindowType, WKWebView, WKWebsiteDataStore,
 };
 
 struct Host {
@@ -294,6 +294,28 @@ define_class!(
             completion.call((std::ptr::null_mut(), std::ptr::null_mut()));
         }
 
+        #[unsafe(method(webExtensionController:presentPopupForAction:forExtensionContext:completionHandler:))]
+        fn present_popup(
+            &self,
+            _controller: &WKWebExtensionController,
+            action: &WKWebExtensionAction,
+            _context: &WKWebExtensionContext,
+            completion: &block2::DynBlock<dyn Fn(*mut NSError)>,
+        ) {
+            present(action);
+            completion.call((std::ptr::null_mut(),));
+        }
+
+        #[unsafe(method(webExtensionController:didUpdateAction:forExtensionContext:))]
+        fn did_update_action(
+            &self,
+            _controller: &WKWebExtensionController,
+            _action: &WKWebExtensionAction,
+            _context: &WKWebExtensionContext,
+        ) {
+            send_actions();
+        }
+
         #[unsafe(method(webExtensionController:openOptionsPageForExtensionContext:completionHandler:))]
         fn open_options(
             &self,
@@ -439,12 +461,23 @@ fn attach(
                 context.setPermissionStatus_forMatchPattern(granted, &pattern);
             }
         }
+        context.setInspectable(ext.inspectable);
         controller
             .loadExtensionContext_error(&context)
             .map_err(|e| EngineError::Failed(error_text(&e)))?;
         context
     };
+    // SAFETY: a property of a loaded context.
+    let base = unsafe { context.baseURL() }
+        .absoluteString()
+        .map(|s| s.to_string())
+        .unwrap_or_default();
     with(|h| h.contexts.insert(ext.id.clone(), context));
+    crate::delegate::send(EngineEvent::ExtensionLoaded {
+        id: ext.id.clone(),
+        base_url: base,
+    });
+    send_actions();
     Ok(())
 }
 
@@ -563,6 +596,203 @@ pub fn set_windows(next: ExtensionWindows) {
         if focused != old.windows.iter().find(|w| w.focused).map(|w| w.id) {
             let obj = focused.and_then(window_obj);
             controller.didFocusWindow(obj.as_deref());
+        }
+    }
+    let active = |c: &ExtensionWindows| c.windows.iter().find(|w| w.focused).and_then(|w| w.active);
+    if active(&next) != active(&old) {
+        send_actions();
+    }
+}
+
+thread_local! {
+    /// Where the next popup goes: the window and the clicked button.
+    static ANCHOR: RefCell<Option<(WindowId, mado_types::state::Rect)>> = const { RefCell::new(None) };
+}
+
+/// The focused window's active tab.
+fn active_tab() -> Option<TabId> {
+    with(|h| {
+        h.cache
+            .windows
+            .iter()
+            .find(|w| w.focused)
+            .and_then(|w| w.active)
+    })
+    .flatten()
+}
+
+fn png_url(image: &objc2_app_kit::NSImage) -> Option<String> {
+    use base64::Engine as _;
+    let tiff = image.TIFFRepresentation()?;
+    let rep = objc2_app_kit::NSBitmapImageRep::imageRepWithData(&tiff)?;
+    let props = objc2_foundation::NSDictionary::new();
+    // SAFETY: encoding a bitmap we hold.
+    let data = unsafe {
+        rep.representationUsingType_properties(objc2_app_kit::NSBitmapImageFileType::PNG, &props)
+    }?;
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(crate::convert::bytes(&data))
+    ))
+}
+
+/// Reports every extension's action on the focused window's active tab.
+fn send_actions() {
+    let Some(tab) = active_tab() else { return };
+    let Some(obj) = tab_obj(tab) else { return };
+    let contexts: Vec<(String, Retained<WKWebExtensionContext>)> = with(|h| {
+        h.contexts
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    })
+    .unwrap_or_default();
+    let actions = contexts
+        .iter()
+        .filter_map(|(id, context)| {
+            // SAFETY: WebKit objects on the main thread.
+            unsafe {
+                let action = context.actionForTab(Some(&obj))?;
+                let icon = action
+                    .iconForSize(objc2_foundation::NSSize::new(32.0, 32.0))
+                    .and_then(|i| png_url(&i));
+                Some(ExtensionActionInfo {
+                    id: id.clone(),
+                    label: action.label().to_string(),
+                    badge: action.badgeText().to_string(),
+                    icon,
+                    has_popup: action.presentsPopup(),
+                    enabled: action.isEnabled(),
+                })
+            }
+        })
+        .collect();
+    crate::delegate::send(EngineEvent::ExtensionActions { tab, actions });
+}
+
+/// Shows an action's popup in WebKit's popover under the clicked button
+/// (spec 09 §6). WebKit sizes it to its content within Chrome's limits.
+fn present(action: &WKWebExtensionAction) {
+    let anchor = ANCHOR.with_borrow_mut(Option::take);
+    // SAFETY: the action's popover, on the main thread.
+    let Some(popover) = (unsafe { action.popupPopover() }) else {
+        tracing::warn!("an extension popup has no popover");
+        return;
+    };
+    let window = anchor
+        .map(|(w, _)| w)
+        .or_else(|| with(|h| h.cache.windows.iter().find(|w| w.focused).map(|w| w.id)).flatten());
+    let Some(content) = window.and_then(|w| crate::with(|a| a.content(w)).flatten()) else {
+        return;
+    };
+    let rect = anchor.map_or_else(
+        || {
+            let b = content.bounds();
+            objc2_foundation::NSRect::new(
+                objc2_foundation::NSPoint::new(b.size.width - 40.0, b.size.height - 40.0),
+                objc2_foundation::NSSize::new(24.0, 24.0),
+            )
+        },
+        |(_, r)| crate::convert::frame_in(&content, r),
+    );
+    popover.showRelativeToRect_ofView_preferredEdge(
+        rect,
+        &content,
+        objc2_foundation::NSRectEdge::MinY,
+    );
+    // SAFETY: the action's popup web view, on the main thread.
+    let view = unsafe { action.popupWebView() };
+    tracing::info!(
+        shown = popover.isShown(),
+        has_view = view.is_some(),
+        "extension popup"
+    );
+    POPUPS.with_borrow_mut(|p| *p = view);
+}
+
+thread_local! {
+    /// The last popup's web view, for tests.
+    static POPUPS: RefCell<Option<Retained<WKWebView>>> = const { RefCell::new(None) };
+}
+
+/// The last popup's page URL, once it has one, for end-to-end tests.
+pub fn shown_popup_url() -> Option<String> {
+    POPUPS.with_borrow(|p| {
+        let web = p.as_ref()?;
+        // SAFETY: the URL of a live web view.
+        unsafe { web.URL() }
+            .and_then(|u| u.absoluteString())
+            .map(|s| s.to_string())
+    })
+}
+
+fn context_of(id: &str) -> Option<Retained<WKWebExtensionContext>> {
+    with(|h| h.contexts.get(id).cloned()).flatten()
+}
+
+/// A call from the core on one extension.
+pub fn run(op: ExtensionOp) {
+    match op {
+        ExtensionOp::Action {
+            id,
+            window,
+            tab,
+            anchor,
+        } => {
+            let Some(context) = context_of(&id) else {
+                return;
+            };
+            ANCHOR.with_borrow_mut(|a| *a = Some((window, anchor)));
+            let obj = tab_obj(tab);
+            // SAFETY: a loaded context and a tab object, on the main thread.
+            unsafe { context.performActionForTab(obj.as_deref()) };
+        }
+        ExtensionOp::Errors { id, reply } => {
+            let errors = context_of(&id)
+                .map(|c| {
+                    // SAFETY: a property of a loaded context.
+                    unsafe { c.errors() }
+                        .iter()
+                        .map(|e| error_text(&e))
+                        .collect()
+                })
+                .unwrap_or_default();
+            reply(errors);
+        }
+        ExtensionOp::DeleteData { id } => {
+            let (Some(context), Some(mtm)) = (context_of(&id), MainThreadMarker::new()) else {
+                return;
+            };
+            let Some(controller) = controller() else {
+                return;
+            };
+            // SAFETY: WebKit calls on the main thread; the blocks run there.
+            unsafe {
+                let types = WKWebExtensionController::allExtensionDataTypes(mtm);
+                let remover = controller.clone();
+                let kinds = types.clone();
+                let got = RcBlock::new(
+                    move |record: *mut objc2_web_kit::WKWebExtensionDataRecord| {
+                        let Some(record) = Retained::retain(record) else {
+                            return;
+                        };
+                        let records = NSArray::from_retained_slice(&[record]);
+                        let done = RcBlock::new(|| {});
+                        remover.removeDataOfTypes_fromDataRecords_completionHandler(
+                            &kinds, &records, &done,
+                        );
+                    },
+                );
+                controller.fetchDataRecordOfTypes_forExtensionContext_completionHandler(
+                    &types, &context, &got,
+                );
+            }
+        }
+        ExtensionOp::Inspectable { id, on } => {
+            if let Some(c) = context_of(&id) {
+                // SAFETY: as above.
+                unsafe { c.setInspectable(on) };
+            }
         }
     }
 }

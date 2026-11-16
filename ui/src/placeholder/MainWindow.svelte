@@ -8,6 +8,7 @@
   import AddressBar from "./AddressBar.svelte";
   import AppLinkPrompt from "./AppLinkPrompt.svelte";
   import ExtensionInstallPrompt from "./ExtensionInstallPrompt.svelte";
+  import ExtensionToolbar from "./ExtensionToolbar.svelte";
   import BookmarksBar from "./BookmarksBar.svelte";
   import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
@@ -78,6 +79,7 @@
     <TabStrip {store} {windowId} />
     <SiteInfo {store} {windowId} />
     <AddressBar {store} {windowId} />
+    <ExtensionToolbar {store} {windowId} />
     <BookmarksBar {store} {windowId} />
     <FindBar {store} {windowId} />
     <DownloadsBubble {store} />

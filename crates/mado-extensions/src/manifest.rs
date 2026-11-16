@@ -60,6 +60,8 @@ pub struct Manifest {
     /// until the files are read (09 §8).
     pub rule_resources: Vec<String>,
     pub minimum_chrome_version: Option<String>,
+    /// `commands`: name, description and suggested macOS keys.
+    pub commands: Vec<(String, String, Option<String>)>,
 }
 
 /// Why a package cannot be installed.
@@ -264,6 +266,25 @@ impl Manifest {
                 .filter_map(|r| r["path"].as_str().map(str::to_owned))
                 .collect(),
             minimum_chrome_version: m["minimum_chrome_version"].as_str().map(str::to_owned),
+            commands: m["commands"]
+                .as_object()
+                .map(|o| {
+                    o.iter()
+                        .map(|(name, c)| {
+                            let key = &c["suggested_key"];
+                            let keys = key["mac"].as_str().or_else(|| key["default"].as_str());
+                            (
+                                name.clone(),
+                                c["description"]
+                                    .as_str()
+                                    .map(|d| l.get(d))
+                                    .unwrap_or_default(),
+                                keys.map(str::to_owned),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 

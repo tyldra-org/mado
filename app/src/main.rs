@@ -380,10 +380,29 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
 
 /// The settings window: one per process, label `settings` (spec 06 §9).
 pub(crate) fn open_settings(app: &AppHandle) -> tauri::Result<()> {
+    open_settings_at(app, "")
+}
+
+/// The settings window at `section` (a settings section name), or where
+/// it was when `section` is empty.
+pub(crate) fn open_settings_at(app: &AppHandle, section: &str) -> tauri::Result<()> {
+    use tauri::Emitter as _;
+    let section: String = section
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
     if let Some(w) = app.get_webview_window("settings") {
+        if !section.is_empty() {
+            let _ = app.emit_to("settings", "mado://settings-section", section);
+        }
         return w.set_focus();
     }
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+    let page = if section.is_empty() {
+        "settings.html".to_owned()
+    } else {
+        format!("settings.html#{section}")
+    };
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(page.into()))
         .title("Settings")
         .inner_size(880.0, 640.0)
         .build()?;
@@ -715,6 +734,14 @@ fn test_access(
                         let _ = tx.send(tab.is_some_and(mado_engine_webkit::take_sheet));
                     });
                     return Ok(serde_json::json!(rx.await.unwrap_or(false)));
+                }
+                if method == "test.extensionPopup" {
+                    // The shown extension popup's URL (spec 09 §6).
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = app.run_on_main_thread(move || {
+                        let _ = tx.send(mado_engine_webkit::extensions::shown_popup_url());
+                    });
+                    return Ok(serde_json::json!(rx.await.ok().flatten()));
                 }
                 if method == "test.hasDataStore" {
                     return test_has_data_store(&app, &params).await;

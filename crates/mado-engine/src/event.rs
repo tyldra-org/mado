@@ -284,6 +284,16 @@ pub enum GoneReason {
 /// Everything the engine reports.
 #[derive(Debug)]
 pub enum EngineEvent {
+    /// An extension loaded; its pages are under `base_url`.
+    ExtensionLoaded {
+        id: String,
+        base_url: String,
+    },
+    /// The toolbar actions of the focused window's active tab changed.
+    ExtensionActions {
+        tab: TabId,
+        actions: Vec<crate::ExtensionActionInfo>,
+    },
     /// The blocker's rule lists are compiled and on every tab view (spec
     /// 10 §4 step 5): `lists` of them, 0 when blocking is off.
     BlockerRulesApplied {
@@ -497,6 +507,8 @@ impl EngineEvent {
     pub fn name(&self) -> &'static str {
         match self {
             Self::ExtensionOpen { .. } => "extensionOpen",
+            Self::ExtensionLoaded { .. } => "extensionLoaded",
+            Self::ExtensionActions { .. } => "extensionActions",
             Self::ContentBlocked { .. } => "contentBlocked",
             Self::BlockerRulesApplied { .. } => "blockerRulesApplied",
             Self::WindowCreated { .. } => "windowCreated",

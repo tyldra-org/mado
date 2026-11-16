@@ -852,6 +852,92 @@ pub enum Command {
         prompt_id: crate::PromptId,
         add: bool,
     },
+    // Management (spec 09 §11). Enabling, removing and permissions are
+    // protected.
+    /// Returns `state.extensions.installed`.
+    #[serde(rename = "extension.list")]
+    ExtensionList,
+    #[serde(rename = "extension.setEnabled", rename_all = "camelCase")]
+    ExtensionSetEnabled {
+        id: crate::ExtensionId,
+        enabled: bool,
+    },
+    /// `deleteData` also removes what the extension stored.
+    #[serde(rename = "extension.remove", rename_all = "camelCase")]
+    ExtensionRemove {
+        id: crate::ExtensionId,
+        #[serde(default)]
+        delete_data: bool,
+    },
+    /// `hosts` with `specific`: the sites it may read, a subset of what
+    /// it asked for; omitted keeps its listed hosts.
+    #[serde(rename = "extension.setSiteAccess", rename_all = "camelCase")]
+    ExtensionSetSiteAccess {
+        id: crate::ExtensionId,
+        mode: crate::state::SiteAccessMode,
+        #[serde(default)]
+        hosts: Option<Vec<String>>,
+    },
+    #[serde(rename = "extension.setPrivateAllowed", rename_all = "camelCase")]
+    ExtensionSetPrivateAllowed {
+        id: crate::ExtensionId,
+        allowed: bool,
+    },
+    /// Grants optional permissions or hosts it declared.
+    #[serde(rename = "extension.grantOptional", rename_all = "camelCase")]
+    ExtensionGrantOptional {
+        id: crate::ExtensionId,
+        permissions: Vec<String>,
+    },
+    #[serde(rename = "extension.revokeOptional", rename_all = "camelCase")]
+    ExtensionRevokeOptional {
+        id: crate::ExtensionId,
+        permissions: Vec<String>,
+    },
+    /// `keys` like `Cmd+Shift+Y`, or none to clear. A shortcut Mado or
+    /// another extension holds is a `Conflict` naming the holder.
+    #[serde(rename = "extension.setShortcut", rename_all = "camelCase")]
+    ExtensionSetShortcut {
+        id: crate::ExtensionId,
+        command: String,
+        #[serde(default)]
+        keys: Option<String>,
+    },
+    #[serde(rename = "extension.pin", rename_all = "camelCase")]
+    ExtensionPin {
+        id: crate::ExtensionId,
+        pinned: bool,
+    },
+    /// Reloads an unpacked extension from its folder.
+    #[serde(rename = "extension.reload", rename_all = "camelCase")]
+    ExtensionReload { id: crate::ExtensionId },
+    /// Developer mode: the extension's errors, as text.
+    #[serde(rename = "extension.errors", rename_all = "camelCase")]
+    ExtensionErrors { id: crate::ExtensionId },
+    /// Developer mode: makes the extension inspectable in Safari's Web
+    /// Inspector (Develop menu); `target` is `background` or `popup`.
+    #[serde(rename = "extension.inspect", rename_all = "camelCase")]
+    ExtensionInspect {
+        id: crate::ExtensionId,
+        target: String,
+    },
+    /// Clicks the extension's toolbar button: its popup at `anchor` (the
+    /// button, in the window's UI pixels), or `action.onClicked`.
+    #[serde(rename = "extension.openPopup", rename_all = "camelCase")]
+    ExtensionOpenPopup {
+        id: crate::ExtensionId,
+        window_id: crate::WindowId,
+        anchor: crate::state::Rect,
+    },
+    /// Opens the extension's options page in a tab.
+    #[serde(rename = "extension.openOptions", rename_all = "camelCase")]
+    ExtensionOpenOptions { id: crate::ExtensionId },
+    /// Opens the settings window, at `section` when given.
+    #[serde(rename = "app.openSettings", rename_all = "camelCase")]
+    AppOpenSettings {
+        #[serde(default)]
+        section: Option<String>,
+    },
     /// Opens the macOS privacy pane for `pane` (`camera`, `microphone`,
     /// `location`, `screen`, `speechRecognition`).
     #[serde(rename = "app.openSystemSettings", rename_all = "camelCase")]
@@ -1031,9 +1117,23 @@ impl Command {
             | Self::AppDefaultBrowser
             | Self::AppSetDefaultBrowser => CommandFamily::App,
             Self::BlockerUpdateNow => CommandFamily::Blocker,
-            Self::ExtensionInstall { .. } | Self::ExtensionConfirmInstall { .. } => {
-                CommandFamily::Extension
-            }
+            Self::ExtensionInstall { .. }
+            | Self::ExtensionConfirmInstall { .. }
+            | Self::ExtensionList
+            | Self::ExtensionSetEnabled { .. }
+            | Self::ExtensionRemove { .. }
+            | Self::ExtensionSetSiteAccess { .. }
+            | Self::ExtensionSetPrivateAllowed { .. }
+            | Self::ExtensionGrantOptional { .. }
+            | Self::ExtensionRevokeOptional { .. }
+            | Self::ExtensionSetShortcut { .. }
+            | Self::ExtensionPin { .. }
+            | Self::ExtensionReload { .. }
+            | Self::ExtensionErrors { .. }
+            | Self::ExtensionInspect { .. }
+            | Self::ExtensionOpenPopup { .. }
+            | Self::ExtensionOpenOptions { .. } => CommandFamily::Extension,
+            Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
             | Self::ProfileUpdate { .. }
@@ -1175,6 +1275,21 @@ impl Command {
             Self::BlockerUpdateNow => "blocker.updateNow",
             Self::ExtensionInstall { .. } => "extension.install",
             Self::ExtensionConfirmInstall { .. } => "extension.confirmInstall",
+            Self::ExtensionList => "extension.list",
+            Self::ExtensionSetEnabled { .. } => "extension.setEnabled",
+            Self::ExtensionRemove { .. } => "extension.remove",
+            Self::ExtensionSetSiteAccess { .. } => "extension.setSiteAccess",
+            Self::ExtensionSetPrivateAllowed { .. } => "extension.setPrivateAllowed",
+            Self::ExtensionGrantOptional { .. } => "extension.grantOptional",
+            Self::ExtensionRevokeOptional { .. } => "extension.revokeOptional",
+            Self::ExtensionSetShortcut { .. } => "extension.setShortcut",
+            Self::ExtensionPin { .. } => "extension.pin",
+            Self::ExtensionReload { .. } => "extension.reload",
+            Self::ExtensionErrors { .. } => "extension.errors",
+            Self::ExtensionInspect { .. } => "extension.inspect",
+            Self::ExtensionOpenPopup { .. } => "extension.openPopup",
+            Self::ExtensionOpenOptions { .. } => "extension.openOptions",
+            Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
             Self::ProfileUpdate { .. } => "profile.update",
@@ -1221,6 +1336,7 @@ impl Command {
                 | Self::BookmarkOfUrl { .. }
                 | Self::ImportDetect
                 | Self::AppDefaultBrowser
+                | Self::ExtensionList
         )
     }
 }
@@ -1389,6 +1505,8 @@ pub enum InternalPage {
     Bookmarks,
     About,
     Credits,
+    /// Lists extensions; managing them is in Settings › Extensions.
+    Extensions,
 }
 
 impl InternalPage {
@@ -1403,6 +1521,7 @@ impl InternalPage {
             "bookmarks" => Self::Bookmarks,
             "about" => Self::About,
             "credits" => Self::Credits,
+            "extensions" => Self::Extensions,
             _ => return None,
         })
     }
@@ -1436,6 +1555,13 @@ impl InternalPage {
                     || matches!(cmd, C::AppOpenSystemSettings { pane } if pane == "softwareUpdate")
             }
             Self::Credits => matches!(cmd, C::StateGet),
+            Self::Extensions => matches!(
+                cmd,
+                C::StateGet
+                    | C::ExtensionList
+                    | C::ExtensionOpenOptions { .. }
+                    | C::AppOpenSettings { .. }
+            ),
         }
     }
 }

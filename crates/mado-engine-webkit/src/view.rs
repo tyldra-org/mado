@@ -155,6 +155,11 @@ impl Adapter {
             .collect()
     }
 
+    /// A window's content view.
+    pub(crate) fn content(&self, window: WindowId) -> Option<Retained<NSView>> {
+        content_view(window)
+    }
+
     pub(crate) fn controller(&self, tab: TabId) -> Option<Retained<WKUserContentController>> {
         self.tabs.get(&tab).map(|t| t.controller.clone())
     }

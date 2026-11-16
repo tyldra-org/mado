@@ -11,12 +11,30 @@
   import ClearData from "./ClearData.svelte";
   import ImportSheet from "./ImportSheet.svelte";
   import DefaultBrowser from "./DefaultBrowser.svelte";
+  import ExtensionsSection from "./ExtensionsSection.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
   let query = $state("");
   let changedOnly = $state(false);
-  let section = $state(sections[0] ?? "general");
+  // The section a link asked for (`settings.html#extensions`, or the
+  // `mado://settings-section` event when the window is open).
+  const asked = (s: string) => (sections as string[]).includes(s);
+  let section = $state(
+    asked(location.hash.slice(1)) ? location.hash.slice(1) : (sections[0] ?? "general"),
+  );
+  $effect(() => {
+    let stop: (() => void) | undefined;
+    void store.transport
+      .listen<string>("mado://settings-section", (s) => {
+        if (asked(s)) {
+          section = s;
+          hits = null;
+        }
+      })
+      .then((u) => (stop = u));
+    return () => stop?.();
+  });
   /** Keys from settings.search, best first; null while not searching. */
   let hits: string[] | null = $state(null);
 
@@ -74,6 +92,9 @@
     {#each rows as entry (entry.key)}
       <SettingRow {entry} value={values[entry.key]} client={store.client} />
     {/each}
+    {#if hits === null && section === "extensions"}
+      <ExtensionsSection {store} />
+    {/if}
     {#if hits === null && section === "profiles"}
       <ProfilesSection client={store.client} />
     {/if}

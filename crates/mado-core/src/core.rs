@@ -7,6 +7,7 @@ mod clear;
 mod dialogs;
 mod dl;
 mod errors;
+mod ext_manage;
 mod extensions;
 mod import;
 mod internal;
@@ -493,6 +494,10 @@ pub struct Core {
     blocker_sent: Option<mado_engine::BlockerRules>,
     /// Packages waiting for their install prompt's answer.
     extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
+    /// Installed extensions' files and pages.
+    extension_info: BTreeMap<mado_types::ExtensionId, extensions::ExtInfo>,
+    /// The toolbar actions of the focused window's active tab.
+    extension_actions: (Option<TabId>, Vec<mado_engine::ExtensionActionInfo>),
     /// Extensions loaded in the engine.
     extension_loads: BTreeMap<mado_types::ExtensionId, mado_engine::ExtensionLoad>,
     /// What extensions last saw of windows and tabs.
@@ -754,6 +759,8 @@ impl Core {
             blocker_sent: None,
             extension_installs: BTreeMap::new(),
             extension_loads: BTreeMap::new(),
+            extension_info: BTreeMap::new(),
+            extension_actions: (None, Vec::new()),
             extension_windows: mado_engine::ExtensionWindows::default(),
             os: config.os,
             profiles: std::sync::Arc::clone(&config.profiles),
@@ -828,8 +835,10 @@ impl Core {
             if row.pinned {
                 ext.pinned.push(row.installed.id.clone());
             }
+            self.extension_info
+                .insert(row.installed.id.clone(), row.info);
             if row.installed.enabled {
-                self.load_extension(&row.installed.id, row.load);
+                self.load_installed(&row.installed);
             }
             ext.installed.push(row.installed);
         }
@@ -1254,6 +1263,16 @@ impl Core {
             }
             cmd @ (Command::ExtensionInstall { .. } | Command::ExtensionConfirmInstall { .. }) => {
                 self.extension_command(origin, cmd, rec)
+            }
+            Command::AppOpenSettings { section } => {
+                match section {
+                    Some(s) => self.ui.open_settings_at(&s),
+                    None => self.ui.open_settings(),
+                }
+                Ok(Value::Null)
+            }
+            cmd if cmd.family() == mado_types::command::CommandFamily::Extension => {
+                self.extension_manage(origin, cmd, rec, reply_to)
             }
             cmd @ (Command::AppDefaultBrowser | Command::AppSetDefaultBrowser) => {
                 if matches!(cmd, Command::AppSetDefaultBrowser) && !origin.is_user() {

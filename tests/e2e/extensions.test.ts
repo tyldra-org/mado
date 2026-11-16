@@ -124,4 +124,29 @@ run("extensions from the Chrome Web Store", () => {
     });
     expect(title).not.toBe("rgb(255, 255, 255)");
   });
+
+  test("each extension's popup opens from the toolbar (M3-T06)", async () => {
+    const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+      private: false,
+      urls: ["http://pages.mado.test/extensions/plain.html"],
+    });
+    type Toolbar = { extensions: { toolbar: { id: string; hasPopup: boolean }[] } };
+    for (const id of [UBOL, DARK_READER]) {
+      await until(`${id} in the toolbar`, async () =>
+        (await mado.control.call<{ state: Toolbar }>("state.get")).state.extensions.toolbar.find(
+          (b) => b.id === id && b.hasPopup,
+        ),
+      );
+      await mado.control.call("extension.openPopup", {
+        id,
+        windowId,
+        anchor: { x: 600, y: 10, width: 24, height: 24 },
+      });
+      const url = await until(`${id}'s popup`, async () => {
+        const u = await mado.control.call<string | null>("test.extensionPopup");
+        return u?.startsWith("webkit-extension://") ? u : undefined;
+      });
+      expect(url).toContain("/");
+    }
+  });
 });

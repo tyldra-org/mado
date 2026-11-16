@@ -31,6 +31,11 @@ pub trait UiSink: Send {
     fn quit(&mut self) {}
     /// Opens the settings window (spec 06 §9).
     fn open_settings(&mut self) {}
+    /// Opens the settings window at a section.
+    fn open_settings_at(&mut self, section: &str) {
+        let _ = section;
+        self.open_settings();
+    }
     /// A menu command the window's UI carries out itself: `openLocation`,
     /// `find`, `findNext`, `findPrevious`, `bookmarkTab`,
     /// `bookmarkAllTabs` (spec 01 §5.3, §5.4).

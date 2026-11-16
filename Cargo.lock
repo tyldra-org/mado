@@ -2651,6 +2651,7 @@ dependencies = [
 name = "mado-engine-webkit"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "block2",
  "core-foundation 0.10.1",
  "mado-engine",
