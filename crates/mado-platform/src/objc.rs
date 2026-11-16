@@ -32,6 +32,9 @@ pub enum PlatformError {
     /// Needs Mado running as an app bundle (notifications, login items).
     #[error("needs Mado.app; this is a bare binary")]
     NotBundled,
+    /// The person cancelled or failed Touch ID or the password sheet.
+    #[error("authentication was cancelled")]
+    Cancelled,
 }
 
 pub(crate) fn class(name: &std::ffi::CStr) -> Result<&'static AnyClass, PlatformError> {

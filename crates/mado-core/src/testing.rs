@@ -150,6 +150,10 @@ thread_local! {
     pub static PRIVATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The captive portal probe the next `TestCore` on this thread uses.
     pub static CAPTIVE_PROBE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// The "Secure Enclave" of the next `start`: one software enclave per
+    /// test thread, so a restarted core is the same Mac.
+    pub static ENCLAVE: std::cell::RefCell<std::sync::Arc<mado_vault::wrap::SoftEnclave>> =
+        std::cell::RefCell::new(std::sync::Arc::new(mado_vault::wrap::SoftEnclave::default()));
     /// Extensions for the next `start`; the real store by default.
     pub static EXTENSIONS: std::cell::RefCell<Option<crate::ExtensionsConfig>> = const { std::cell::RefCell::new(None) };
     /// The blocker for the next `start`; off by default.
@@ -231,6 +235,20 @@ impl TestCore {
                 profiles: PROFILES.with_borrow(Clone::clone),
                 hsts_extra: ["hsts.example".to_owned()].into(),
                 home: IMPORT_HOME.with_borrow(Clone::clone),
+                vault: (!PRIVATE.get()).then(|| {
+                    open(
+                        &root.join("vault.sqlite"),
+                        Kind::Vault,
+                        &root.join("Backups"),
+                        &root.join("Broken"),
+                    )
+                    .expect("vault db");
+                    crate::VaultConfig {
+                        db: root.join("vault.sqlite"),
+                        dir: root.to_owned(),
+                        enclave: ENCLAVE.with_borrow(Clone::clone),
+                    }
+                }),
                 // Camera denied at the OS, everything else answered yes.
                 os: crate::OsPermissions {
                     status: |p| match p {

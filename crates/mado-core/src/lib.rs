@@ -27,6 +27,7 @@ mod tests;
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub use core::TestHook;
+pub use core::vault::VaultConfig;
 pub use core::{
     BlockerConfig, CoreConfig, CoreHandle, ExtensionsConfig, Input, Internal, ListsConfig,
     OsPermissions, Power, Reply, start, system_clock,

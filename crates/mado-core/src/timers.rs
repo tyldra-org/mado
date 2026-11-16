@@ -24,6 +24,8 @@ pub enum Timer {
     BlockerUpdate,
     /// The daily extension update check (spec 09 §10).
     ExtensionUpdate,
+    /// Locks the vault after `vault.lockAfter` without use (spec 11 §2.3).
+    VaultLock,
     /// Writes the blocker's counts (spec 10 §7).
     BlockerStatsFlush,
     /// An HTTPS-first upgrade had its time (spec 05 §5).

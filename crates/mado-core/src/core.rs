@@ -26,6 +26,7 @@ mod profiles;
 mod reader;
 mod session;
 mod site;
+pub(crate) mod vault;
 mod visits;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -75,6 +76,14 @@ pub enum Input {
 /// Results of work the core spawned, and requests from the app itself.
 #[derive(Debug)]
 pub enum Internal {
+    /// A vault job finished (spec 11 §2).
+    VaultDone {
+        result: Box<Result<vault::VaultOutcome, mado_vault::VaultError>>,
+        reply: Option<Reply>,
+    },
+    /// The screen locked, the display slept or the session went to the
+    /// login window: the vault locks (spec 11 §2.3).
+    ScreenLocked,
     /// The app is up: restore or open windows per `startup.mode` (spec 04 §8).
     Startup { bounds: Bounds },
     /// Open a normal window (the Dock icon with no window).
@@ -266,6 +275,8 @@ pub enum TestHook {
     ListsFetch,
     /// Checks for extension updates now, as their timer would.
     ExtensionUpdateCheck,
+    /// Runs the vault's inactivity check now, as its timer would.
+    VaultLockCheck,
 }
 
 /// A security update relaunches on its own after this long ready, once
@@ -318,6 +329,8 @@ pub struct CoreConfig {
     /// The user's home folder, where other browsers keep their data (spec
     /// 12 §5.1). Tests pass a fixture home.
     pub home: PathBuf,
+    /// Mado Passwords (spec 11); `None` in private and guest profiles.
+    pub vault: Option<vault::VaultConfig>,
 }
 
 /// How the core asks macOS about its own permissions.
@@ -507,6 +520,17 @@ pub struct Core {
     blocker_resources: Vec<mado_blocker::Resource>,
     /// The `trackers` lists' engine, for the statistics.
     blocker_trackers: Option<mado_blocker::Engine>,
+    /// Mado Passwords' files; `None` without a vault.
+    vault: Option<vault::VaultConfig>,
+    /// The vault's keys while it is unlocked.
+    vault_keys: Option<std::sync::Arc<mado_vault::Keys>>,
+    /// `vault.unlock` calls waiting for the one Touch ID sheet.
+    vault_waiting: Vec<Reply>,
+    vault_unlocking: bool,
+    /// The last fill or vault page use, for `vault.lockAfter`.
+    vault_used_at: i64,
+    /// Fills need no new authentication until then (`vault.fillApprovalWindow`).
+    vault_fill_until: i64,
     /// Blocked counts not yet written.
     blocker_stats: blocker_stats::StatsBuffer,
     /// Recent reloads per tab, for "Page not working?".
@@ -785,6 +809,12 @@ impl Core {
             blocker_resources: Vec::new(),
             cosmetic_tabs: BTreeMap::new(),
             blocker_trackers: None,
+            vault: config.vault.clone(),
+            vault_keys: None,
+            vault_waiting: Vec::new(),
+            vault_unlocking: false,
+            vault_used_at: 0,
+            vault_fill_until: 0,
             blocker_stats: blocker_stats::StatsBuffer::default(),
             reloads: BTreeMap::new(),
             extension_installs: BTreeMap::new(),
@@ -845,6 +875,7 @@ impl Core {
         core.load_lists();
         core.load_extensions();
         core.start_blocker();
+        core.load_vault(&mut PatchRecorder::new());
         core
     }
 
@@ -1325,6 +1356,9 @@ impl Core {
             | Command::ExtensionTakeoverRespond { .. }
             | Command::ExtensionOverlaps
             | Command::ExtensionOverlapReset { .. }) => self.overlap_command(origin, cmd, rec),
+            cmd if cmd.family() == mado_types::command::CommandFamily::Vault => {
+                self.vault_command(origin, cmd, reply_to, rec)
+            }
             cmd if cmd.family() == mado_types::command::CommandFamily::Extension => {
                 self.extension_manage(origin, cmd, rec, reply_to)
             }
@@ -1440,6 +1474,8 @@ impl Core {
                     t.has_unsaved_input = true;
                 }
             }
+            Internal::VaultDone { result, reply } => self.vault_done(*result, reply, rec),
+            Internal::ScreenLocked => self.lock_vault(rec),
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);
@@ -1586,6 +1622,7 @@ impl Core {
                 TestHook::SecurityCheck => self.fire(Timer::SecurityRelaunch),
                 TestHook::ListsFetch => self.fire(Timer::ListsFetch),
                 TestHook::ExtensionUpdateCheck => self.fire(Timer::ExtensionUpdate),
+                TestHook::VaultLockCheck => self.fire(Timer::VaultLock),
             },
             #[cfg(any(test, feature = "test-hooks"))]
             Internal::Panic => {
@@ -1770,6 +1807,7 @@ impl Core {
             Timer::ListsFetch => self.fetch_lists(),
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
+            Timer::VaultLock => self.vault_lock_check(&mut rec),
             Timer::BlockerStatsFlush => self.flush_blocker_stats_later(),
             Timer::AutoRevoke => {
                 self.auto_revoke(&mut rec);
@@ -1814,7 +1852,11 @@ impl Core {
                 }
             }
             Timer::DailyBackup => {
-                let jobs = [(self.profile_db.path().to_owned(), Kind::Profile)];
+                let mut jobs = vec![(self.profile_db.path().to_owned(), Kind::Profile)];
+                if let Some(v) = &self.vault {
+                    jobs.push((v.db.clone(), Kind::Vault));
+                    self.purge_vault();
+                }
                 let dir = self.backups.clone();
                 tokio::task::spawn_blocking(move || {
                     for (path, kind) in jobs {
