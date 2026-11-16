@@ -109,6 +109,7 @@ impl Adapter {
         delegate::set_context(config.events, config.runner);
         crate::extensions::install(
             mtm,
+            config.native_host_dirs,
             config.profile,
             config.ephemeral,
             &store,

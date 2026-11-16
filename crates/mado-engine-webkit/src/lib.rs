@@ -78,6 +78,9 @@ pub struct Config {
     pub inspectable: bool,
     /// `en.json` labels for the context menu.
     pub labels: menu::Labels,
+    /// Where native messaging hosts are looked up, first match wins
+    /// (spec 09 §9.1).
+    pub native_host_dirs: Vec<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for Config {

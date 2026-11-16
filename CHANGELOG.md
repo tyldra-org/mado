@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The built-in blocker's filter lists (uBlock Origin's, EasyList, EasyPrivacy, Peter Lowe's) download daily, keep their last good copy when a download is broken, and a bundled EasyList blocks from the first launch, offline too.
 - The built-in blocker blocks ads and trackers in pages and hides ad boxes, and counts what it blocked on each tab.
 - Extension buttons in the toolbar open their popups; pin them, open their options, and manage extensions in Settings › Extensions: turn them on or off, choose where they run, grant optional permissions, set shortcuts, remove them with or without their data, and in Developer mode load one from a folder, see its errors and inspect it.
+- Extensions can talk to apps on the Mac through native messaging, using the hosts apps register for Chrome, so password manager extensions can reach their desktop apps.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

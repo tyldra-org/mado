@@ -438,6 +438,12 @@ fn start_owner(
         id,
         info.is_private || info.is_guest,
         settings.value(mado_settings::lookup("developer.inspectPages").ok_or("registry")?) == true,
+        mado_platform::native_messaging::search_dirs(
+            owner.paths.root(),
+            &std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default(),
+        ),
     )?;
     // Read before this run marks itself unclean (spec 04 §8).
     let clean_start = core_app_db

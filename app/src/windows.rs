@@ -160,6 +160,7 @@ pub fn install_webkit(
     profile: mado_types::ProfileId,
     ephemeral: bool,
     inspectable: bool,
+    native_host_dirs: Vec<std::path::PathBuf>,
 ) -> Result<(), String> {
     let mtm = objc2::MainThreadMarker::new().ok_or("WebKit starts on the main thread")?;
     let runner_app = app.clone();
@@ -190,6 +191,7 @@ pub fn install_webkit(
                 let strings = mado_settings::Strings::english();
                 std::sync::Arc::new(move |key: &str| strings.get(key).to_owned())
             },
+            native_host_dirs,
         },
     );
     Ok(())

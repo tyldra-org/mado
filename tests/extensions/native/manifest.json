@@ -1,0 +1,7 @@
+{
+  "name": "Mado native messaging fixture",
+  "version": "1.0",
+  "manifest_version": 3,
+  "permissions": ["nativeMessaging", "tabs"],
+  "background": { "service_worker": "bg.js" }
+}

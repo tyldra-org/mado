@@ -4,7 +4,8 @@
 // install prompt, and Add installs it into the profile; Dark Reader, loaded
 // through WKWebExtensionController (M3-T04), turns a white fixture page dark.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Subprocess, spawn } from "bun";
 import { bin, Mado } from "./harness";
@@ -148,5 +149,70 @@ run("extensions from the Chrome Web Store", () => {
       });
       expect(url).toContain("/");
     }
+  });
+
+  test("an extension talks to a native host by message and by port (09 §12 check 6)", async () => {
+    // Developer mode is protected: authenticate as Mado's window would.
+    await mado.control.call("test.fakeAuthSuccess");
+    const { token } = (await asUser({ type: "app.authenticate", reason: "test" })) as {
+      token: string;
+    };
+    await asUser({ type: "settings.set", key: "extensions.developerMode", value: true, token });
+    await asUser({
+      type: "extension.install",
+      id: null,
+      source: "unpacked",
+      path: join(process.cwd(), "tests/extensions/native"),
+    });
+    const prompt = await until("the install prompt", async () =>
+      Object.values((await state()).prompts).find(
+        (p) => p.type === "extensionInstall" && p.name === "Mado native messaging fixture",
+      ),
+    );
+    // The host answers {"echo": <message>, "origin": <chrome-extension://id/>}.
+    const hostDir = await mkdtemp(join(tmpdir(), "mado-native-"));
+    const hostPath = join(hostDir, "echo.py");
+    await writeFile(
+      hostPath,
+      [
+        "#!/usr/bin/env python3",
+        "import json, struct, sys",
+        "origin = sys.argv[1]",
+        "while True:",
+        "    raw = sys.stdin.buffer.read(4)",
+        "    if len(raw) < 4:",
+        "        break",
+        "    n = struct.unpack('=I', raw)[0]",
+        "    msg = json.loads(sys.stdin.buffer.read(n))",
+        "    out = json.dumps({'echo': msg, 'origin': origin}).encode()",
+        "    sys.stdout.buffer.write(struct.pack('=I', len(out)) + out)",
+        "    sys.stdout.buffer.flush()",
+        "",
+      ].join("\n"),
+    );
+    await chmod(hostPath, 0o755);
+    await mkdir(join(mado.dir, "NativeMessagingHosts"), { recursive: true });
+    await writeFile(
+      join(mado.dir, "NativeMessagingHosts", "app.mado.test_echo.json"),
+      JSON.stringify({
+        name: "app.mado.test_echo",
+        type: "stdio",
+        path: hostPath,
+        allowed_origins: [`chrome-extension://${prompt.extensionId}/`],
+      }),
+    );
+    await asUser({ type: "extension.confirmInstall", promptId: prompt.id, add: true });
+    type Tabs = { tabs: Record<string, { url: string }> };
+    const reported = async (kind: string) =>
+      until(`the ${kind} answer`, async () => {
+        const s = (await mado.control.call<{ state: Tabs }>("state.get")).state;
+        const url = Object.values(s.tabs).find((t) => t.url.includes(`?${kind}=`))?.url;
+        return url ? JSON.parse(decodeURIComponent(url.split(`?${kind}=`)[1] ?? "")) : undefined;
+      });
+    const once = await reported("once");
+    expect(once.echo).toEqual({ ping: "once" });
+    expect(once.origin).toBe(`chrome-extension://${prompt.extensionId}/`);
+    const port = await reported("port");
+    expect(port.echo).toEqual({ ping: "port" });
   });
 });

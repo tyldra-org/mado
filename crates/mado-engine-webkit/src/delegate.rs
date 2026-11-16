@@ -137,6 +137,11 @@ pub(crate) fn send(event: EngineEvent) {
     }
 }
 
+/// The app's main-thread runner, for work that finishes off it.
+pub(crate) fn main_runner() -> Option<MainRunner> {
+    runner()
+}
+
 fn runner() -> Option<MainRunner> {
     CONTEXT.with_borrow(|c| c.as_ref().map(|c| c.1.clone()))
 }
