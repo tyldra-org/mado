@@ -5,73 +5,63 @@
 # a major package update stays open for a maintainer. A failing check leaves
 # any of them open.
 #
-# The repository's "Allow auto-merge" setting is off: nothing waits on a
-# pull request to merge itself. This workflow runs when CI or pull-requests
-# finishes on a Dependabot branch, and merges only when every required check
-# has passed on the pull request's current head. Other pull requests never
-# start it; a fork's runs are ignored.
+# The repository's "Allow auto-merge" setting is off, so nothing waits on a
+# pull request to merge itself. This workflow runs hourly (and by hand),
+# looks only at open pull requests Dependabot opened in this repository, and
+# merges each one whose required checks have all passed on its current head.
+# A schedule, unlike pull request or workflow_run triggers, never runs on
+# anyone else's pull request.
 name: dependabot-auto-merge
 
 on:
-  workflow_run:
-    workflows: ["CI", "pull-requests"]
-    types: [completed]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: dependabot-auto-merge-${{ github.event.workflow_run.head_branch }}
+  group: dependabot-auto-merge
   cancel-in-progress: false
 
 jobs:
   merge:
     name: merge
-    if: >-
-      github.repository == 'tyldra-org/mado' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    if: github.repository == 'tyldra-org/mado'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
       checks: read
     steps:
-      - name: Merge when every required check passed
+      - name: Merge Dependabot pull requests whose required checks passed
         env:
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          url=$(gh pr list --head "$BRANCH" --base main --author "app/dependabot" --state open \
-            --json url,headRefOid --jq ".[] | select(.headRefOid == \"$SHA\") | .url")
-          if [ -z "$url" ]; then
-            echo "No open Dependabot pull request at $SHA on $BRANCH."
-            exit 0
-          fi
-          # Dependabot's commit message lists each update with its
-          # update-type; a major package update waits for a maintainer.
-          case "$BRANCH" in
-            dependabot/github_actions/*) ;;
-            *)
-              if gh api "repos/$GH_REPO/commits/$SHA" --jq .commit.message | grep -q 'update-type: version-update:semver-major'; then
-                echo "A major update: left for a maintainer."
-                exit 0
+          gh pr list --base main --author "app/dependabot" --state open \
+            --json number,headRefName,headRefOid --jq '.[] | "\(.number) \(.headRefName) \(.headRefOid)"' |
+            while read -r number branch sha; do
+              # Dependabot's commit message lists each update with its
+              # update-type; a major package update waits for a maintainer.
+              case "$branch" in
+                dependabot/github_actions/*) ;;
+                *)
+                  if gh api "repos/$GH_REPO/commits/$sha" --jq .commit.message | grep -q 'update-type: version-update:semver-major'; then
+                    echo "#$number: a major update, left for a maintainer."
+                    continue
+                  fi
+                  ;;
+              esac
+              ready=$(gh pr checks "$number" --required --json bucket \
+                --jq 'length > 0 and all(.[]; .bucket == "pass" or .bucket == "skipping")' || echo false)
+              if [ "$ready" != "true" ]; then
+                echo "#$number: required checks are not all green."
+                continue
               fi
-              ;;
-          esac
-          # The other workflow may still be running; its own completion
-          # runs this again.
-          ready=$(gh pr checks "$url" --required --json bucket \
-            --jq 'length > 0 and all(.[]; .bucket == "pass" or .bucket == "skipping")')
-          if [ "$ready" != "true" ]; then
-            echo "Required checks are not all green yet."
-            exit 0
-          fi
-          gh pr merge "$url" --squash --match-head-commit "$SHA"
+              gh pr merge "$number" --squash --delete-branch --match-head-commit "$sha" ||
+                echo "::warning::#$number did not merge"
+            done
