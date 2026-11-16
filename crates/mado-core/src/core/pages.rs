@@ -146,7 +146,11 @@ impl Core {
                     });
                 }
                 self.forms_followed_up(tab, frame, rec);
+                if frame.is_main_frame {
+                    self.save_check(tab, rec);
+                }
             }
+            PageMessage::CredentialsSubmitted(c) => self.credentials_submitted(tab, frame, c),
             PageMessage::FieldFocused(f) => self.field_focused(tab, frame, f, rec),
             PageMessage::FillDone(d) => self.fill_done(tab, &d),
             // 07 §9: no Apple Pay in WKWebView here; offer Safari, once per

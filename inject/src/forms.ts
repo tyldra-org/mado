@@ -115,7 +115,7 @@ function visible(el: Field): boolean {
 let last = "";
 
 function report(): void {
-  const forms = detect(document)
+  const forms = detect(document, visible)
     .slice(0, 20)
     .map((f) => ({
       formKey: keyOf(f.root),
@@ -157,7 +157,7 @@ report();
 // detected, visible field reports where it is.
 const fieldInfo = new WeakMap<Element, { formKey: string }>();
 const indexFields = () => {
-  for (const f of detect(document)) {
+  for (const f of detect(document, visible)) {
     const formKey = keyOf(f.root);
     for (const { el } of f.fields) fieldInfo.set(el, { formKey });
   }
@@ -170,10 +170,12 @@ const focused = (e: Event) => {
   const info = fieldInfo.get(el);
   if (!info || !visible(el)) return;
   const r = el.getBoundingClientRect();
+  const rules = el.getAttribute("passwordrules");
   send("fieldFocused", {
     formKey: info.formKey,
     fieldKey: keyOf(el),
     rect: { x: r.left, y: r.top, width: r.width, height: r.height },
+    passwordRules: rules ? rules.slice(0, 1000) : null,
   });
 };
 document.addEventListener("focusin", focused, { capture: true, passive: true });
@@ -215,3 +217,59 @@ bridge()?.on("fill", (m) => {
   }
   send("fillDone", { formKey, filled });
 });
+
+// Saving (spec 11 §5 step 1): on submit, a click on a button in or next to
+// the form, or leaving the page, the form's current username and password
+// go to the core, which decides whether to offer saving.
+const sentValues = new WeakMap<object, string>();
+
+function capture(only?: Element | Document): void {
+  for (const f of detect(document, visible)) {
+    if (only && f.root !== only) continue;
+    if (!["login", "usernameOnly", "signup", "changePassword"].includes(f.kind)) continue;
+    const value = (cls: string) =>
+      f.fields.filter((x) => x.cls === cls && x.el.value).map((x) => x.el.value)[0] ?? "";
+    const username = value("username") || value("email");
+    const password =
+      f.kind === "changePassword" || f.kind === "signup"
+        ? value("newPassword") || value("password")
+        : value("password");
+    if (f.kind === "usernameOnly" ? !username : !password) continue;
+    const signature = `${username}\u0000${password}`;
+    if (sentValues.get(f.root) === signature) continue;
+    sentValues.set(f.root, signature);
+    send("credentialsSubmitted", {
+      formKey: keyOf(f.root),
+      kind: f.kind,
+      username: username.slice(0, 1024),
+      password: password.slice(0, 1024),
+    });
+  }
+}
+
+document.addEventListener(
+  "submit",
+  (e) => {
+    if (e.isTrusted && e.target instanceof HTMLFormElement) capture(e.target);
+  },
+  { capture: true, passive: true },
+);
+document.addEventListener(
+  "click",
+  (e) => {
+    if (!e.isTrusted || !(e.target instanceof Element)) return;
+    const button = e.target.closest(
+      'button, input[type="submit"], input[type="button"], [role="button"]',
+    );
+    if (button) capture();
+  },
+  { capture: true, passive: true },
+);
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.isTrusted && e.key === "Enter" && e.target instanceof HTMLInputElement) capture();
+  },
+  { capture: true, passive: true },
+);
+addEventListener("pagehide", () => capture());

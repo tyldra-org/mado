@@ -3336,6 +3336,7 @@ fn filling_needs_a_gesture_a_visible_field_and_the_right_frame() {
                 width: 200.0,
                 height: 30.0,
             },
+            password_rules: None,
         })
     };
     let menu = || {
@@ -3486,6 +3487,324 @@ fn filling_needs_a_gesture_a_visible_field_and_the_right_frame() {
             .iter()
             .any(|(t, f, m)| *t == tab && *f == 9 && m["values"]["d1"] == "4111111111111111")
     });
+}
+
+/// Spec 11 §5: a login that worked offers to save, a changed password to
+/// update, Never stops the offers, a failed login offers nothing, and a
+/// generated password honouring `passwordrules` saves itself.
+#[test]
+fn logins_that_work_are_offered_for_saving() {
+    use mado_engine::page::{
+        CredentialsSubmitted, DetectedField, DetectedForm, FieldClass, FieldFocused, FieldRect,
+        FormKind, Forms, PageMessage,
+    };
+    use mado_types::command::SaveAction;
+    use mado_types::state::PromptState;
+    use std::sync::atomic::Ordering;
+    crate::testing::GESTURE.store(1_800_000_000_000, Ordering::SeqCst);
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let main = frame(true, "https://www.example.com");
+    let send = |message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame: main.clone(),
+            message,
+        });
+    };
+    let field = |key: &str, class: FieldClass| DetectedField {
+        field_key: key.into(),
+        class,
+        rect: FieldRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        visible: true,
+        in_viewport: true,
+    };
+    let login_form = || {
+        PageMessage::Forms(Forms {
+            forms: vec![DetectedForm {
+                form_key: "f1".into(),
+                kind: FormKind::Login,
+                action: None,
+                fields: vec![
+                    field("a1", FieldClass::Username),
+                    field("a2", FieldClass::Password),
+                ],
+            }],
+        })
+    };
+    let next_page = || PageMessage::Forms(Forms { forms: vec![] });
+    let submit = |kind: FormKind, password: &str| {
+        PageMessage::CredentialsSubmitted(CredentialsSubmitted {
+            form_key: "f1".into(),
+            kind,
+            username: "me".into(),
+            password: password.into(),
+        })
+    };
+    let save_prompt = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::SavePassword {
+                id,
+                update,
+                username,
+                site,
+                ..
+            } => Some((*id, *update, username.clone(), site.clone())),
+            _ => None,
+        })
+    };
+    let logins = || -> Vec<serde_json::Value> {
+        ask(
+            &core,
+            user,
+            Command::VaultQuery {
+                deleted: false,
+                site: Some("example.com".into()),
+            },
+        )
+        .expect("query")
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    };
+
+    // A failed login (the form is still there) offers nothing.
+    send(login_form());
+    send(submit(FormKind::Login, "wrong"));
+    send(login_form());
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(save_prompt().is_none(), "the login failed");
+
+    // It worked: Save, editing the username.
+    send(submit(FormKind::Login, "pw1"));
+    send(next_page());
+    eventually("the save prompt", || save_prompt().is_some());
+    let (id, update, name, site) = save_prompt().expect("prompt");
+    assert_eq!(
+        (update, name.as_str(), site.as_str()),
+        (false, "me", "example.com")
+    );
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Control {
+                client: ClientId::new()
+            },
+            Command::VaultSaveRespond {
+                prompt_id: id,
+                action: SaveAction::Save,
+                username: None,
+                password: None
+            }
+        )
+        .expect_err("protected")
+        .code,
+        ErrorCode::Protected
+    );
+    ask(
+        &core,
+        user,
+        Command::VaultSaveRespond {
+            prompt_id: id,
+            action: SaveAction::Save,
+            username: Some("me@example.com".into()),
+            password: None,
+        },
+    )
+    .expect("saved");
+    eventually("saved", || logins().len() == 1);
+    assert_eq!(logins()[0]["username"], "me@example.com");
+    assert!(save_prompt().is_none());
+
+    // A new password for the same username: Update.
+    send(login_form());
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Mado,
+        frame: main.clone(),
+        message: PageMessage::CredentialsSubmitted(CredentialsSubmitted {
+            form_key: "f1".into(),
+            kind: FormKind::Login,
+            username: "me@example.com".into(),
+            password: "pw2".into(),
+        }),
+    });
+    send(next_page());
+    eventually("the update prompt", || save_prompt().is_some_and(|p| p.1));
+    let id = save_prompt().expect("prompt").0;
+    ask(
+        &core,
+        user,
+        Command::VaultSaveRespond {
+            prompt_id: id,
+            action: SaveAction::Save,
+            username: None,
+            password: None,
+        },
+    )
+    .expect("updated");
+    let item_id = logins()[0]["id"].as_str().expect("id").to_owned();
+    eventually("updated", || {
+        ask(
+            &core,
+            user,
+            Command::VaultGet {
+                id: item_id.clone(),
+            },
+        )
+        .expect("get")["item"]["password"]
+            == "pw2"
+    });
+
+    // Never on this site.
+    send(login_form());
+    send(submit(FormKind::Login, "pw3"));
+    send(next_page());
+    eventually("the prompt", || save_prompt().is_some());
+    let id = save_prompt().expect("prompt").0;
+    ask(
+        &core,
+        user,
+        Command::VaultSaveRespond {
+            prompt_id: id,
+            action: SaveAction::Never,
+            username: None,
+            password: None,
+        },
+    )
+    .expect("never");
+    send(login_form());
+    send(submit(FormKind::Login, "pw4"));
+    send(next_page());
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(save_prompt().is_none(), "never on this site");
+
+    // A generated password on a sign-up form saves itself.
+    let signup = || {
+        PageMessage::Forms(Forms {
+            forms: vec![DetectedForm {
+                form_key: "f1".into(),
+                kind: FormKind::Signup,
+                action: None,
+                fields: vec![
+                    field("s1", FieldClass::Email),
+                    field("s2", FieldClass::NewPassword),
+                    field("s3", FieldClass::NewPassword),
+                ],
+            }],
+        })
+    };
+    let other = new_tab(&core, w, "https://shop.other.org/join");
+    eventually("loaded", || {
+        state_of(&core).tabs[&other].url.contains("other.org")
+    });
+    let shop = frame(true, "https://shop.other.org");
+    let send_shop = |message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab: other,
+            world: mado_engine::tab::World::Mado,
+            frame: shop.clone(),
+            message,
+        });
+    };
+    send_shop(signup());
+    send_shop(PageMessage::FieldFocused(FieldFocused {
+        form_key: "f1".into(),
+        field_key: "s2".into(),
+        rect: FieldRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        password_rules: Some("required: digit; allowed: lower; maxlength: 12".into()),
+    }));
+    eventually("the generator", || {
+        state_of(&core).prompts.values().any(|p| matches!(p, PromptState::FillMenu(m) if m.items.first().is_some_and(|i| i.item_ref == "generate:")))
+    });
+    ask(
+        &core,
+        user,
+        Command::VaultFill {
+            tab_id: other,
+            form_key: "f1".into(),
+            item_ref: "generate:".into(),
+        },
+    )
+    .expect("generated");
+    let posted = || -> Option<serde_json::Value> {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .find(|(t, m)| *t == other && m["type"] == "fill")
+            .map(|(_, m)| m["values"].clone())
+    };
+    eventually("filled", || posted().is_some());
+    let values = posted().expect("values");
+    let pw = values["s2"].as_str().expect("password").to_owned();
+    assert_eq!(values["s3"], pw.as_str());
+    assert_eq!(pw.len(), 12);
+    assert!(
+        pw.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && pw.chars().any(|c| c.is_ascii_digit())
+    );
+    send_shop(PageMessage::CredentialsSubmitted(CredentialsSubmitted {
+        form_key: "f1".into(),
+        kind: FormKind::Signup,
+        username: "new@other.org".into(),
+        password: pw.clone(),
+    }));
+    send_shop(PageMessage::Forms(Forms { forms: vec![] }));
+    eventually("saved by itself", || {
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.passwordSaved")
+    });
+    let saved_login = || {
+        ask(
+            &core,
+            user,
+            Command::VaultQuery {
+                deleted: false,
+                site: Some("other.org".into()),
+            },
+        )
+        .expect("query")
+        .as_array()
+        .map_or(0, Vec::len)
+    };
+    eventually("saved by itself", || saved_login() == 1);
+    assert!(
+        save_prompt().is_none(),
+        "no prompt for a generated password"
+    );
+    let saved = ask(
+        &core,
+        user,
+        Command::VaultQuery {
+            deleted: false,
+            site: Some("other.org".into()),
+        },
+    )
+    .expect("query");
+    assert_eq!(saved[0]["username"], "new@other.org");
 }
 
 /// Safari without Full Disk Access gets an error the sheet explains.

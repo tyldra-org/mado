@@ -395,6 +395,13 @@ impl Core {
             Command::PromptDismiss { id } => {
                 match self.state.prompts.get(&id) {
                     Some(PromptState::Permission { .. }) => {}
+                    Some(PromptState::SavePassword { .. }) => {
+                        self.save_prompts.remove(&id);
+                        let mut prompts = self.state.prompts.clone();
+                        prompts.remove(&id);
+                        self.state.tx(rec).set_prompts(prompts);
+                        return Ok(Value::Null);
+                    }
                     Some(PromptState::FillMenu(m)) => {
                         let tab = m.tab_id;
                         self.close_fill_menus(tab, rec);

@@ -44,14 +44,16 @@
     {#if message}<p role="alert">{message}</p>{/if}
     {#if menu.locked}
       <button type="button" role="menuitem" onclick={unlock}>{t("fill.unlock")}</button>
-    {:else if menu.loading}
+    {:else if menu.loading && menu.items.length === 0}
       <p>{t("fill.loading")}</p>
     {:else if menu.items.length === 0}
       <p>{t("fill.none")}</p>
     {:else}
       {#each menu.items as item (item.itemRef)}
         <button type="button" role="menuitem" onclick={() => fill(item.itemRef)}>
-          {item.title}{#if item.subtitle}<small> {item.subtitle}</small>{/if}
+          {item.kind === "generate" ? t("fill.generate") : item.title}{#if item.subtitle}<small>
+              {item.subtitle}</small
+            >{/if}
         </button>
       {/each}
     {/if}

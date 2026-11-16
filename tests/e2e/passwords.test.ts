@@ -152,4 +152,44 @@ run("passwords", () => {
     await sleep(800);
     expect(Object.values((await state()).prompts).some((p) => p.type === "fillMenu")).toBe(false);
   }, 60_000);
+
+  test("a changed password that signs in is offered as an update (11 §5)", async () => {
+    const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+      private: false,
+      urls: ["http://pages.mado.test/passwords/login.html"],
+    });
+    const tabId = await until("the tab", async () => {
+      const s = await state();
+      const t = s.windows[windowId]?.tabOrder[0];
+      return t && s.tabs[t]?.title === "Sign in" ? t : undefined;
+    });
+    await sleep(500);
+    const button = await evalIn<{ x: number; y: number }>(
+      tabId,
+      `document.getElementById("user").value = "me@example.com";
+       document.getElementById("pass").value = "a-new-password";
+       const r = document.querySelector("button").getBoundingClientRect();
+       return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 });`,
+    );
+    await mado.control.call("test.click", { tabId, x: button.x, y: button.y });
+    type Save = { type: string; id: string; update: boolean; site: string };
+    const prompt = await until("the update prompt", async () =>
+      Object.values((await state()).prompts as unknown as Record<string, Save>).find(
+        (p) => p.type === "savePassword",
+      ),
+    );
+    expect(prompt.update).toBe(true);
+    expect(prompt.site).toBe("mado.test");
+    await asUser({ type: "vault.saveRespond", promptId: prompt.id, action: "save" });
+    const items = await until("updated", async () => {
+      const list = (await asUser({ type: "vault.query", site: "pages.mado.test" })) as {
+        id: string;
+      }[];
+      const got = (await asUser({ type: "vault.get", id: list[0]?.id ?? "" })) as {
+        item: { password: string };
+      };
+      return got.item.password === "a-new-password" ? got : undefined;
+    });
+    expect(items.item.password).toBe("a-new-password");
+  }, 60_000);
 });

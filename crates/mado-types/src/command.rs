@@ -1056,6 +1056,17 @@ pub enum Command {
     VaultRestore { id: String },
     #[serde(rename = "vault.deleteForever", rename_all = "camelCase")]
     VaultDeleteForever { id: String },
+    /// Answers the save or update prompt (spec 11 §5); `username` and
+    /// `password` are the prompt's edits.
+    #[serde(rename = "vault.saveRespond", rename_all = "camelCase")]
+    VaultSaveRespond {
+        prompt_id: crate::PromptId,
+        action: SaveAction,
+        #[serde(default)]
+        username: Option<String>,
+        #[serde(default)]
+        password: Option<String>,
+    },
     /// Fills a detected form with an item from the fill menu (spec 11
     /// §4.2). Needs a native click in the last second.
     #[serde(rename = "vault.fill", rename_all = "camelCase")]
@@ -1290,7 +1301,8 @@ impl Command {
             | Self::VaultDelete { .. }
             | Self::VaultRestore { .. }
             | Self::VaultDeleteForever { .. }
-            | Self::VaultFill { .. } => CommandFamily::Vault,
+            | Self::VaultFill { .. }
+            | Self::VaultSaveRespond { .. } => CommandFamily::Vault,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1473,6 +1485,7 @@ impl Command {
             Self::VaultRestore { .. } => "vault.restore",
             Self::VaultDeleteForever { .. } => "vault.deleteForever",
             Self::VaultFill { .. } => "vault.fill",
+            Self::VaultSaveRespond { .. } => "vault.saveRespond",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
@@ -1528,6 +1541,17 @@ impl Command {
                 | Self::SitePrivacyReport { .. }
         )
     }
+}
+
+/// How the save prompt was answered (spec 11 §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SaveAction {
+    Save,
+    NotNow,
+    /// Never on this site.
+    Never,
 }
 
 fn yes() -> bool {

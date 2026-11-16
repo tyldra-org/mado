@@ -20,6 +20,7 @@
   import PermissionPrompt from "./PermissionPrompt.svelte";
   import ProfileMenu from "./ProfileMenu.svelte";
   import SafariPrompt from "./SafariPrompt.svelte";
+  import SavePrompt from "./SavePrompt.svelte";
   import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
   import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
@@ -90,6 +91,7 @@
     <SafariPrompt {store} {windowId} />
     <PermissionPrompt {store} {windowId} />
     <FillMenu {store} {windowId} />
+    <SavePrompt {store} {windowId} />
     <AppLinkPrompt {store} {windowId} />
     <ExtensionInstallPrompt {store} {windowId} />
     <OverlapPrompt {store} />
