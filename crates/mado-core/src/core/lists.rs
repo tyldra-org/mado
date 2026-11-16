@@ -190,6 +190,7 @@ impl Core {
 
     /// The compatibility list changed: About's engine check follows it.
     pub(super) fn compat_changed(&mut self, rec: &mut PatchRecorder) {
+        self.apply_blocked_extensions(rec);
         let mut about = self.state.about.clone();
         about.engine_outdated = crate::about::engine_outdated(&about.engine_version);
         if about != self.state.about {

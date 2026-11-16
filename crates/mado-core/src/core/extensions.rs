@@ -30,6 +30,9 @@ const MAX_PINNED: usize = 6;
 /// The largest icon shown in the prompt.
 const MAX_ICON: u64 = 256 * 1024;
 
+/// A store extension's update check URL, from its ID and version.
+pub type UpdateUrl = Arc<dyn Fn(&str, &str) -> String + Send + Sync>;
+
 /// Where packages come from and where installed ones go.
 #[derive(Clone)]
 pub struct ExtensionsConfig {
@@ -39,6 +42,11 @@ pub struct ExtensionsConfig {
     pub package_url: Arc<dyn Fn(&str) -> String + Send + Sync>,
     /// Publisher keys accepted besides the store's: tests only.
     pub extra_publishers: Vec<[u8; 32]>,
+    /// A store extension's update check URL, from its ID and version.
+    pub update_url: UpdateUrl,
+    /// Packages from updates come only from Google's download hosts; tests
+    /// turn the check off.
+    pub check_hosts: bool,
 }
 
 impl std::fmt::Debug for ExtensionsConfig {
@@ -56,6 +64,8 @@ impl ExtensionsConfig {
             dir,
             package_url: Arc::new(mado_extensions::store::package_url),
             extra_publishers: Vec::new(),
+            update_url: Arc::new(mado_extensions::store::update_check_url),
+            check_hosts: true,
         }
     }
 }
@@ -63,12 +73,12 @@ impl ExtensionsConfig {
 /// A package ready for the prompt.
 #[derive(Debug)]
 pub struct Staged {
-    id: ExtensionId,
-    source: ExtensionSource,
+    pub(super) id: ExtensionId,
+    pub(super) source: ExtensionSource,
     /// The unpacked files: a staging folder, or the folder itself for an
     /// unpacked extension.
-    files: PathBuf,
-    manifest: Manifest,
+    pub(super) files: PathBuf,
+    pub(super) manifest: Manifest,
     icon: Option<String>,
 }
 
@@ -127,7 +137,7 @@ fn read(files: PathBuf, id: ExtensionId, source: ExtensionSource) -> Result<Stag
 }
 
 /// Verifies and unpacks a CRX (09 §2.2 steps 3-5).
-fn stage_crx(
+pub(super) fn stage_crx(
     bytes: &[u8],
     expect: Expect<'_>,
     dir: &Path,
@@ -234,6 +244,36 @@ pub struct ExtInfo {
     pub requested_hosts: Vec<String>,
     /// It has a toolbar action.
     pub has_action: bool,
+}
+
+/// Moves unpacked files to `<dir>/<id>/<version>/`, removing other
+/// versions (09 §2.2 step 8, §10).
+pub(super) fn move_into_profile(
+    dir: &Path,
+    id: &ExtensionId,
+    version: &str,
+    files: &Path,
+) -> std::io::Result<PathBuf> {
+    let home = dir.join(id.as_str());
+    let dest = home.join(version);
+    std::fs::create_dir_all(&home)?;
+    if dest.exists() {
+        std::fs::remove_dir_all(&dest)?;
+    }
+    std::fs::rename(files, &dest)?;
+    for old in std::fs::read_dir(&home)?.flatten() {
+        if old.path() != dest {
+            let _ = std::fs::remove_dir_all(old.path());
+        }
+    }
+    Ok(dest)
+}
+
+/// Whether any of `hosts` covers every site.
+pub(super) fn is_all_sites_any(hosts: &[String]) -> bool {
+    hosts
+        .iter()
+        .any(|h| mado_extensions::manifest::is_all_sites(h))
 }
 
 /// One `extensions` row (spec 03), with its manifest read.
@@ -684,22 +724,7 @@ impl Core {
         let path = match staged.source {
             ExtensionSource::Unpacked | ExtensionSource::Zip => Some(staged.files.clone()),
             ExtensionSource::Store | ExtensionSource::CrxFile => {
-                let home = dir.join(id.as_str());
-                let dest = home.join(&m.version);
-                let moved = (|| {
-                    std::fs::create_dir_all(&home)?;
-                    if dest.exists() {
-                        std::fs::remove_dir_all(&dest)?;
-                    }
-                    std::fs::rename(&staged.files, &dest)?;
-                    for old in std::fs::read_dir(&home)?.flatten() {
-                        if old.path() != dest {
-                            let _ = std::fs::remove_dir_all(old.path());
-                        }
-                    }
-                    Ok::<_, std::io::Error>(())
-                })();
-                if let Err(e) = moved {
+                if let Err(e) = move_into_profile(&dir, &id, &m.version, &staged.files) {
                     tracing::error!(error = %e, "an extension could not be installed");
                     let _ = std::fs::remove_dir_all(&staged.files);
                     self.extension_notice("notice.extensionFailed", Some(&m.name), rec);

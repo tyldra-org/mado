@@ -67,7 +67,12 @@ impl Core {
 
     /// Writes an extension's row and state, and reloads it in the engine
     /// when `reload`.
-    fn save_installed(&mut self, e: InstalledExtension, reload: bool, rec: &mut PatchRecorder) {
+    pub(super) fn save_installed(
+        &mut self,
+        e: InstalledExtension,
+        reload: bool,
+        rec: &mut PatchRecorder,
+    ) {
         let mut ext = self.state.extensions.clone();
         if let Some(slot) = ext.installed.iter_mut().find(|x| x.id == e.id) {
             *slot = e.clone();
@@ -85,6 +90,8 @@ impl Core {
         let now = self.now();
         let row = (
             e.id.to_string(),
+            e.version.clone(),
+            e.name.clone(),
             e.enabled,
             e.disabled_reason.clone(),
             e.site_access.column(),
@@ -95,10 +102,10 @@ impl Core {
         );
         let pending = self.profile_db.writer().write(move |c| {
             c.execute(
-                "UPDATE extensions SET enabled = ?2, disabled_reason = ?3, site_access = ?4,
-                   granted_permissions = ?5, granted_hosts = ?6, private_allowed = ?7, pinned = ?8,
-                   updated_at = ?9 WHERE id = ?1",
-                params![row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, now],
+                "UPDATE extensions SET version = ?2, name = ?3, enabled = ?4, disabled_reason = ?5,
+                   site_access = ?6, granted_permissions = ?7, granted_hosts = ?8, private_allowed = ?9,
+                   pinned = ?10, updated_at = ?11 WHERE id = ?1",
+                params![row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9, now],
             )
             .map(|_| ())
         });
