@@ -13,7 +13,12 @@ use mado_types::command::Origin;
 use mado_types::patch::PatchRecorder;
 use mado_types::state::{FillMenuItem, FillMenuPrompt, PromptState, Rect, VaultStatus};
 use mado_types::{ErrorCode, MadoError, PromptId, TabId};
-use mado_vault::item::{Item, site_of};
+use std::sync::Arc;
+
+use mado_autofill::source::{
+    FillSource, MadoSource, Merged, SourceError, SourceId, SourceStatus, merge,
+};
+use mado_vault::item::{Item, ItemKind, site_of};
 use mado_vault::{Stored, Vault, VaultError};
 use serde_json::{Value, json};
 
@@ -147,21 +152,6 @@ pub(super) fn values_for(
     out
 }
 
-/// Which item kinds a form takes.
-fn wants(kind: FormKind, item: &Item) -> bool {
-    match kind {
-        FormKind::Login | FormKind::UsernameOnly | FormKind::ChangePassword | FormKind::Signup => {
-            matches!(item, Item::Login(_))
-        }
-        FormKind::Otp => {
-            matches!(item, Item::Login(l) if l.totp.is_some()) || matches!(item, Item::Totp(_))
-        }
-        FormKind::Card => matches!(item, Item::Card(_)),
-        FormKind::Address => matches!(item, Item::Address(_)),
-        FormKind::Identity => matches!(item, Item::Identity(_) | Item::Address(_)),
-    }
-}
-
 /// The fill menu's "Use a strong password" entry (11 §5).
 pub(super) const GENERATE: &str = "generate:";
 
@@ -172,56 +162,66 @@ fn generator_item(kind: FormKind) -> Option<FillMenuItem> {
         subtitle: String::new(),
         kind: "generate".into(),
         source: "mado".into(),
+        sources: vec!["mado".into()],
     })
 }
 
-fn menu_item(s: &Stored) -> FillMenuItem {
-    let subtitle = match &s.item {
-        Item::Login(l) => l.username.clone(),
-        Item::Card(c) => {
-            let last: String = c
-                .number
-                .chars()
-                .rev()
-                .take(4)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-            format!("•••• {last}")
-        }
-        Item::Address(a) => a.lines.first().cloned().unwrap_or_default(),
-        Item::Identity(i) => i.email.clone().unwrap_or_default(),
-        _ => String::new(),
-    };
+fn menu_item(m: &Merged) -> FillMenuItem {
     FillMenuItem {
-        item_ref: format!("mado:{}", s.id),
-        title: s.item.title(),
-        subtitle,
-        kind: serde_json::to_value(s.item.kind())
+        item_ref: format!("{}:{}", m.source.key(), m.summary.id),
+        title: m.summary.title.clone(),
+        subtitle: m.summary.username.clone(),
+        kind: serde_json::to_value(m.summary.kind)
             .ok()
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_default(),
-        source: "mado".into(),
+        source: m.source.key().into(),
+        sources: m.sources.iter().map(|s| s.key().to_owned()).collect(),
     }
 }
 
-/// The items a form is offered: logins by site, cards, addresses and
-/// identities from the whole vault.
-pub(super) fn items_for(
-    c: &rusqlite::Connection,
-    keys: &mado_vault::Keys,
-    kind: FormKind,
-    site: &str,
-) -> Result<Vec<Stored>, VaultError> {
-    let found = match kind {
-        FormKind::Card | FormKind::Address | FormKind::Identity => Vault::list(c, keys, false)?,
-        _ => Vault::find(c, keys, &format!("site:{site}"))?,
-    };
-    Ok(found.into_iter().filter(|s| wants(kind, &s.item)).collect())
+/// The item kinds a form takes (11 §4).
+fn kinds_for(kind: FormKind) -> Vec<ItemKind> {
+    match kind {
+        FormKind::Login | FormKind::UsernameOnly | FormKind::ChangePassword | FormKind::Signup => {
+            vec![ItemKind::Login]
+        }
+        FormKind::Otp => vec![ItemKind::Login, ItemKind::Totp],
+        FormKind::Card => vec![ItemKind::Card],
+        FormKind::Address => vec![ItemKind::Address],
+        FormKind::Identity => vec![ItemKind::Identity, ItemKind::Address],
+    }
+}
+
+fn source_error(e: SourceError) -> VaultError {
+    match e {
+        SourceError::NotFound => VaultError::NotFound,
+        SourceError::Locked => VaultError::Cancelled,
+        SourceError::Failed(m) => VaultError::Platform(m),
+    }
 }
 
 impl Core {
+    /// The fill sources that can answer now (11 §6): Mado while unlocked;
+    /// 1Password and Bitwarden join with M4-T06 and T07.
+    pub(super) fn fill_sources(&self) -> Vec<Arc<dyn FillSource>> {
+        let mut out: Vec<Arc<dyn FillSource>> = Vec::new();
+        if let (Some(cfg), Some(keys)) = (&self.vault, &self.vault_keys) {
+            out.push(Arc::new(MadoSource {
+                db: cfg.db.clone(),
+                keys: Arc::clone(keys),
+                now: self.now(),
+            }));
+        }
+        out
+    }
+
+    /// The source that fills first: `vault.saveDestination.logins`.
+    pub(super) fn preferred_source(&self) -> SourceId {
+        SourceId::from_key(&self.setting_str("vault.saveDestination.logins"))
+            .unwrap_or(SourceId::Mado)
+    }
+
     fn gesture_recent(&self) -> bool {
         self.now() - (self.os.last_gesture)() <= GESTURE_MS
     }
@@ -356,14 +356,25 @@ impl Core {
             }),
         );
         self.state.tx(rec).set_prompts(prompts);
-        if let Some(keys) = self.vault_keys.clone() {
+        let sources = self.fill_sources();
+        if !sources.is_empty() {
             let (kind, site) = (target.kind, target.site.clone());
-            let _ = self.vault_job(None, move |c, _| {
-                let mut items: Vec<FillMenuItem> = items_for(c, &keys, kind, &site)?
+            let preferred = self.preferred_source();
+            let _ = self.vault_job(None, move |_, _| {
+                let kinds = kinds_for(kind);
+                let found = sources
                     .iter()
-                    .map(menu_item)
+                    .filter(|s| s.status() == SourceStatus::Ready)
+                    .filter_map(|s| match s.find(&site, &kinds) {
+                        Ok(items) => Some((s.id(), items)),
+                        Err(e) => {
+                            tracing::warn!(source = s.id().key(), error = %e, "a fill source failed");
+                            None
+                        }
+                    })
                     .collect();
-                if let Some(first) = first.map(|f| format!("mado:{f}"))
+                let mut items: Vec<FillMenuItem> = merge(found, preferred).iter().map(menu_item).collect();
+                if let Some(first) = first
                     && let Some(pos) = items.iter().position(|i| i.item_ref == first)
                 {
                     let item = items.remove(pos);
@@ -459,26 +470,37 @@ impl Core {
         if item_ref == GENERATE {
             return self.fill_generated(target, reply_to, rec);
         }
-        let id = item_ref
-            .strip_prefix("mado:")
-            .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.vault.notFound"))?
-            .to_owned();
-        let keys = self.vault_keys()?;
+        let (source_key, id) = item_ref
+            .split_once(':')
+            .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.vault.notFound"))?;
+        let source = self
+            .fill_sources()
+            .into_iter()
+            .find(|s| s.id().key() == source_key)
+            .ok_or_else(|| MadoError::new(ErrorCode::Locked, "error.vault.locked"))?;
+        let (item_ref, id) = (item_ref.to_owned(), id.to_owned());
         let approved = self.now() < self.vault_fill_until;
+        self.vault_used_at = self.now();
         self.close_fill_menus(tab, rec);
         let reply = reply_to.take();
         let now = self.now();
         self.vault_job(None, move |c, cfg| {
-            let stored = Vault::get(c, &keys, &id)?;
+            let item = source.reveal(&id).map_err(source_error)?;
             // Cards always ask, and anything once the approval window is
             // over (11 §2.3): the enclave shows Touch ID.
-            if matches!(stored.item, Item::Card(_)) || !approved {
+            if matches!(item, Item::Card(_)) || !approved {
                 Vault::unlock(c, &*cfg.enclave, &cfg.dir, "fill a password")?;
             }
-            Vault::touch(c, &id, now)?;
             Ok(VaultOutcome::Fill {
                 target: Box::new(target),
-                item: Box::new(stored),
+                item: Box::new(Stored {
+                    id: item_ref,
+                    item,
+                    created_at: now,
+                    updated_at: now,
+                    last_used_at: Some(now),
+                    deleted_at: None,
+                }),
                 reply,
             })
         })?;
@@ -657,7 +679,6 @@ impl Core {
             && now - login.at <= FOLLOW_UP_MS
             && login.site == frame_site
             && let Some(form) = forms.iter().find(|f| f.kind == FormKind::Otp)
-            && let Some(keys) = self.vault_keys.clone()
         {
             self.otp_after.remove(&tab);
             let target = FillTarget {
@@ -670,15 +691,28 @@ impl Core {
                 site: frame_site,
                 rules: None,
             };
-            let id = login.item;
-            let _ = self.vault_job(None, move |c, _| {
-                let stored = Vault::get(c, &keys, &id)?;
-                Ok(VaultOutcome::Fill {
-                    target: Box::new(target),
-                    item: Box::new(stored),
-                    reply: None,
-                })
-            });
+            let item_ref = login.item;
+            let source = item_ref
+                .split_once(':')
+                .and_then(|(k, _)| self.fill_sources().into_iter().find(|s| s.id().key() == k));
+            if let Some(source) = source {
+                let _ = self.vault_job(None, move |_, _| {
+                    let id = item_ref.split_once(':').map_or("", |(_, id)| id);
+                    let item = source.reveal(id).map_err(source_error)?;
+                    Ok(VaultOutcome::Fill {
+                        target: Box::new(target),
+                        item: Box::new(Stored {
+                            id: item_ref.clone(),
+                            item,
+                            created_at: now,
+                            updated_at: now,
+                            last_used_at: Some(now),
+                            deleted_at: None,
+                        }),
+                        reply: None,
+                    })
+                });
+            }
         }
     }
 

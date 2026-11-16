@@ -789,8 +789,10 @@ pub struct FillMenuItem {
     pub title: String,
     pub subtitle: String,
     pub kind: String,
-    /// `mado`, `onePassword` or `bitwarden`.
+    /// The source that fills it: `mado`, `onePassword` or `bitwarden`.
     pub source: String,
+    /// Every source holding it (a duplicate shows once, 11 §6.4).
+    pub sources: Vec<String>,
 }
 
 /// What the extension install prompt shows (spec 09 §2.2 step 7, §4).

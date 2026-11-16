@@ -44,6 +44,7 @@ function setup(locked: boolean) {
               subtitle: "me@example.com",
               kind: "login",
               source: "mado",
+              sources: ["mado", "bitwarden"],
             },
           ],
         },
@@ -56,6 +57,7 @@ function setup(locked: boolean) {
 
 test("choosing an item fills the form", async () => {
   const seen = setup(false);
+  expect(screen.getByText("Mado · Bitwarden")).toBeTruthy();
   await fireEvent.click(screen.getByRole("menuitem", { name: /example\.com/ }));
   expect(seen.map((r) => r.cmd)).toEqual([
     { type: "vault.fill", tabId: T, formKey: "ab12", itemRef: "mado:1" },

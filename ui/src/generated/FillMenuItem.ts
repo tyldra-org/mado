@@ -9,6 +9,10 @@ export type FillMenuItem = {
  */
 itemRef: string, title: string, subtitle: string, kind: string, 
 /**
- * `mado`, `onePassword` or `bitwarden`.
+ * The source that fills it: `mado`, `onePassword` or `bitwarden`.
  */
-source: string, };
+source: string, 
+/**
+ * Every source holding it (a duplicate shows once, 11 §6.4).
+ */
+sources: Array<string>, };
