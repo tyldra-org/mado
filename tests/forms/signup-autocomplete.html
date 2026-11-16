@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Join</title></head>
+<body>
+<form action="/join" data-expect-kind="signup">
+  <label>Username <input name="user[login]" autocomplete="username" data-expect="username" /></label>
+  <label>Email address <input name="user[email]" type="email" autocomplete="email" data-expect="email" /></label>
+  <label>Password <input name="user[password]" type="password" autocomplete="new-password" data-expect="newPassword" /></label>
+  <button type="submit">Create account</button>
+</form>
+</body>
+</html>

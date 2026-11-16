@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Shop sign in</title></head>
+<body>
+<form name="signIn" action="/ap/signin" data-expect-kind="login">
+  <h1>Sign in</h1>
+  <label for="ap_email">Email or mobile phone number</label>
+  <input type="email" maxlength="128" id="ap_email" name="email" data-expect="username" />
+  <label for="ap_password">Password</label>
+  <input type="password" id="ap_password" name="password" data-expect="password" />
+  <input type="submit" value="Sign in" />
+  <label><input type="checkbox" name="rememberMe" /> Keep me signed in</label>
+</form>
+</body>
+</html>

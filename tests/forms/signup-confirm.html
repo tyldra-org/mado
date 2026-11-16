@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Create your account</title></head>
+<body>
+<form action="/register" data-expect-kind="signup">
+  <h1>Create your account</h1>
+  <label for="fn">First name</label><input id="fn" name="first_name" data-expect="givenName" />
+  <label for="ln">Last name</label><input id="ln" name="last_name" data-expect="familyName" />
+  <label for="em">Email</label><input id="em" name="email" type="email" data-expect="email" />
+  <label for="pw">Password</label><input id="pw" name="password" type="password" data-expect="password" />
+  <label for="pw2">Confirm password</label><input id="pw2" name="password_confirmation" type="password" data-expect="newPassword" />
+  <label><input type="checkbox" name="terms" /> I agree to the terms</label>
+  <button type="submit">Sign up</button>
+</form>
+</body>
+</html>

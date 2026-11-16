@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Two-step verification</title></head>
+<body>
+<form action="/verify" data-expect-kind="otp">
+  <h1>Two-step verification</h1>
+  <p>Enter the 6-digit code from your authenticator app.</p>
+  <input name="otp" inputmode="numeric" maxlength="6" aria-label="Verification code" data-expect="otp" />
+  <button type="submit">Verify</button>
+</form>
+</body>
+</html>

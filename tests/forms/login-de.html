@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Anmelden</title></head>
+<body>
+<form action="/anmelden" data-expect-kind="login">
+  <h2>Anmelden</h2>
+  <label for="u">Benutzername</label><input id="u" name="benutzer" type="text" data-expect="username" />
+  <label for="p">Passwort</label><input id="p" name="kennwort" type="password" data-expect="password" />
+  <button type="submit">Anmelden</button>
+</form>
+</body>
+</html>

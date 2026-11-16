@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Inscription</title></head>
+<body>
+<form action="/inscription" data-expect-kind="signup">
+  <h2>Créer un compte</h2>
+  <label for="prenom">Prénom</label><input id="prenom" name="prenom" data-expect="givenName" />
+  <label for="nom">Nom</label><input id="nom" name="nom" data-expect="familyName" />
+  <label for="courriel">Adresse courriel</label><input id="courriel" name="courriel" data-expect="email" />
+  <label for="mdp">Mot de passe</label><input id="mdp" name="mdp" type="password" data-expect="password" />
+  <button type="submit">S'inscrire</button>
+</form>
+</body>
+</html>

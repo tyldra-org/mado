@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Card details</title></head>
+<body>
+<form action="/pay" data-expect-kind="card">
+  <input name="cc_number" placeholder="Card number" data-expect="ccNumber" />
+  <select name="cc_exp_month" aria-label="Expiry month" data-expect="ccExpMonth"><option>01</option><option>12</option></select>
+  <select name="cc_exp_year" aria-label="Expiry year" data-expect="ccExpYear"><option>2027</option></select>
+  <input name="cvv" placeholder="CVV" maxlength="4" data-expect="ccCsc" />
+  <button type="submit">Pay now</button>
+</form>
+</body>
+</html>

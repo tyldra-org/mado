@@ -553,6 +553,8 @@ pub struct Core {
     pending_transition: BTreeMap<TabId, crate::history::Transition>,
     /// The element under the pointer at the last context menu (M2-T07).
     context_targets: BTreeMap<TabId, mado_engine::page::ContextTarget>,
+    /// The forms each frame of a tab reported (spec 11 §3).
+    page_forms: BTreeMap<TabId, Vec<pages::FrameForms>>,
     /// Tabs whose protected video failed (M2-T06 offers Safari).
     drm_failed: BTreeSet<TabId>,
     /// `privacy.clearOnExit` is clearing before the app quits.
@@ -805,6 +807,7 @@ impl Core {
             quit_after_downloads: false,
             pending_transition: BTreeMap::new(),
             context_targets: BTreeMap::new(),
+            page_forms: BTreeMap::new(),
             drm_failed: BTreeSet::new(),
             clearing_on_exit: false,
             last_input: (config.clock)(),

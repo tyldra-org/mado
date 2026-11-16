@@ -46,6 +46,15 @@ fn best_icon(icons: &[Icon]) -> Option<&Icon> {
         .or_else(|| icons.first())
 }
 
+/// The forms one frame of a tab reported (spec 11 §3), for the fill menu.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct FrameForms {
+    /// The frame's origin, from the engine.
+    pub origin: String,
+    pub main: bool,
+    pub forms: Vec<mado_engine::page::DetectedForm>,
+}
+
 impl Core {
     pub(super) fn post(&mut self, tab: TabId, message: Value) {
         self.outbox.push(EngineOp::Apply(
@@ -124,6 +133,19 @@ impl Core {
                 }
             }
             PageMessage::OpenSearch(o) => self.open_search_seen(tab, o.href),
+            PageMessage::Forms(f) => {
+                // One entry per frame origin and kind of frame; the newest
+                // report of that frame replaces the last (spec 11 §3).
+                let frames = self.page_forms.entry(tab).or_default();
+                frames.retain(|x| !(x.origin == frame.origin && x.main == frame.is_main_frame));
+                if !f.forms.is_empty() && frames.len() < 32 {
+                    frames.push(FrameForms {
+                        origin: frame.origin.clone(),
+                        main: frame.is_main_frame,
+                        forms: f.forms,
+                    });
+                }
+            }
             // 07 §9: no Apple Pay in WKWebView here; offer Safari, once per
             // page (the DRM flag doubles as "already offered").
             PageMessage::CosmeticClasses(c) => self.cosmetic_classes(tab, c),
@@ -223,6 +245,7 @@ impl Core {
         self.responsive(tab, rec);
         self.context_targets.remove(&tab);
         self.drm_failed.remove(&tab);
+        self.page_forms.remove(&tab);
     }
 
     pub(super) fn forget_tab(&mut self, tab: TabId) {
@@ -235,6 +258,7 @@ impl Core {
         self.unresponsive.remove(&tab);
         self.context_targets.remove(&tab);
         self.drm_failed.remove(&tab);
+        self.page_forms.remove(&tab);
     }
 
     /// Tab commands that act on the page (spec 01 §4.2).
