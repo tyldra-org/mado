@@ -870,6 +870,23 @@ pub enum Command {
     /// Shows a hidden element again.
     #[serde(rename = "blocker.unhide", rename_all = "camelCase")]
     BlockerUnhide { id: i64 },
+    /// Turns the blocker off or on for `host` and its subdomains, and
+    /// reloads their tabs.
+    #[serde(rename = "blocker.setSite", rename_all = "camelCase")]
+    BlockerSetSite { host: String, enabled: bool },
+    /// Chooses the filter lists (`blocker.lists`).
+    #[serde(rename = "blocker.setLists", rename_all = "camelCase")]
+    BlockerSetLists { ids: Vec<String> },
+    /// Every list Mado offers: `[{ id, kind, enabled, filters, updatedAt }]`.
+    #[serde(rename = "blocker.availableLists")]
+    BlockerAvailableLists,
+    /// The profile's custom filters, as text.
+    #[serde(rename = "blocker.customFilters")]
+    BlockerCustomFilters,
+    /// Blocked ads and trackers over `days` (7 or 30): totals, the top 20
+    /// sites and the top tracker domains (spec 08 §9).
+    #[serde(rename = "site.privacyReport", rename_all = "camelCase")]
+    SitePrivacyReport { days: u32 },
     /// Replaces the profile's custom filters, one per line.
     #[serde(rename = "blocker.setCustomFilters", rename_all = "camelCase")]
     BlockerSetCustomFilters { text: String },
@@ -1177,7 +1194,12 @@ impl Command {
             | Self::BlockerPickElement { .. }
             | Self::BlockerHidden { .. }
             | Self::BlockerUnhide { .. }
-            | Self::BlockerSetCustomFilters { .. } => CommandFamily::Blocker,
+            | Self::BlockerSetCustomFilters { .. }
+            | Self::BlockerSetSite { .. }
+            | Self::BlockerSetLists { .. }
+            | Self::BlockerAvailableLists
+            | Self::BlockerCustomFilters => CommandFamily::Blocker,
+            Self::SitePrivacyReport { .. } => CommandFamily::Site,
             Self::ExtensionInstall { .. }
             | Self::ExtensionConfirmInstall { .. }
             | Self::ExtensionList
@@ -1342,6 +1364,11 @@ impl Command {
             Self::BlockerHidden { .. } => "blocker.hidden",
             Self::BlockerUnhide { .. } => "blocker.unhide",
             Self::BlockerSetCustomFilters { .. } => "blocker.setCustomFilters",
+            Self::BlockerSetSite { .. } => "blocker.setSite",
+            Self::BlockerSetLists { .. } => "blocker.setLists",
+            Self::BlockerAvailableLists => "blocker.availableLists",
+            Self::BlockerCustomFilters => "blocker.customFilters",
+            Self::SitePrivacyReport { .. } => "site.privacyReport",
             Self::ExtensionInstall { .. } => "extension.install",
             Self::ExtensionConfirmInstall { .. } => "extension.confirmInstall",
             Self::ExtensionList => "extension.list",
@@ -1412,6 +1439,9 @@ impl Command {
                 | Self::ExtensionList
                 | Self::BlockerHidden { .. }
                 | Self::ExtensionOverlaps
+                | Self::BlockerAvailableLists
+                | Self::BlockerCustomFilters
+                | Self::SitePrivacyReport { .. }
         )
     }
 }

@@ -102,6 +102,18 @@ pub enum ListKind {
     Other,
 }
 
+impl FilterList {
+    /// `ads`, `trackers`, `annoyances` or `other`.
+    pub fn kind_name(&self) -> &'static str {
+        match self.kind {
+            ListKind::Ads => "ads",
+            ListKind::Trackers => "trackers",
+            ListKind::Annoyances => "annoyances",
+            ListKind::Other => "other",
+        }
+    }
+}
+
 impl FilterLists {
     pub(crate) fn parse(bytes: &[u8]) -> Result<Self, String> {
         let list: Self = json(bytes)?;

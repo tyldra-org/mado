@@ -24,6 +24,8 @@ pub enum Timer {
     BlockerUpdate,
     /// The daily extension update check (spec 09 §10).
     ExtensionUpdate,
+    /// Writes the blocker's counts (spec 10 §7).
+    BlockerStatsFlush,
     /// An HTTPS-first upgrade had its time (spec 05 §5).
     UpgradeTimeout(mado_types::TabId),
     /// Quit even if downloads did not pause in time.

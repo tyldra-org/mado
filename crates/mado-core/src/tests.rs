@@ -5247,3 +5247,150 @@ fn takeovers_ask_and_change_back() {
         "the other prompt goes with the extension"
     );
 }
+
+/// M3-T14 (10 §7, §8, 08 §9): blocked loads count per site in the privacy
+/// report; the site switch turns the blocker off for a host and reloads
+/// its tabs; three reloads after blocks offer it.
+#[test]
+fn blocker_statistics_and_the_site_switch() {
+    let dir = tempfile::tempdir().expect("dir");
+    crate::testing::BLOCKER.with_borrow_mut(|b| {
+        *b = Some(crate::BlockerConfig {
+            dir: dir.path().join("Blocker"),
+            update: false,
+        });
+    });
+    let core = TestCore::start();
+    crate::testing::BLOCKER.with_borrow_mut(|b| *b = None);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while state_of(&core).blocker.filters == 0 {
+        assert!(std::time::Instant::now() < deadline, "no engine");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://news.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://news.example/"
+    });
+    for _ in 0..3 {
+        core.page.send(mado_engine::EngineEvent::ContentBlocked {
+            tab,
+            url: "https://ads.example/a.js".into(),
+        });
+    }
+    eventually("counted", || state_of(&core).tabs[&tab].blocked_count == 3);
+    let report = ask(
+        &core,
+        Origin::Settings,
+        Command::SitePrivacyReport { days: 7 },
+    )
+    .expect("report");
+    assert_eq!(report["ads"], 3);
+    assert_eq!(report["sites"][0]["host"], "news.example");
+    assert!(
+        ask(
+            &core,
+            Origin::Settings,
+            Command::SitePrivacyReport { days: 3 }
+        )
+        .is_err()
+    );
+
+    // "Page not working?" after three reloads.
+    for id in 0..3 {
+        core.page.send(mado_engine::EngineEvent::NavigationStarted {
+            tab,
+            url: "https://news.example/".into(),
+            nav_id: 100 + id,
+            is_main_frame: true,
+            user_gesture: true,
+            kind: mado_engine::NavKind::Reload,
+        });
+    }
+    eventually("the offer", || {
+        state_of(&core).notices.iter().any(|n| {
+            n.message_key == "notice.pageNotWorking"
+                && matches!(&n.action, Some(a) if matches!(&a.command, Command::BlockerSetSite { host, enabled: false } if host == "news.example"))
+        })
+    });
+
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::BlockerSetSite {
+            host: "news.example".into(),
+            enabled: false,
+        },
+    )
+    .expect("off");
+    assert_eq!(state_of(&core).blocker.off_hosts, ["news.example"]);
+    let engine = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .blocker_rules
+            .clone()
+    };
+    eventually("the rules know", || {
+        engine().is_some_and(|r| r.off_hosts == ["news.example"])
+    });
+    eventually("reloaded", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tab_log
+            .iter()
+            .any(|(t, c)| *t == tab && *c == "reload")
+    });
+    let lists = ask(&core, Origin::Settings, Command::BlockerAvailableLists).expect("lists");
+    assert!(lists.as_array().is_some_and(|l| {
+        l.iter()
+            .any(|x| x["id"] == "easylist" && x["enabled"] == true)
+    }));
+    ask(
+        &core,
+        Origin::Settings,
+        Command::BlockerSetLists {
+            ids: vec!["easylist".into(), "annoyances".into()],
+        },
+    )
+    .expect("lists");
+    assert!(
+        ask(
+            &core,
+            Origin::Settings,
+            Command::BlockerSetLists {
+                ids: vec!["nope".into()]
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(
+        state_of(&core).settings.values["blocker.lists"],
+        json!(["easylist", "annoyances"])
+    );
+    ask(
+        &core,
+        Origin::Settings,
+        Command::BlockerSetCustomFilters {
+            text: "||x.example^\n".into(),
+        },
+    )
+    .expect("filters");
+    eventually("the text", || {
+        ask(&core, Origin::Settings, Command::BlockerCustomFilters).ok()
+            == Some(json!("||x.example^"))
+    });
+    let root = core.stop();
+    // The counts reached the database at quit.
+    let conn = rusqlite::Connection::open(root.path().join("profile.sqlite")).expect("db");
+    let ads: i64 = conn
+        .query_row(
+            "SELECT SUM(ads) FROM blocker_stats WHERE host = 'news.example'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("stats");
+    assert_eq!(ads, 3);
+}

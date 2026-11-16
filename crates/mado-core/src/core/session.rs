@@ -1387,11 +1387,7 @@ impl Core {
                     self.state.tx(rec).blocker().set_rule_lists(lists);
                 }
             }
-            EngineEvent::ContentBlocked { tab, .. } => {
-                if let Some(t) = self.model.tabs.get_mut(&tab) {
-                    t.blocked_count = t.blocked_count.saturating_add(1);
-                }
-            }
+            EngineEvent::ContentBlocked { tab, url } => self.content_blocked(tab, &url),
             EngineEvent::ExtensionOpen {
                 url, new_window, ..
             } => self.extension_open(url, new_window),
@@ -1412,6 +1408,9 @@ impl Core {
             } => {
                 if is_main_frame {
                     self.nav_started(tab, kind, user_gesture);
+                    if kind == mado_engine::NavKind::Reload {
+                        self.reload_seen(tab, rec);
+                    }
                 }
                 if is_main_frame && let Some(t) = self.model.tabs.get_mut(&tab) {
                     t.life = TabLife::Loading;

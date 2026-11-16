@@ -489,5 +489,10 @@ run("WebKit adapter", () => {
       (t) => ((t as Tab & { blockedCount: number }).blockedCount ?? 0) > 0,
       5_000,
     );
+    // 10 §9 check 3: off on the site, the reload loads everything.
+    await mado.control.call("blocker.setSite", { host: "pages.mado.test", enabled: false });
+    const off = await tabWhere(tab, (t) => t.title.startsWith("ad:loaded"), 30_000);
+    expect(off.title).toBe("ad:loaded app:loaded box:shown");
+    await mado.control.call("blocker.setSite", { host: "pages.mado.test", enabled: true });
   });
 });
