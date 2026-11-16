@@ -82,6 +82,10 @@ struct Session {
 /// What the fake engine holds; shared so tests can look inside.
 #[derive(Debug, Default)]
 pub struct FakeState {
+    /// Loaded extensions.
+    pub extensions: Vec<mado_engine::ExtensionLoad>,
+    /// The windows and tabs extensions last saw.
+    pub extension_windows: mado_engine::ExtensionWindows,
     pub windows: BTreeMap<WindowId, FakeWindow>,
     pub tabs: BTreeMap<TabId, FakeTab>,
     /// Every window command, in order.
@@ -789,6 +793,26 @@ impl Engine for FakeEngine {
 
     fn set_privacy(&mut self, privacy: mado_engine::PrivacyConfig) {
         self.lock().privacy = Some(privacy);
+    }
+
+    fn load_extension(
+        &mut self,
+        ext: mado_engine::ExtensionLoad,
+        done: Callback<Result<(), EngineError>>,
+    ) {
+        let mut s = self.lock();
+        s.extensions.retain(|e| e.id != ext.id);
+        s.extensions.push(ext);
+        drop(s);
+        done(Ok(()));
+    }
+
+    fn unload_extension(&mut self, id: String) {
+        self.lock().extensions.retain(|e| e.id != id);
+    }
+
+    fn set_extension_windows(&mut self, windows: mado_engine::ExtensionWindows) {
+        self.lock().extension_windows = windows;
     }
 
     fn download(&mut self, id: EngineDownloadId, cmd: DownloadCommand) {

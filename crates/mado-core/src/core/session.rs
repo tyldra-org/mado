@@ -1378,6 +1378,9 @@ impl Core {
         let now = self.now();
         match event {
             EngineEvent::WindowCreated { .. } | EngineEvent::TabCreated { .. } => {}
+            EngineEvent::ExtensionOpen {
+                url, new_window, ..
+            } => self.extension_open(url, new_window),
             EngineEvent::WindowFocusChanged { window, focused } => {
                 self.window_focus_changed(window, focused);
             }

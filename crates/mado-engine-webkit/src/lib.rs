@@ -15,6 +15,7 @@ mod certificate;
 mod convert;
 mod delegate;
 mod download;
+pub mod extensions;
 mod fullscreen;
 mod keys;
 

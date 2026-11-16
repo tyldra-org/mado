@@ -108,6 +108,22 @@ impl Engine for TauriWindows {
         mado_engine_webkit::set_privacy(privacy);
     }
 
+    fn load_extension(
+        &mut self,
+        ext: mado_engine::ExtensionLoad,
+        done: Callback<Result<(), EngineError>>,
+    ) {
+        mado_engine_webkit::extensions::load(ext, done);
+    }
+
+    fn unload_extension(&mut self, id: String) {
+        mado_engine_webkit::extensions::unload(&id);
+    }
+
+    fn set_extension_windows(&mut self, windows: mado_engine::ExtensionWindows) {
+        mado_engine_webkit::extensions::set_windows(windows);
+    }
+
     fn download(
         &mut self,
         id: mado_engine::event::EngineDownloadId,

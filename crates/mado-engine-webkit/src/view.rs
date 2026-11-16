@@ -107,6 +107,16 @@ impl Adapter {
             unsafe { WKWebsiteDataStore::dataStoreForIdentifier(&uuid, mtm) }
         };
         delegate::set_context(config.events, config.runner);
+        crate::extensions::install(
+            mtm,
+            config.profile,
+            config.ephemeral,
+            &store,
+            Box::new(|window| {
+                let view = content_view(window)?;
+                Some(view.window()?.frame())
+            }),
+        );
         crate::menu::set_labels(config.labels);
         HOST.with_borrow_mut(|h| *h = Some(config.host));
         Self {
@@ -200,6 +210,9 @@ impl Adapter {
         // SAFETY: plain setters on a configuration not yet in use.
         unsafe {
             config.setWebsiteDataStore(&self.store);
+            if let Some(extensions) = crate::extensions::controller() {
+                config.setWebExtensionController(Some(&extensions));
+            }
             let controller = WKUserContentController::new(self.mtm);
             self.install_scripts(tab, &controller);
             controller.addScriptMessageHandlerWithReply_contentWorld_name(

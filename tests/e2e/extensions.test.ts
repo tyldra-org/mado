@@ -1,15 +1,19 @@
 // Extensions end to end (spec 09 §12, roadmap M3-T03): the real Chrome Web
 // Store, so it needs the network and runs only with MADO_E2E_NETWORK=1.
 // uBlock Origin Lite downloads, verifies with the store's proof, shows the
-// install prompt, and Add installs it into the profile.
+// install prompt, and Add installs it into the profile; Dark Reader, loaded
+// through WKWebExtensionController (M3-T04), turns a white fixture page dark.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
+import { type Subprocess, spawn } from "bun";
 import { bin, Mado } from "./harness";
 
-const run = bin && process.env.MADO_E2E_NETWORK === "1" ? describe : describe.skip;
+const fixtureBin = process.env.MADO_FIXTURE_BIN;
+const run = bin && fixtureBin && process.env.MADO_E2E_NETWORK === "1" ? describe : describe.skip;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const UBOL = "ddkjiahejlhfcafbddmgiahcphecmpfh";
+const DARK_READER = "eimadpbcbfnmbkopoojfekhnkhdbieeh";
 
 async function until<T>(
   what: string,
@@ -34,15 +38,33 @@ type State = {
 
 run("extensions from the Chrome Web Store", () => {
   let mado: Mado;
+  let fixtures: Subprocess<"ignore", "pipe", "inherit">;
 
   beforeAll(async () => {
+    fixtures = spawn([fixtureBin as string, "--pages", "tests/pages"], {
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+    const reader = fixtures.stdout.getReader();
+    let text = "";
+    while (!text.includes("\n")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    const proxy = /proxy=(\S+)/.exec(text)?.[1] ?? "";
     mado = await Mado.create();
     await mado.start();
+    // Fixture pages through the fixture server; the store and Google's
+    // download hosts are reached by Mado itself, outside the page proxy.
+    await mado.control.call("settings.set", { key: "proxy.mode", value: "manual" });
+    await mado.control.call("settings.set", { key: "proxy.http", value: proxy });
   });
 
   afterAll(async () => {
     await mado?.quit();
     await mado?.remove();
+    fixtures?.kill();
   });
 
   const state = async () => (await mado.control.call<{ state: State }>("state.get")).state;
@@ -73,5 +95,33 @@ run("extensions from the Chrome Web Store", () => {
       "manifest.json",
     );
     expect((await stat(manifest)).isFile()).toBe(true);
+  });
+
+  test("Dark Reader loads in WebKit and darkens a white page", async () => {
+    await asUser({ type: "extension.install", id: DARK_READER, source: "store" });
+    const prompt = await until("the install prompt", async () =>
+      Object.values((await state()).prompts).find(
+        (p) => p.type === "extensionInstall" && p.extensionId === DARK_READER,
+      ),
+    );
+    await asUser({ type: "extension.confirmInstall", promptId: prompt.id, add: true });
+    await until("installed", async () =>
+      (await state()).extensions.installed.find((e) => e.id === DARK_READER),
+    );
+    const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+      private: false,
+      urls: ["http://pages.mado.test/extensions/plain.html"],
+    });
+    type Tabs = {
+      tabs: Record<string, { title: string }>;
+      windows: Record<string, { tabOrder: string[] }>;
+    };
+    const title = await until("the colour", async () => {
+      const s = (await mado.control.call<{ state: Tabs }>("state.get")).state;
+      const tab = s.windows[windowId]?.tabOrder[0];
+      const t = tab ? s.tabs[tab]?.title : undefined;
+      return t && t !== "pending" ? t : undefined;
+    });
+    expect(title).not.toBe("rgb(255, 255, 255)");
   });
 });

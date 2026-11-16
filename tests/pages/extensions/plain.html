@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pending</title>
+    <style>
+      html,
+      body {
+        background: #ffffff;
+        color: #000000;
+      }
+    </style>
+  </head>
+  <body>
+    <p>A white page. Dark Reader turns it dark; the title reports the colour it ends with.</p>
+    <script>
+      setTimeout(() => {
+        document.title = getComputedStyle(document.body).backgroundColor;
+      }, 3000);
+    </script>
+  </body>
+</html>
