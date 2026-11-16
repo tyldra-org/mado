@@ -13,3 +13,10 @@ failure-output = "immediate-final"
 fail-fast = false
 # No retries: a test that passes only on retry is a flake to fix, not hide.
 retries = 0
+
+# The blocker tests build an engine from all of EasyList in a debug build:
+# they get the machine to themselves so timing-sensitive tests beside them
+# do not starve.
+[[profile.default.overrides]]
+filter = "test(/blocker|bundled_easylist|corrupt_download/)"
+threads-required = "num-cpus"

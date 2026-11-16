@@ -84,6 +84,8 @@ struct Session {
 pub struct FakeState {
     /// Loaded extensions.
     pub extensions: Vec<mado_engine::ExtensionLoad>,
+    /// Extension calls, as text.
+    pub extension_ops: Vec<String>,
     /// The blocker's rules the core last sent.
     pub blocker_rules: Option<mado_engine::BlockerRules>,
     /// The windows and tabs extensions last saw.
@@ -815,6 +817,15 @@ impl Engine for FakeEngine {
 
     fn set_extension_windows(&mut self, windows: mado_engine::ExtensionWindows) {
         self.lock().extension_windows = windows;
+    }
+
+    fn extension(&mut self, op: mado_engine::ExtensionOp) {
+        match op {
+            mado_engine::ExtensionOp::Errors { id, reply } => {
+                reply(vec![format!("{id}: no errors in the fake engine")]);
+            }
+            other => self.lock().extension_ops.push(format!("{other:?}")),
+        }
     }
 
     fn set_blocker_rules(&mut self, rules: mado_engine::BlockerRules) {

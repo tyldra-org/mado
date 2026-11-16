@@ -15,7 +15,7 @@ pub mod types;
 pub use registry::*;
 pub use service::{
     AuthTokens, Change, ImportReport, LogEntry, Outcome, SearchHit, Settings, SettingsError, Write,
-    persist,
+    normalize_shortcut, persist,
 };
 pub use setting::{Migrate, Options, Setting, SettingDef, def, lookup};
 pub use strings::Strings;

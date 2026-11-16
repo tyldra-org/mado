@@ -136,3 +136,40 @@ describe("extension install prompt", () => {
     ]);
   });
 });
+
+describe("extension toolbar", () => {
+  test("a pinned button opens its popup under itself", async () => {
+    const id = "ddkjiahejlhfcafbddmgiahcphecmpfh";
+    const seen = await shown({
+      extensions: {
+        pinned: [id],
+        installed: [],
+        toolbar: [
+          {
+            id,
+            name: "uBlock Origin Lite",
+            iconUrl: "",
+            badgeText: "4",
+            badgeColor: "",
+            title: "uBO Lite",
+            hasPopup: true,
+            enabled: true,
+            siteAccessForActiveTab: "granted",
+          },
+        ],
+      },
+    });
+    const button = await screen.findByTitle("uBO Lite");
+    expect(button.textContent).toContain("4");
+    await fireEvent.click(button);
+    await tick();
+    const popup = sent(seen, "extension.openPopup")[0] as {
+      id: string;
+      windowId: string;
+      anchor: object;
+    };
+    expect(popup.id).toBe(id);
+    expect(popup.windowId).toBe(W);
+    expect(popup.anchor).toHaveProperty("width");
+  });
+});

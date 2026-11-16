@@ -8,6 +8,7 @@
   import BookmarksPage from "./pages/BookmarksPage.svelte";
   import CreditsPage from "./pages/CreditsPage.svelte";
   import DownloadsPage from "./pages/DownloadsPage.svelte";
+  import ExtensionsPage from "./pages/ExtensionsPage.svelte";
   import HistoryPage from "./pages/HistoryPage.svelte";
   import NewTabPage from "./pages/NewTabPage.svelte";
 
@@ -20,6 +21,7 @@
     bookmarks: "internal.bookmarks.title",
     about: "internal.about.title",
     credits: "internal.credits.title",
+    extensions: "internal.extensions.title",
   };
 
   $effect(() => {
@@ -39,6 +41,8 @@
   <AboutPage {store} />
 {:else if page === "credits"}
   <CreditsPage />
+{:else if page === "extensions"}
+  <ExtensionsPage {store} />
 {:else}
   <main><h1>{t("internal.notFound")}</h1></main>
 {/if}

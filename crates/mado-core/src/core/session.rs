@@ -1378,6 +1378,10 @@ impl Core {
         let now = self.now();
         match event {
             EngineEvent::WindowCreated { .. } | EngineEvent::TabCreated { .. } => {}
+            EngineEvent::ExtensionLoaded { id, base_url } => self.extension_loaded(&id, base_url),
+            EngineEvent::ExtensionActions { tab, actions } => {
+                self.extension_actions(tab, actions, rec)
+            }
             EngineEvent::BlockerRulesApplied { lists } => {
                 if self.state.blocker.rule_lists != lists {
                     self.state.tx(rec).blocker().set_rule_lists(lists);

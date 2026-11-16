@@ -646,6 +646,62 @@ pub struct InstalledExtension {
     pub version: String,
     pub enabled: bool,
     pub source: crate::command::ExtensionSource,
+    /// Why it is off when Mado turned it off: `blocked`,
+    /// `permissionsIncrease`.
+    pub disabled_reason: Option<String>,
+    pub site_access: SiteAccessMode,
+    /// The sites it may read now.
+    pub hosts: Vec<String>,
+    /// The API permissions it has now.
+    pub permissions: Vec<String>,
+    /// Optional permissions and hosts it declared and may be granted.
+    pub optional: Vec<String>,
+    pub private_allowed: bool,
+    pub has_options: bool,
+    /// Its manifest `commands` and their shortcuts.
+    pub shortcuts: Vec<ExtensionShortcut>,
+}
+
+/// Where an extension may run (spec 09 §6, the `site_access` column).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SiteAccessMode {
+    /// Only after its button is clicked, on that tab (`activeTab`).
+    OnClick,
+    /// The hosts in `hosts`.
+    #[default]
+    Specific,
+    All,
+}
+
+impl SiteAccessMode {
+    /// The `extensions.site_access` column.
+    pub fn column(self) -> &'static str {
+        match self {
+            Self::OnClick => "on_click",
+            Self::Specific => "specific",
+            Self::All => "all",
+        }
+    }
+
+    pub fn from_column(s: &str) -> Self {
+        match s {
+            "on_click" => Self::OnClick,
+            "all" => Self::All,
+            _ => Self::Specific,
+        }
+    }
+}
+
+/// One manifest command with its shortcut (spec 09 §11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExtensionShortcut {
+    pub command: String,
+    pub description: String,
+    pub keys: Option<String>,
 }
 
 /// What the extension install prompt shows (spec 09 §2.2 step 7, §4).

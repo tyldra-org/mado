@@ -186,6 +186,57 @@ pub trait Engine {
     fn set_blocker_rules(&mut self, rules: BlockerRules) {
         let _ = rules;
     }
+    /// A call on a loaded extension (spec 09 §6, §11).
+    fn extension(&mut self, op: ExtensionOp) {
+        if let ExtensionOp::Errors { reply, .. } = op {
+            reply(Vec::new());
+        }
+    }
+}
+
+/// A call on a loaded extension.
+pub enum ExtensionOp {
+    /// Its toolbar button was clicked on `tab`: show its popup at
+    /// `anchor` (UI pixels of `window`), or dispatch `action.onClicked`.
+    /// Grants `activeTab` for the tab (spec 09 §6).
+    Action {
+        id: String,
+        window: WindowId,
+        tab: TabId,
+        anchor: mado_types::state::Rect,
+    },
+    /// Its errors as text, for Developer mode.
+    Errors {
+        id: String,
+        reply: Callback<Vec<String>>,
+    },
+    /// Whether Safari's Web Inspector may inspect its pages.
+    Inspectable { id: String, on: bool },
+    /// Deletes what it stored (`chrome.storage`), before it is unloaded.
+    DeleteData { id: String },
+}
+
+impl std::fmt::Debug for ExtensionOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Action { id, tab, .. } => write!(f, "Action({id}, {tab})"),
+            Self::Errors { id, .. } => write!(f, "Errors({id})"),
+            Self::Inspectable { id, on } => write!(f, "Inspectable({id}, {on})"),
+            Self::DeleteData { id } => write!(f, "DeleteData({id})"),
+        }
+    }
+}
+
+/// One extension's toolbar action on a tab (spec 09 §6), from the engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionActionInfo {
+    pub id: String,
+    pub label: String,
+    pub badge: String,
+    /// A `data:image/png` URL.
+    pub icon: Option<String>,
+    pub has_popup: bool,
+    pub enabled: bool,
 }
 
 /// The blocker's WebKit content rule lists (spec 10 §4), applied in order
@@ -244,6 +295,8 @@ pub struct ExtensionLoad {
     pub permissions: Vec<String>,
     /// Match patterns.
     pub hosts: Vec<String>,
+    /// Developer mode: Safari's Web Inspector may inspect its pages.
+    pub inspectable: bool,
 }
 
 /// The windows extensions see, focused first (spec 09 §5.1): the
@@ -287,6 +340,7 @@ pub enum EngineOp {
     UnloadExtension(String),
     ExtensionWindows(ExtensionWindows),
     SetBlockerRules(BlockerRules),
+    Extension(ExtensionOp),
 }
 
 impl std::fmt::Debug for EngineOp {
@@ -305,6 +359,7 @@ impl std::fmt::Debug for EngineOp {
             Self::UnloadExtension(id) => write!(f, "UnloadExtension({id})"),
             Self::ExtensionWindows(w) => write!(f, "ExtensionWindows({})", w.windows.len()),
             Self::SetBlockerRules(r) => write!(f, "SetBlockerRules({} lists)", r.lists.len()),
+            Self::Extension(op) => write!(f, "Extension({op:?})"),
             Self::Download(id, cmd) => write!(
                 f,
                 "Download({id:?}, {})",
@@ -352,6 +407,7 @@ impl EngineOp {
             Self::UnloadExtension(id) => engine.unload_extension(id),
             Self::ExtensionWindows(w) => engine.set_extension_windows(w),
             Self::SetBlockerRules(r) => engine.set_blocker_rules(r),
+            Self::Extension(op) => engine.extension(op),
         }
     }
 }

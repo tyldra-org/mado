@@ -81,9 +81,14 @@ pub struct TauriUi {
 
 impl UiSink for TauriUi {
     fn open_settings(&mut self) {
+        self.open_settings_at("");
+    }
+
+    fn open_settings_at(&mut self, section: &str) {
         let app = self.app.clone();
+        let section = section.to_owned();
         let _ = self.app.run_on_main_thread(move || {
-            if let Err(e) = crate::open_settings(&app) {
+            if let Err(e) = crate::open_settings_at(&app, &section) {
                 tracing::error!(error = %e, "the settings window did not open");
             }
         });
