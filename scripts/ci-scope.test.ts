@@ -133,9 +133,12 @@ describe("classify", () => {
   });
 
   test("a path no list names runs everything, never nothing", () => {
-    expect(unlisted(["README.md", "lists/easylist.txt"])).toEqual(["lists/easylist.txt"]);
-    expect(classify(["lists/easylist.txt"])).toEqual(EVERYTHING);
-    expect(classify(["README.md", "assets/logo.svg"])).toEqual(EVERYTHING);
+    expect(unlisted(["README.md", "vendor/blob.bin"])).toEqual(["vendor/blob.bin"]);
+    expect(classify(["README.md", "vendor/blob.bin"])).toEqual(EVERYTHING);
+  });
+
+  test("a signed list runs every crate's tests, which read the bundled copies", () => {
+    expect(classify(["lists/compat.json"])).toMatchObject({ full: false, rust: true, ts: false });
   });
 
   test("the CI wiring itself runs everything", () => {
@@ -173,7 +176,7 @@ describe("affectedCrates", () => {
   });
 
   test("a path no list names affects every crate", () => {
-    expect(affectedCrates(["crates/mado-cli/src/main.rs", "assets/logo.svg"], crates)).toBe("all");
+    expect(affectedCrates(["crates/mado-cli/src/main.rs", "vendor/blob.bin"], crates)).toBe("all");
   });
 
   test("no nameable crate falls back to all", () => {

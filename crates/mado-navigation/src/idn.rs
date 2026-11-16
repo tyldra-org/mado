@@ -539,28 +539,36 @@ pub struct TopDomains {
     by_skeleton: HashMap<String, String>,
 }
 
-static BUNDLED: LazyLock<TopDomains> =
-    LazyLock::new(|| TopDomains::from_list(include_str!("../data/top-domains.txt")));
+static CURRENT: mado_lists::Derived<TopDomains> =
+    mado_lists::Derived::new(mado_lists::List::TopDomains, || {
+        TopDomains::from_domains(&mado_lists::top_domains().domains)
+    });
 
 impl TopDomains {
-    /// Chromium's list of top domains, bundled.
-    pub fn bundled() -> &'static Self {
-        &BUNDLED
+    /// The signed top domains list (`lists/top-domains.txt`).
+    pub fn current() -> std::sync::Arc<Self> {
+        CURRENT.get()
+    }
+
+    pub fn from_domains(domains: &[String]) -> Self {
+        let mut by_skeleton = HashMap::new();
+        for domain in domains {
+            for s in skeletons(domain) {
+                by_skeleton.entry(s).or_insert_with(|| domain.clone());
+            }
+        }
+        Self { by_skeleton }
     }
 
     /// One domain per line; `#` starts a comment line.
     pub fn from_list(list: &str) -> Self {
-        let mut by_skeleton = HashMap::new();
-        for domain in list
+        let domains: Vec<String> = list
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        {
-            for s in skeletons(domain) {
-                by_skeleton.entry(s).or_insert_with(|| domain.to_owned());
-            }
-        }
-        Self { by_skeleton }
+            .map(str::to_owned)
+            .collect();
+        Self::from_domains(&domains)
     }
 
     fn lookup(&self, skeleton: &str) -> Option<&str> {

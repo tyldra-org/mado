@@ -1,5 +1,4 @@
 {
-  "_comment": "Query parameters Copy clean link removes (spec 08 §8). prefixes: any parameter starting with one; params: these names on every host; hosts: these names on the host and its subdomains only, where they mean nothing else.",
   "prefixes": ["utm_", "pk_", "mtm_"],
   "params": [
     "fbclid",

@@ -708,7 +708,7 @@ impl Core {
             A::OpenLinkInSafari if !link.is_empty() => self.ui.open_in_safari(&link),
             A::CopyLink if !link.is_empty() => self.ui.copy_text(&link),
             A::CopyCleanLink if !link.is_empty() => {
-                self.ui.copy_text(&mado_engine::menu::clean_link(&link));
+                self.ui.copy_text(&mado_safety::clean_link(&link));
             }
             A::CopyLinkAsMarkdown if !link.is_empty() => {
                 let text = c

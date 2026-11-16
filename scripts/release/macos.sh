@@ -36,8 +36,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 1. Build the bundle, unsigned.
+# 1. Build the bundle, unsigned. The bundled lists carry this commit's time,
+# so a published list older than this build never replaces them
+# (lists/README.md).
 cd "$root/app"
+MADO_LISTS_SERIAL=$(git -C "$root" log -1 --format=%ct)
+export MADO_LISTS_SERIAL
 bunx tauri build --target "$target" --bundles app --no-sign \
   --config "{\"version\":\"$version\"}"
 app="$root/target/$target/release/bundle/macos/Mado.app"

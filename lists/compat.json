@@ -1,0 +1,29 @@
+{
+  "extensions": {
+    "ddkjiahejlhfcafbddmgiahcphecmpfh": {
+      "name": "uBlock Origin Lite",
+      "status": "mostly",
+      "category": "adBlocker"
+    },
+    "eimadpbcbfnmbkopoojfekhnkhdbieeh": {
+      "name": "Dark Reader",
+      "status": "mostly",
+      "category": "darkMode"
+    },
+    "nngceckbapebfimnlniiiahkandclblb": {
+      "name": "Bitwarden",
+      "status": "notSupported",
+      "category": "passwordManager",
+      "manager": "bitwarden"
+    },
+    "aeblfdkhhhdcdjpifhhbdiojplfjncoa": {
+      "name": "1Password",
+      "status": "notSupported",
+      "category": "passwordManager",
+      "manager": "1password"
+    }
+  },
+  "blocked": {},
+  "crowdDenyNotifications": [],
+  "minSafeEngine": { "webkit": "620.1.15" }
+}

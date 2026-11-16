@@ -108,8 +108,9 @@ export class Mado {
             NO_PROXY: "",
           }
         : {
-            // Tests never reach Apple's captive portal probe.
+            // Tests never reach Apple's captive portal probe or the lists.
             MADO_CAPTIVE_PROBE: "",
+            MADO_LISTS_URL: "",
           }),
     } as Record<string, string>;
   }

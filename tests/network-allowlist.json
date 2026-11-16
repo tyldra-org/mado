@@ -18,6 +18,10 @@
       "why": "Update check: GitHub release downloads redirect here"
     },
     {
+      "pattern": "tyldra-org.github.io",
+      "why": "The signed lists, fetched daily (09 §7, 15 §7)"
+    },
+    {
       "pattern": "captive.apple.com",
       "why": "Captive portal probe after a failed load (05 §8)"
     }

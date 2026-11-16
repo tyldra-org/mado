@@ -1,0 +1,32 @@
+[package]
+name = "mado-lists"
+description = "The signed lists Mado fetches: their data, signatures, the last good copies and the bundled copies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# The signing tool lists.yml runs (src/bin/mado-lists.rs).
+tool = ["dep:minisign"]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mado-lists"
+required-features = ["tool"]
+
+[dependencies]
+flate2 = "1.1.11"
+minisign = { version = "0.10.0", optional = true }
+minisign-verify = "0.3.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+
+[dev-dependencies]
+minisign = "0.10.0"
+tempfile = "3.27.0"

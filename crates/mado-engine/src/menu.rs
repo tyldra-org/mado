@@ -146,58 +146,6 @@ pub fn build(c: &ContextData, env: &MenuEnv) -> Vec<MenuEntry> {
     out
 }
 
-/// The parameters Copy clean link removes (spec 08 §8).
-#[derive(serde::Deserialize)]
-struct TrackingParams {
-    prefixes: Vec<String>,
-    params: Vec<String>,
-    hosts: std::collections::BTreeMap<String, Vec<String>>,
-}
-
-fn tracking_params() -> &'static TrackingParams {
-    static LIST: std::sync::OnceLock<TrackingParams> = std::sync::OnceLock::new();
-    LIST.get_or_init(|| {
-        serde_json::from_str(include_str!("../data/tracking-params.json"))
-            .expect("the bundled tracking parameter list parses")
-    })
-}
-
-/// A link without its tracking parameters (`utm_*`, `fbclid`, `gclid`,
-/// `si` on youtu.be and the rest of `data/tracking-params.json`), for
-/// Copy clean link.
-pub fn clean_link(url: &str) -> String {
-    let Ok(mut u) = url::Url::parse(url) else {
-        return url.to_owned();
-    };
-    let list = tracking_params();
-    let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
-    let on_host: Vec<&str> = list
-        .hosts
-        .iter()
-        .filter(|(h, _)| host == **h || host.ends_with(&format!(".{h}")))
-        .flat_map(|(_, p)| p.iter().map(String::as_str))
-        .collect();
-    let tracking = |k: &str| {
-        list.prefixes.iter().any(|p| k.starts_with(p.as_str()))
-            || list.params.iter().any(|p| p == k)
-            || on_host.contains(&k)
-    };
-    if u.query().is_none() {
-        return u.to_string();
-    }
-    let kept: Vec<(String, String)> = u
-        .query_pairs()
-        .filter(|(k, _)| !tracking(k))
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect();
-    if kept.is_empty() {
-        u.set_query(None);
-    } else {
-        u.query_pairs_mut().clear().extend_pairs(kept);
-    }
-    u.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,31 +183,5 @@ mod tests {
         let with_engine = labels(&build(&sel, &MenuEnv { can_search: true }));
         assert!(with_engine.contains(&"searchSelection"));
         assert!(!labels(&build(&sel, &MenuEnv::default())).contains(&"searchSelection"));
-    }
-
-    #[test]
-    fn clean_links_lose_tracking() {
-        assert_eq!(
-            clean_link("https://a.example/p?utm_source=x&id=7&fbclid=y"),
-            "https://a.example/p?id=7"
-        );
-        assert_eq!(
-            clean_link("https://a.example/p?gclid=1"),
-            "https://a.example/p"
-        );
-        assert_eq!(
-            clean_link("https://youtu.be/dQw4w9WgXcQ?si=abc&t=42"),
-            "https://youtu.be/dQw4w9WgXcQ?t=42"
-        );
-        assert_eq!(
-            clean_link("https://open.spotify.com/track/1?si=x"),
-            "https://open.spotify.com/track/1"
-        );
-        // `si` means something else elsewhere.
-        assert_eq!(
-            clean_link("https://a.example/?si=1"),
-            "https://a.example/?si=1"
-        );
-        assert_eq!(clean_link("not a url"), "not a url");
     }
 }

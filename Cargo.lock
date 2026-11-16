@@ -2258,6 +2258,7 @@ dependencies = [
  "mado-core",
  "mado-engine",
  "mado-engine-webkit",
+ "mado-lists",
  "mado-platform",
  "mado-settings",
  "mado-storage",
@@ -2317,6 +2318,7 @@ dependencies = [
  "mado-engine",
  "mado-engine-fake",
  "mado-import",
+ "mado-lists",
  "mado-navigation",
  "mado-permissions",
  "mado-platform",
@@ -2324,6 +2326,7 @@ dependencies = [
  "mado-settings",
  "mado-storage",
  "mado-types",
+ "minisign",
  "proptest",
  "psl",
  "reqwest",
@@ -2348,7 +2351,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -2417,11 +2419,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mado-lists"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "minisign",
+ "minisign-verify",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "mado-navigation"
 version = "0.0.0"
 dependencies = [
  "idna",
  "jiff",
+ "mado-lists",
  "psl",
  "regex",
  "roxmltree",
@@ -2463,10 +2479,11 @@ dependencies = [
 name = "mado-safety"
 version = "0.0.0"
 dependencies = [
- "flate2",
  "idna",
+ "mado-lists",
  "mado-navigation",
  "psl",
+ "url",
 ]
 
 [[package]]

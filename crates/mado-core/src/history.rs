@@ -632,26 +632,14 @@ pub fn retention(
     Ok(())
 }
 
-/// Hosts whose pages are never indexed (spec 12 §2.2): a bundled copy of
-/// `lists/sensitive-hosts.json` until the signed list arrives (M3-T01).
-const SENSITIVE: &str = include_str!("../data/sensitive-hosts.json");
-
+/// Hosts whose pages are never indexed (spec 12 §2.2):
+/// `lists/sensitive-hosts.json`.
 pub fn is_sensitive(host: &str) -> bool {
     let host = host.trim_start_matches("www.").to_ascii_lowercase();
-    static HOSTS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    let hosts = HOSTS.get_or_init(|| {
-        serde_json::from_str::<SensitiveList>(SENSITIVE)
-            .map(|l| l.banking)
-            .unwrap_or_default()
-    });
-    hosts
+    mado_lists::sensitive_hosts()
+        .banking
         .iter()
         .any(|h| host == *h || host.ends_with(&format!(".{h}")))
-}
-
-#[derive(Deserialize)]
-struct SensitiveList {
-    banking: Vec<String>,
 }
 
 #[cfg(test)]
