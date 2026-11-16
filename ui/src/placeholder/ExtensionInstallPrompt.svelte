@@ -47,6 +47,7 @@
       {/each}
     </ul>
     {#if prompt.mayNotWork}<p>{t("prompt.extension.mayNotWork")}</p>{/if}
+    {#if prompt.limitation}<p>{t(prompt.limitation, { name: prompt.name })}</p>{/if}
     {#if prompt.replaces}<p>{t("prompt.extension.replaces", { version: prompt.replaces })}</p>{/if}
     <button type="button" onclick={() => answer(true)}>{t("prompt.extension.add")}</button>
     <button type="button" onclick={() => answer(false)}>{t("prompt.extension.cancel")}</button>

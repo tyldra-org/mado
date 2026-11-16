@@ -232,4 +232,39 @@ run("extensions from the Chrome Web Store", () => {
     await asUser({ type: "extension.remove", id: UBOL, deleteData: true });
     expect((await st()).settings.values["blocker.enabled"]).toBe(true);
   });
+  test("the store page relabels its button: installed, and a theme not available (09 §12 check 5)", async () => {
+    type Tabs = { windows: Record<string, { tabOrder: string[] }> };
+    // The store over the real network: the fixture proxy only serves
+    // *.mado.test with its own certificate authority.
+    await mado.control.call("settings.set", { key: "proxy.mode", value: "direct" });
+    const label = async (id: string) => {
+      const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+        private: false,
+        urls: [`https://chromewebstore.google.com/detail/${id}`],
+      });
+      const tab = (await mado.control.call<{ state: Tabs }>("state.get")).state.windows[windowId]
+        ?.tabOrder[0];
+      return until(
+        `the store's button for ${id}`,
+        async () => {
+          // JSON text: WebKit hands a null result back as "<null>".
+          const text = await mado.control
+            .call<string>("test.eval", {
+              tabId: tab,
+              source: `const b = document.querySelector("button[data-mado-store]");
+                return b ? JSON.stringify({ label: b.textContent.trim(), disabled: b.disabled }) : "";`,
+            })
+            .catch(() => "");
+          return text ? (JSON.parse(text) as { label: string; disabled: boolean }) : undefined;
+        },
+        90_000,
+      );
+    };
+    expect(await label(DARK_READER)).toEqual({ label: "Remove from Mado", disabled: false });
+    // Just Black, a theme by Google.
+    expect(await label("aghfnjkcakhmadgdomlmlhhaocbkloab")).toEqual({
+      label: "Not available in Mado",
+      disabled: true,
+    });
+  }, 200_000);
 });

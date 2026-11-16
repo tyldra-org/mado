@@ -44,4 +44,9 @@ olderFormat: boolean,
 /**
  * Installing replaces this installed version.
  */
-replaces: string | null, };
+replaces: string | null, 
+/**
+ * The compatibility list marks it `notSupported`: the `en.json` key
+ * of what does not work in Mado yet (spec 09 §7).
+ */
+limitation: string | null, };

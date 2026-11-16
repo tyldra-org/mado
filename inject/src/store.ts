@@ -17,6 +17,7 @@ interface Known {
 
 const KNOWN = Symbol.for("mado.store");
 const MARK = "data-mado-store";
+const LABEL = "data-mado-store-label";
 
 /** The ID in /detail/<slug>/<id> or /detail/<id>. */
 export function idFromPath(path: string): string | null {
@@ -40,6 +41,21 @@ function installButton(): HTMLButtonElement | null {
   return null;
 }
 
+/** The element holding the button's words: the one that said "Add to
+ * Chrome" (the store's button has empty spans for its ripple and icon
+ * before it), marked once found. */
+function labelOf(button: HTMLButtonElement): HTMLElement {
+  const marked = button.querySelector<HTMLElement>(`[${LABEL}]`);
+  if (marked) return marked;
+  for (const el of button.querySelectorAll<HTMLElement>("*")) {
+    if (el.children.length === 0 && /(Add to|Remove from) Chrome/i.test(el.textContent ?? "")) {
+      el.setAttribute(LABEL, "");
+      return el;
+    }
+  }
+  return button;
+}
+
 function hideBanner(): void {
   for (const el of document.querySelectorAll<HTMLElement>("[role=alert], [role=status], aside")) {
     if (/Switch to Chrome/i.test(el.textContent ?? "")) el.style.display = "none";
@@ -60,7 +76,7 @@ function update(): void {
     : installed
       ? known.labels.remove
       : known.labels.add;
-  const span = button.querySelector("span") ?? button;
+  const span = labelOf(button);
   if (span.textContent !== label) span.textContent = label;
   button.disabled = unavailable;
   if (!button.hasAttribute(MARK)) {

@@ -1,0 +1,8 @@
+# uBlock Origin Lite: the extension matrix (spec 16 §1), run by
+# `bun run test:extensions`. Installing it turns Mado's blocker off (the
+# overlap prompt's default), so the ad script is blocked by the extension.
+name: uBlock Origin Lite
+popup: true
+checks:
+  - open: /blocker/network.html
+    title: "^ad:blocked app:loaded"

@@ -9,8 +9,8 @@
 // opens hidden and unfocused (MADO_TEST_HEADLESS).
 
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { type Subprocess, spawn } from "bun";
 
 export const bin = process.env.MADO_E2E_BIN;
@@ -188,6 +188,14 @@ export class Mado {
 
   async remove(): Promise<void> {
     if (this.process && this.process.exitCode === null) await this.kill();
+    // WebKit keeps each profile's website data and extension storage under
+    // ~/Library/WebKit/<executable>, outside the root.
+    const webkit = join(homedir(), "Library/WebKit", basename(bin ?? ""));
+    for (const id of await readdir(join(this.dir, "Profiles")).catch(() => [] as string[])) {
+      if (!/^[0-9a-f-]{36}$/.test(id)) continue;
+      await rm(join(webkit, "WebsiteDataStore", id), { recursive: true, force: true });
+      await rm(join(webkit, "WebExtensions", id.toUpperCase()), { recursive: true, force: true });
+    }
     await rm(this.dir, { recursive: true, force: true });
   }
 }

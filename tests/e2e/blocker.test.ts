@@ -1,6 +1,7 @@
-// The blocker's cosmetic filtering, scriptlets and element picker on
-// WebKit (spec 10 §6, §8, §9 check 1; roadmap M3-T13), with custom filters
-// and a test scriptlet resource so no list download is needed.
+// The blocker's cosmetic filtering, scriptlets, element picker and an
+// exception filter on WebKit (spec 10 §6, §8, §9 check 1; roadmap M3-T13,
+// M3-T15), with custom filters and a test scriptlet resource so no list
+// download is needed.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -71,11 +72,15 @@ run("blocker cosmetics", () => {
       text: [
         "pages.mado.test##.card:has-text(Sponsored)",
         "pages.mado.test##+js(mado-test-mark, ok)",
+        "||pages.mado.test/blocker/exception/",
+        "@@||pages.mado.test/blocker/exception/kept.js",
       ].join("\n"),
     });
+    // The shared shards and the profile's own list (the custom network
+    // filters) are both in place before any page loads.
     await until(
       "the blocker",
-      async () => ((await state()).blocker.ruleLists > 0 ? true : undefined),
+      async () => ((await state()).blocker.ruleLists > 1 ? true : undefined),
       120_000,
     );
   });
@@ -122,5 +127,14 @@ run("blocker cosmetics", () => {
     // It stays hidden on the next visit.
     const again = await open("http://pages.mado.test/blocker/cosmetic.html");
     expect(await report(again)).toBe("sponsored:hidden news:shown pick:hidden scriptlet:ok");
+  });
+
+  test("an exception filter lets one script through a blocked folder", async () => {
+    const tab = await open("http://pages.mado.test/blocker/exception.html");
+    const title = await until("the page's report", async () => {
+      const t = (await state()).tabs[tab];
+      return t?.title.startsWith("blocked:") ? t.title : undefined;
+    });
+    expect(title).toBe("blocked:blocked kept:loaded");
   });
 });

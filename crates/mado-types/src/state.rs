@@ -658,6 +658,21 @@ pub struct ExtensionsState {
     /// Settings an extension's overlap choice or takeover set, by key: the
     /// rows say "Controlled by <name>" (spec 06 §7, 09 §8).
     pub controlled: BTreeMap<SettingKey, ExtensionId>,
+    /// Store extensions an import found in another browser that are not
+    /// installed, offered for reinstall (spec 09 §11, 12 §5).
+    pub imported: Vec<ImportedExtension>,
+}
+
+/// An `imported_extensions` row not yet installed or dismissed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ImportedExtension {
+    pub id: ExtensionId,
+    pub name: String,
+    /// The browser's `import.browser.*` key: `chrome`, `edge`, `brave`,
+    /// `arc`.
+    pub browser: String,
 }
 
 /// An installed extension (spec 09 §1, the `extensions` table).
@@ -758,6 +773,9 @@ pub struct ExtensionInstallPrompt {
     pub older_format: bool,
     /// Installing replaces this installed version.
     pub replaces: Option<String>,
+    /// The compatibility list marks it `notSupported`: the `en.json` key
+    /// of what does not work in Mado yet (spec 09 §7).
+    pub limitation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS, Patchable)]

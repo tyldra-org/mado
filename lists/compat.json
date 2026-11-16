@@ -2,12 +2,12 @@
   "extensions": {
     "ddkjiahejlhfcafbddmgiahcphecmpfh": {
       "name": "uBlock Origin Lite",
-      "status": "mostly",
+      "status": "tested",
       "category": "adBlocker"
     },
     "eimadpbcbfnmbkopoojfekhnkhdbieeh": {
       "name": "Dark Reader",
-      "status": "mostly",
+      "status": "tested",
       "category": "darkMode"
     },
     "nngceckbapebfimnlniiiahkandclblb": {

@@ -241,6 +241,9 @@ impl Core {
             expires_at: None,
         };
         self.add_notice(notice, rec);
+        if counts.extensions > 0 {
+            self.offer_imported(b.name(), rec);
+        }
         let _ = reply.send(Ok(json!({
             "bookmarks": counts.bookmarks,
             "visits": counts.visits,

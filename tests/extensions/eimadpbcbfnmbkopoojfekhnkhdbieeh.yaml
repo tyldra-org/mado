@@ -1,0 +1,7 @@
+# Dark Reader: the extension matrix (spec 16 §1), run by
+# `bun run test:extensions`. It darkens a white page.
+name: Dark Reader
+popup: true
+checks:
+  - open: /extensions/plain.html
+    titleNot: "rgb(255, 255, 255)"

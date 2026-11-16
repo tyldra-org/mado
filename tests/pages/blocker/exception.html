@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pending</title>
+  </head>
+  <body>
+    <p>
+      Spec 10 §9 check 1, the exception case: the custom filters block
+      /blocker/exception/ and except /blocker/exception/kept.js
+      (tests/e2e/blocker.test.ts, crates/mado-blocker/tests/fixtures.rs). The title
+      reports what loaded.
+    </p>
+    <script>
+      const results = {};
+      const done = () => {
+        if ("blocked" in results && "kept" in results)
+          document.title = `blocked:${results.blocked} kept:${results.kept}`;
+      };
+      const load = (name, src) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.onload = () => {
+          results[name] = "loaded";
+          done();
+        };
+        s.onerror = () => {
+          results[name] = "blocked";
+          done();
+        };
+        document.head.append(s);
+      };
+      load("blocked", "/blocker/exception/blocked.js");
+      load("kept", "/blocker/exception/kept.js");
+    </script>
+  </body>
+</html>

@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Extensions from the Chrome Web Store update daily; an update that asks for more stays off until you review it, and extensions Mado learns are harmful are turned off.
 - When an extension does what Mado already does (blocking ads, filling passwords, putting tabs to sleep), Mado asks which should do it, and gives its settings back when the extension goes. Extensions that change the new tab page, search engine or startup pages ask first, and the settings they control say so.
 - The blocker counts what it blocks: the site-info panel shows a page's count and turns the blocker off for a site, Settings › Privacy chooses filter lists, takes custom filters and shows a privacy report of the ads and trackers blocked, and a page reloaded three times after blocks offers to turn the blocker off there.
+- Extensions found when importing from another browser are offered in Settings › Extensions, and the store's button reads "Add to Mado", "Remove from Mado" or "Not available in Mado" without Chrome's label left beside it. An extension Mado doesn't support yet says so in its install prompt.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

@@ -1006,6 +1006,13 @@ pub enum Command {
     /// back for its extension.
     #[serde(rename = "extension.overlapReset", rename_all = "camelCase")]
     ExtensionOverlapReset { category: String },
+    /// Stops offering imported extension `id` for reinstall, or every one
+    /// without `id`. Protected.
+    #[serde(rename = "extension.dismissImported", rename_all = "camelCase")]
+    ExtensionDismissImported {
+        #[serde(default)]
+        id: Option<crate::ExtensionId>,
+    },
     /// Opens the settings window, at `section` when given.
     #[serde(rename = "app.openSettings", rename_all = "camelCase")]
     AppOpenSettings {
@@ -1219,7 +1226,8 @@ impl Command {
             | Self::ExtensionOverlapRespond { .. }
             | Self::ExtensionTakeoverRespond { .. }
             | Self::ExtensionOverlaps
-            | Self::ExtensionOverlapReset { .. } => CommandFamily::Extension,
+            | Self::ExtensionOverlapReset { .. }
+            | Self::ExtensionDismissImported { .. } => CommandFamily::Extension,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1389,6 +1397,7 @@ impl Command {
             Self::ExtensionTakeoverRespond { .. } => "extension.takeoverRespond",
             Self::ExtensionOverlaps => "extension.overlaps",
             Self::ExtensionOverlapReset { .. } => "extension.overlapReset",
+            Self::ExtensionDismissImported { .. } => "extension.dismissImported",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

@@ -10,6 +10,7 @@
 
   let { store }: { store: CoreStore } = $props();
   const installed = $derived(store.state?.extensions?.installed ?? []);
+  const imported = $derived(store.state?.extensions?.imported ?? []);
   const pinned = $derived(new Set(store.state?.extensions?.pinned ?? []));
   const developer = $derived(store.state?.settings.values["extensions.developerMode"] === true);
 
@@ -167,6 +168,35 @@
       </li>
     {/each}
   </ul>
+  {#if imported.length > 0}
+    <h3>{t("extensions.imported")}</h3>
+    <ul>
+      {#each imported as e (e.id)}
+        <li data-imported={e.id}>
+          {t("extensions.imported.from", {
+            name: e.name,
+            browser: t(`import.browser.${e.browser}`),
+          })}
+          <button
+            type="button"
+            aria-label={t("extensions.imported.add", { name: e.name })}
+            onclick={() =>
+              run({ type: "extension.install", id: e.id, source: "store", path: null })}
+            >{t("extensions.imported.addShort")}</button
+          >
+          <button
+            type="button"
+            aria-label={t("extensions.imported.dismiss", { name: e.name })}
+            onclick={() => run({ type: "extension.dismissImported", id: e.id })}
+            >{t("extensions.imported.dismissShort")}</button
+          >
+        </li>
+      {/each}
+    </ul>
+    <button type="button" onclick={() => run({ type: "extension.dismissImported", id: null })}
+      >{t("extensions.imported.dismissAll")}</button
+    >
+  {/if}
   {#if overlaps.length > 0}
     <h3>{t("extensions.overlaps")}</h3>
     <ul>
