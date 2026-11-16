@@ -439,6 +439,27 @@ pub enum PromptState {
     /// Add an extension (spec 09 §2.2), answered with
     /// `extension.confirmInstall`.
     ExtensionInstall(ExtensionInstallPrompt),
+    /// An extension does what a Mado feature does (spec 09 §8), answered
+    /// with `extension.overlapRespond`.
+    #[serde(rename_all = "camelCase")]
+    Overlap {
+        id: PromptId,
+        category: String,
+        extension_id: ExtensionId,
+        name: String,
+        choices: Vec<crate::command::OverlapChoice>,
+        default: crate::command::OverlapChoice,
+    },
+    /// An extension replaced the new tab page, search engine or startup
+    /// pages (spec 09 §8), answered with `extension.takeoverRespond`.
+    #[serde(rename_all = "camelCase")]
+    Takeover {
+        id: PromptId,
+        extension_id: ExtensionId,
+        name: String,
+        /// `newTab`, `search` or `startup`.
+        what: String,
+    },
     /// A site asks for permissions (spec 07 §3). Answered with
     /// `prompt.respond` or `prompt.dismiss`; buttons work from `armedAt`.
     #[serde(rename_all = "camelCase")]
@@ -634,6 +655,9 @@ pub struct ExtensionsState {
     pub pinned: Vec<ExtensionId>,
     /// Every installed extension, in install order.
     pub installed: Vec<InstalledExtension>,
+    /// Settings an extension's overlap choice or takeover set, by key: the
+    /// rows say "Controlled by <name>" (spec 06 §7, 09 §8).
+    pub controlled: BTreeMap<SettingKey, ExtensionId>,
 }
 
 /// An installed extension (spec 09 §1, the `extensions` table).

@@ -62,6 +62,36 @@ pub struct Manifest {
     pub minimum_chrome_version: Option<String>,
     /// `commands`: name, description and suggested macOS keys.
     pub commands: Vec<(String, String, Option<String>)>,
+    /// `chrome_settings_overrides.search_provider` with `is_default`.
+    pub search_provider: Option<SearchProvider>,
+    /// `chrome_settings_overrides.startup_pages`.
+    pub startup_pages: Vec<String>,
+    /// `chrome_settings_overrides.homepage`.
+    pub homepage: Option<String>,
+}
+
+/// A search engine an extension makes the default (spec 09 §8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchProvider {
+    pub name: String,
+    pub keyword: Option<String>,
+    /// With `{searchTerms}`.
+    pub search_url: String,
+    pub suggest_url: Option<String>,
+}
+
+impl Manifest {
+    /// Rules in its `declarative_net_request` rule files under `dir`
+    /// (09 §8: over 5,000 makes it an ad blocker).
+    pub fn dnr_rule_count(&self, dir: &Path) -> usize {
+        self.rule_resources
+            .iter()
+            .filter(|p| !p.split('/').any(|s| s == ".."))
+            .filter_map(|p| std::fs::read_to_string(dir.join(p.trim_start_matches('/'))).ok())
+            .filter_map(|t| serde_json::from_str::<Value>(&t).ok())
+            .map(|v| v.as_array().map_or(0, Vec::len))
+            .sum()
+    }
 }
 
 /// Why a package cannot be installed.
@@ -266,6 +296,28 @@ impl Manifest {
                 .filter_map(|r| r["path"].as_str().map(str::to_owned))
                 .collect(),
             minimum_chrome_version: m["minimum_chrome_version"].as_str().map(str::to_owned),
+            search_provider: {
+                let s = &m["chrome_settings_overrides"]["search_provider"];
+                match (
+                    s["is_default"].as_bool(),
+                    text_of(&s["name"]),
+                    s["search_url"].as_str(),
+                ) {
+                    (Some(true), Some(name), Some(url)) if url.starts_with("https://") => {
+                        Some(SearchProvider {
+                            name,
+                            keyword: text_of(&s["keyword"]),
+                            search_url: url.to_owned(),
+                            suggest_url: s["suggest_url"].as_str().map(str::to_owned),
+                        })
+                    }
+                    _ => None,
+                }
+            },
+            startup_pages: strings(&m["chrome_settings_overrides"]["startup_pages"]),
+            homepage: m["chrome_settings_overrides"]["homepage"]
+                .as_str()
+                .map(str::to_owned),
             commands: m["commands"]
                 .as_object()
                 .map(|o| {

@@ -14,6 +14,17 @@
   const developer = $derived(store.state?.settings.values["extensions.developerMode"] === true);
 
   let message = $state("");
+  type Overlap = { category: string; choice: string; name: string | null };
+  let overlaps: Overlap[] = $state([]);
+  const loadOverlaps = () =>
+    store.client
+      .call({ type: "extension.overlaps" })
+      .then((r: unknown) => (overlaps = r as Overlap[]))
+      .catch(() => {});
+  $effect(() => {
+    void store.state?.extensions?.controlled;
+    void loadOverlaps();
+  });
   let errors: Record<string, string[]> = $state({});
   let path = $state("");
   let source: ExtensionSource = $state("unpacked");
@@ -156,6 +167,23 @@
       </li>
     {/each}
   </ul>
+  {#if overlaps.length > 0}
+    <h3>{t("extensions.overlaps")}</h3>
+    <ul>
+      {#each overlaps as o (o.category)}
+        <li>
+          {t(`prompt.overlap.${o.category}`, { name: o.name ?? "" })}:
+          {t(`prompt.overlap.choice.${o.choice}`, { name: o.name ?? "" })}
+          <button
+            type="button"
+            onclick={() =>
+              run({ type: "extension.overlapReset", category: o.category }).then(loadOverlaps)}
+            >{t("extensions.overlaps.change")}</button
+          >
+        </li>
+      {/each}
+    </ul>
+  {/if}
   {#if developer}
     <h3>{t("extensions.load")}</h3>
     <label

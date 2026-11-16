@@ -215,4 +215,21 @@ run("extensions from the Chrome Web Store", () => {
     const port = await reported("port");
     expect(port.echo).toEqual({ ping: "port" });
   });
+
+  test("uBlock Origin Lite's overlap prompt turns the blocker off, and removing it turns it back on (09 §12 check 4)", async () => {
+    type S = {
+      prompts: Record<string, { type: string; id: string; extensionId?: string; default?: string }>;
+      settings: { values: Record<string, unknown> };
+    };
+    const st = async () => (await mado.control.call<{ state: S }>("state.get")).state;
+    const prompt = await until("the overlap prompt", async () =>
+      Object.values((await st()).prompts).find(
+        (p) => p.type === "overlap" && p.extensionId === UBOL,
+      ),
+    );
+    await asUser({ type: "extension.overlapRespond", promptId: prompt.id, choice: prompt.default });
+    expect((await st()).settings.values["blocker.enabled"]).toBe(false);
+    await asUser({ type: "extension.remove", id: UBOL, deleteData: true });
+    expect((await st()).settings.values["blocker.enabled"]).toBe(true);
+  });
 });

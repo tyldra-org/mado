@@ -9,6 +9,7 @@ mod dialogs;
 mod dl;
 mod errors;
 mod ext_manage;
+mod ext_overlap;
 mod ext_update;
 mod extensions;
 mod import;
@@ -506,6 +507,10 @@ pub struct Core {
     cosmetic_tabs: BTreeMap<TabId, std::collections::HashSet<String>>,
     /// Packages waiting for their install prompt's answer.
     extension_installs: BTreeMap<mado_types::PromptId, extensions::Staged>,
+    /// Overlap choices by category (spec 09 §8).
+    overlaps: BTreeMap<String, ext_overlap::OverlapRow>,
+    /// Takeovers by extension and what it took over.
+    takeovers: ext_overlap::Takeovers,
     /// Installed extensions' files and pages.
     extension_info: BTreeMap<mado_types::ExtensionId, extensions::ExtInfo>,
     /// The toolbar actions of the focused window's active tab.
@@ -774,6 +779,8 @@ impl Core {
             extension_installs: BTreeMap::new(),
             extension_loads: BTreeMap::new(),
             extension_info: BTreeMap::new(),
+            overlaps: BTreeMap::new(),
+            takeovers: BTreeMap::new(),
             extension_actions: (None, Vec::new()),
             extension_windows: mado_engine::ExtensionWindows::default(),
             os: config.os,
@@ -835,6 +842,10 @@ impl Core {
         if self.extensions.is_none() || self.state.profile.is_private {
             return;
         }
+        if let Ok((overlaps, takeovers)) = self.profile_db.readers().read(ext_overlap::load) {
+            self.overlaps = overlaps;
+            self.takeovers = takeovers;
+        }
         let dir = self.extensions_dir().unwrap_or_default();
         let rows = self
             .profile_db
@@ -859,6 +870,7 @@ impl Core {
         let mut rec = PatchRecorder::new();
         self.state.tx(&mut rec).set_extensions(ext);
         self.apply_blocked_extensions(&mut rec);
+        self.refresh_controlled(&mut rec);
         self.timers
             .schedule(Timer::ExtensionUpdate, ext_update::FIRST);
         // Before any tab view, so every tab gets the extensions.
@@ -1292,6 +1304,10 @@ impl Core {
                 }
                 Ok(Value::Null)
             }
+            cmd @ (Command::ExtensionOverlapRespond { .. }
+            | Command::ExtensionTakeoverRespond { .. }
+            | Command::ExtensionOverlaps
+            | Command::ExtensionOverlapReset { .. }) => self.overlap_command(origin, cmd, rec),
             cmd if cmd.family() == mado_types::command::CommandFamily::Extension => {
                 self.extension_manage(origin, cmd, rec, reply_to)
             }

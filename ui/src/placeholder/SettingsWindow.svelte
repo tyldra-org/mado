@@ -39,6 +39,11 @@
   let hits: string[] | null = $state(null);
 
   const values = $derived(store.state?.settings.values ?? {});
+  const controller = (key: string) => {
+    const id = store.state?.extensions?.controlled?.[key];
+    const e = id ? store.state?.extensions?.installed.find((x) => x.id === id) : undefined;
+    return e ? { id: e.id, name: e.name } : undefined;
+  };
   const changed = $derived(new Set(store.state?.settings.changed ?? []));
   const features = $derived(store.state?.features ?? {});
 
@@ -90,7 +95,12 @@
       <p>{t("settings.noResults")}</p>
     {/if}
     {#each rows as entry (entry.key)}
-      <SettingRow {entry} value={values[entry.key]} client={store.client} />
+      <SettingRow
+        {entry}
+        value={values[entry.key]}
+        client={store.client}
+        controlledBy={controller(entry.key)}
+      />
     {/each}
     {#if hits === null && section === "extensions"}
       <ExtensionsSection {store} />

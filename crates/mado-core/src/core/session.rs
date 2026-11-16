@@ -131,7 +131,7 @@ impl Core {
         let now = self.now();
         let prefs = self.prefs();
         let urls: Vec<String> = if urls.is_empty() {
-            vec![NEW_TAB.to_owned()]
+            vec![self.new_tab_url()]
         } else {
             urls.to_vec()
         };
@@ -218,7 +218,7 @@ impl Core {
                 background,
                 opener_id,
             } => {
-                let url = url.unwrap_or_else(|| NEW_TAB.to_owned());
+                let url = url.unwrap_or_else(|| self.new_tab_url());
                 let id = self.model.open_tab(
                     window_id,
                     url,
