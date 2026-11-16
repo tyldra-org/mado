@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pending</title>
+  </head>
+  <body>
+    <!-- EasyList's generic hiding rule ##.ADBox hides this. -->
+    <div class="ADBox">An ad box</div>
+    <p>
+      Spec 10 §9 check 1, network and generic hiding cases with the bundled EasyList. The title reports what
+      loaded and whether the ad box shows.
+    </p>
+    <script>
+      const results = {};
+      const done = () => {
+        if (!("ad" in results && "app" in results)) return;
+        const hidden = getComputedStyle(document.querySelector(".ADBox")).display === "none";
+        document.title = `ad:${results.ad} app:${results.app} box:${hidden ? "hidden" : "shown"}`;
+      };
+      const load = (name, src) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.onload = () => {
+          results[name] = "loaded";
+          done();
+        };
+        s.onerror = () => {
+          results[name] = "blocked";
+          done();
+        };
+        document.head.append(s);
+      };
+      load("ad", "/blocker/ads/ad_header.js");
+      load("app", "/blocker/app.js");
+    </script>
+  </body>
+</html>

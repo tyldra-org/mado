@@ -284,6 +284,17 @@ pub enum GoneReason {
 /// Everything the engine reports.
 #[derive(Debug)]
 pub enum EngineEvent {
+    /// The blocker's rule lists are compiled and on every tab view (spec
+    /// 10 §4 step 5): `lists` of them, 0 when blocking is off.
+    BlockerRulesApplied {
+        lists: u32,
+    },
+    /// A content rule list blocked a load on the tab's page (spec 10 §4
+    /// step 7), where WebKit reports it.
+    ContentBlocked {
+        tab: TabId,
+        url: String,
+    },
     /// An extension asks for a new tab or window, or its options page
     /// (spec 09 §5.1).
     ExtensionOpen {
@@ -486,6 +497,8 @@ impl EngineEvent {
     pub fn name(&self) -> &'static str {
         match self {
             Self::ExtensionOpen { .. } => "extensionOpen",
+            Self::ContentBlocked { .. } => "contentBlocked",
+            Self::BlockerRulesApplied { .. } => "blockerRulesApplied",
             Self::WindowCreated { .. } => "windowCreated",
             Self::WindowCloseRequested { .. } => "windowCloseRequested",
             Self::WindowFocusChanged { .. } => "windowFocusChanged",

@@ -1378,6 +1378,16 @@ impl Core {
         let now = self.now();
         match event {
             EngineEvent::WindowCreated { .. } | EngineEvent::TabCreated { .. } => {}
+            EngineEvent::BlockerRulesApplied { lists } => {
+                if self.state.blocker.rule_lists != lists {
+                    self.state.tx(rec).blocker().set_rule_lists(lists);
+                }
+            }
+            EngineEvent::ContentBlocked { tab, .. } => {
+                if let Some(t) = self.model.tabs.get_mut(&tab) {
+                    t.blocked_count = t.blocked_count.saturating_add(1);
+                }
+            }
             EngineEvent::ExtensionOpen {
                 url, new_window, ..
             } => self.extension_open(url, new_window),
@@ -1421,6 +1431,7 @@ impl Core {
                     }
                     if !is_same_document {
                         t.has_unsaved_input = false;
+                        t.blocked_count = 0;
                     }
                 }
                 if !is_same_document {

@@ -140,6 +140,8 @@ impl Core {
                 "blocker engine ready"
             );
             self.blocker_engine = Some(engine);
+            self.blocker_shards.clone_from(&build.shards);
+            self.push_blocker_rules();
             state.filters = u32::try_from(build.filters).unwrap_or(u32::MAX);
             state.bundled = build.bundled;
         }
@@ -159,7 +161,7 @@ impl Core {
             .profile_db
             .readers()
             .read(|c| {
-                let mut lines: Vec<String> = c
+                let lines: Vec<String> = c
                     .prepare("SELECT line FROM blocker_custom_filters ORDER BY id")?
                     .query_map([], |r| r.get(0))?
                     .filter_map(Result::ok)
@@ -175,14 +177,63 @@ impl Core {
                     })?
                     .filter_map(Result::ok)
                     .collect::<Vec<_>>();
-                lines.extend(hidden);
-                Ok(lines)
+                let off = c
+                    .prepare("SELECT host FROM blocker_site WHERE enabled = 0 ORDER BY host")?
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .filter_map(Result::ok)
+                    .collect::<Vec<_>>();
+                Ok((lines, hidden, off))
             })
             .unwrap_or_else(|e| {
                 tracing::error!(error = %e, "the custom filters could not be read");
-                Vec::new()
+                (Vec::new(), Vec::new(), Vec::new())
             });
-        self.blocker_custom = (!lines.is_empty()).then(|| mado_blocker::custom_engine(&lines));
+        let (custom, hidden, off) = lines;
+        let pairs: Vec<(String, String)> = hidden
+            .iter()
+            .filter_map(|l| {
+                l.split_once("##")
+                    .map(|(h, s)| (h.to_owned(), s.to_owned()))
+            })
+            .collect();
+        self.blocker_profile_rules = mado_blocker::rules::profile_rules(&custom, &pairs);
+        self.blocker_off_hosts = off;
+        let all: Vec<String> = custom.into_iter().chain(hidden).collect();
+        self.blocker_custom = (!all.is_empty()).then(|| mado_blocker::custom_engine(&all));
+        self.push_blocker_rules();
+    }
+
+    /// The WebKit rule lists for this profile (10 §4 steps 4 and 5): the
+    /// shared shards and the profile's own list while the blocker is on.
+    pub(super) fn push_blocker_rules(&mut self) {
+        use mado_engine::{BlockerRules, RuleList, RuleSource};
+        let Some(config) = &self.blocker else { return };
+        let mut lists = Vec::new();
+        if self.setting("blocker.enabled") == true {
+            lists.extend(self.blocker_shards.iter().map(|(id, path)| RuleList {
+                identifier: id.clone(),
+                source: RuleSource::File(path.clone()),
+            }));
+            if let Some(json) = &self.blocker_profile_rules {
+                use std::hash::{Hash as _, Hasher as _};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                json.hash(&mut h);
+                lists.push(RuleList {
+                    identifier: format!("mado-site-{}-{:016x}", self.state.profile.id, h.finish()),
+                    source: RuleSource::Json(json.clone()),
+                });
+            }
+        }
+        let rules = BlockerRules {
+            store: config.dir.join("WebKit"),
+            lists,
+            off_hosts: self.blocker_off_hosts.clone(),
+        };
+        if self.blocker_sent.as_ref() != Some(&rules) {
+            self.blocker_sent = Some(rules.clone());
+            self.outbox
+                .push(mado_engine::EngineOp::SetBlockerRules(rules));
+        }
     }
 
     fn update_stamp(dir: &Path) -> PathBuf {

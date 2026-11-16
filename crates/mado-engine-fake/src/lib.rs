@@ -84,6 +84,8 @@ struct Session {
 pub struct FakeState {
     /// Loaded extensions.
     pub extensions: Vec<mado_engine::ExtensionLoad>,
+    /// The blocker's rules the core last sent.
+    pub blocker_rules: Option<mado_engine::BlockerRules>,
     /// The windows and tabs extensions last saw.
     pub extension_windows: mado_engine::ExtensionWindows,
     pub windows: BTreeMap<WindowId, FakeWindow>,
@@ -813,6 +815,10 @@ impl Engine for FakeEngine {
 
     fn set_extension_windows(&mut self, windows: mado_engine::ExtensionWindows) {
         self.lock().extension_windows = windows;
+    }
+
+    fn set_blocker_rules(&mut self, rules: mado_engine::BlockerRules) {
+        self.lock().blocker_rules = Some(rules);
     }
 
     fn download(&mut self, id: EngineDownloadId, cmd: DownloadCommand) {

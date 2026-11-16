@@ -21,4 +21,9 @@ lists: Array<BlockerList>,
 /**
  * An update is running.
  */
-updating: boolean, };
+updating: boolean, 
+/**
+ * Content rule lists on every tab view; 0 until WebKit compiled them
+ * or while blocking is off (spec 10 §4).
+ */
+ruleLists: number, };

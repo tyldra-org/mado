@@ -466,4 +466,28 @@ run("WebKit adapter", () => {
     const third = await open(url);
     await tabWhere(third.tab, (t) => t.title === "Stored: null");
   });
+
+  test("the blocker blocks an EasyList script and hides an ad box, and counts it (10 §9 check 1)", async () => {
+    // The first launch builds the engine and WebKit compiles its rules.
+    await until(
+      "the blocker's rules",
+      async () => {
+        const s = (
+          await mado.control.call<{ state: { blocker: { ruleLists: number } } }>("state.get")
+        ).state;
+        return s.blocker.ruleLists > 0 ? true : undefined;
+      },
+      120_000,
+    );
+    const { tab } = await open("http://pages.mado.test/blocker/network.html");
+    const t = await tabWhere(tab, (t) => t.title.startsWith("ad:"), 30_000);
+    expect(t.title).toBe("ad:blocked app:loaded box:hidden");
+    // WebKit reports blocked loads through a private delegate method (10 §4
+    // step 7), which this macOS answers (M0 experiment 7).
+    await tabWhere(
+      tab,
+      (t) => ((t as Tab & { blockedCount: number }).blockedCount ?? 0) > 0,
+      5_000,
+    );
+  });
 });
