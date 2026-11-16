@@ -7,4 +7,9 @@ export type ExtensionsState = { toolbar: Array<ExtensionButton>, pinned: Array<E
 /**
  * Every installed extension, in install order.
  */
-installed: Array<InstalledExtension>, };
+installed: Array<InstalledExtension>, 
+/**
+ * Settings an extension's overlap choice or takeover set, by key: the
+ * rows say "Controlled by <name>" (spec 06 §7, 09 §8).
+ */
+controlled: { [key in string]: ExtensionId }, };

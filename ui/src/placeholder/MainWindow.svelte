@@ -9,6 +9,7 @@
   import AppLinkPrompt from "./AppLinkPrompt.svelte";
   import ExtensionInstallPrompt from "./ExtensionInstallPrompt.svelte";
   import ExtensionToolbar from "./ExtensionToolbar.svelte";
+  import OverlapPrompt from "./OverlapPrompt.svelte";
   import BookmarksBar from "./BookmarksBar.svelte";
   import DialogSheet from "./DialogSheet.svelte";
   import DownloadsBubble from "./DownloadsBubble.svelte";
@@ -89,6 +90,7 @@
     <PermissionPrompt {store} {windowId} />
     <AppLinkPrompt {store} {windowId} />
     <ExtensionInstallPrompt {store} {windowId} />
+    <OverlapPrompt {store} />
     <DialogSheet {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}>

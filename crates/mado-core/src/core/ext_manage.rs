@@ -73,6 +73,15 @@ impl Core {
         reload: bool,
         rec: &mut PatchRecorder,
     ) {
+        let was_on = self
+            .state
+            .extensions
+            .installed
+            .iter()
+            .any(|x| x.id == e.id && x.enabled);
+        if was_on && !e.enabled {
+            self.extension_turned_off(&e.id, false, rec);
+        }
         let mut ext = self.state.extensions.clone();
         if let Some(slot) = ext.installed.iter_mut().find(|x| x.id == e.id) {
             *slot = e.clone();
@@ -115,6 +124,9 @@ impl Core {
             }
         });
         self.refresh_toolbar(rec);
+        if !was_on && e.enabled {
+            self.extension_turned_on(&e.id, rec);
+        }
     }
 
     fn developer_mode(&self) -> Result<(), MadoError> {

@@ -203,6 +203,32 @@ pub enum NavSource {
     Agent,
 }
 
+/// An answer to an overlap prompt (spec 09 §8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum OverlapChoice {
+    /// The extension does it; Mado's feature steps back.
+    ExtensionOnly,
+    /// Both run.
+    Both,
+    /// Mado does it; the extension is turned off.
+    MadoOnly,
+    /// The password manager connects to Mado (M4).
+    MadoConnect,
+}
+
+impl OverlapChoice {
+    pub fn column(self) -> &'static str {
+        match self {
+            Self::ExtensionOnly => "extensionOnly",
+            Self::Both => "both",
+            Self::MadoOnly => "madoOnly",
+            Self::MadoConnect => "madoConnect",
+        }
+    }
+}
+
 /// Where an extension comes from (spec 09 §2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -944,6 +970,25 @@ pub enum Command {
     /// Opens the extension's options page in a tab.
     #[serde(rename = "extension.openOptions", rename_all = "camelCase")]
     ExtensionOpenOptions { id: crate::ExtensionId },
+    /// Answers an overlap prompt.
+    #[serde(rename = "extension.overlapRespond", rename_all = "camelCase")]
+    ExtensionOverlapRespond {
+        prompt_id: crate::PromptId,
+        choice: OverlapChoice,
+    },
+    /// Answers a takeover prompt: keep it, or turn the extension off.
+    #[serde(rename = "extension.takeoverRespond", rename_all = "camelCase")]
+    ExtensionTakeoverRespond {
+        prompt_id: crate::PromptId,
+        keep: bool,
+    },
+    /// The overlap choices: `[{ category, choice, extensionId, name }]`.
+    #[serde(rename = "extension.overlaps")]
+    ExtensionOverlaps,
+    /// Forgets a category's choice, undoing its effects; the prompt comes
+    /// back for its extension.
+    #[serde(rename = "extension.overlapReset", rename_all = "camelCase")]
+    ExtensionOverlapReset { category: String },
     /// Opens the settings window, at `section` when given.
     #[serde(rename = "app.openSettings", rename_all = "camelCase")]
     AppOpenSettings {
@@ -1148,7 +1193,11 @@ impl Command {
             | Self::ExtensionErrors { .. }
             | Self::ExtensionInspect { .. }
             | Self::ExtensionOpenPopup { .. }
-            | Self::ExtensionOpenOptions { .. } => CommandFamily::Extension,
+            | Self::ExtensionOpenOptions { .. }
+            | Self::ExtensionOverlapRespond { .. }
+            | Self::ExtensionTakeoverRespond { .. }
+            | Self::ExtensionOverlaps
+            | Self::ExtensionOverlapReset { .. } => CommandFamily::Extension,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1309,6 +1358,10 @@ impl Command {
             Self::ExtensionInspect { .. } => "extension.inspect",
             Self::ExtensionOpenPopup { .. } => "extension.openPopup",
             Self::ExtensionOpenOptions { .. } => "extension.openOptions",
+            Self::ExtensionOverlapRespond { .. } => "extension.overlapRespond",
+            Self::ExtensionTakeoverRespond { .. } => "extension.takeoverRespond",
+            Self::ExtensionOverlaps => "extension.overlaps",
+            Self::ExtensionOverlapReset { .. } => "extension.overlapReset",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
@@ -1358,6 +1411,7 @@ impl Command {
                 | Self::AppDefaultBrowser
                 | Self::ExtensionList
                 | Self::BlockerHidden { .. }
+                | Self::ExtensionOverlaps
         )
     }
 }

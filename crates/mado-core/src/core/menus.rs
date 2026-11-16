@@ -85,7 +85,7 @@ impl Core {
             .map_or(1.0, |t| t.zoom);
         Some(match id {
             "about" => return open("mado://about"),
-            "newTab" => return open(NEW_TAB),
+            "newTab" => return open(&self.new_tab_url()),
             "newWindow" => Command::WindowNew {
                 private: false,
                 urls: Vec::new(),

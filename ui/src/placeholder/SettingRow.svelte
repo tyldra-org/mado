@@ -5,7 +5,18 @@
   import type { SettingEntry } from "../core/settings-index";
   import { t } from "../i18n";
 
-  let { entry, value, client }: { entry: SettingEntry; value: unknown; client: Client } = $props();
+  let {
+    entry,
+    value,
+    client,
+    controlledBy,
+  }: {
+    entry: SettingEntry;
+    value: unknown;
+    client: Client;
+    /** The extension whose choice set this (spec 06 §7). */
+    controlledBy?: { id: string; name: string };
+  } = $props();
 
   const id = $props.id();
   let error = $state("");
@@ -76,6 +87,18 @@
 
 <div class="row" id={`row-${entry.key}`}>
   <label for={id}>{t(entry.label)}</label>
+  {#if controlledBy}
+    <p data-testid="controlled-by">
+      {t("settings.controlledBy", { name: controlledBy.name })}
+      <button
+        type="button"
+        onclick={() =>
+          client
+            .call({ type: "extension.setEnabled", id: controlledBy.id, enabled: false })
+            .catch(() => {})}>{t("settings.turnOffExtension")}</button
+      >
+    </p>
+  {/if}
   {#if entry.renderer === "toggle"}
     <input
       {id}

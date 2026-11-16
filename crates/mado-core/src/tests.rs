@@ -5017,3 +5017,233 @@ fn a_blocked_extension_turns_off_and_stays_off() {
     );
     assert!(refused.is_err(), "blocked extensions stay off");
 }
+
+/// Installs an unpacked extension from `manifest` (and `extra` files)
+/// with Developer mode on, and returns its ID.
+fn install_unpacked(
+    core: &TestCore,
+    folder: &std::path::Path,
+    manifest: &str,
+    extra: &[(&str, String)],
+) -> mado_types::ExtensionId {
+    use mado_types::state::PromptState;
+    std::fs::write(folder.join("manifest.json"), manifest).expect("manifest");
+    for (name, body) in extra {
+        std::fs::write(folder.join(name), body).expect("file");
+    }
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let token = ask(
+        core,
+        Origin::Settings,
+        Command::AppAuthenticate { reason: "t".into() },
+    )
+    .ok()
+    .and_then(|v| v["token"].as_str().map(str::to_owned));
+    ask(
+        core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "extensions.developerMode".into(),
+            value: json!(true),
+            token,
+        },
+    )
+    .expect("developer mode");
+    ask(
+        core,
+        Origin::Settings,
+        Command::ExtensionInstall {
+            id: None,
+            source: mado_types::command::ExtensionSource::Unpacked,
+            path: Some(folder.to_string_lossy().into_owned()),
+        },
+    )
+    .expect("asked");
+    let find = || {
+        state_of(core).prompts.values().find_map(|p| match p {
+            PromptState::ExtensionInstall(p) => Some(p.id),
+            _ => None,
+        })
+    };
+    eventually("the prompt", || find().is_some());
+    ask(
+        core,
+        Origin::Settings,
+        Command::ExtensionConfirmInstall {
+            prompt_id: find().expect("prompt"),
+            add: true,
+        },
+    )
+    .expect("added");
+    state_of(core)
+        .extensions
+        .installed
+        .last()
+        .expect("installed")
+        .id
+        .clone()
+}
+
+/// M3-T09, 09 §12 check 4: an ad blocker shows the overlap prompt, the
+/// default turns Mado's blocker off, and removing the extension turns it
+/// back on with a notice.
+#[test]
+fn an_ad_blocker_extension_takes_over_from_the_blocker_and_gives_it_back() {
+    use mado_types::command::OverlapChoice;
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let folder = tempfile::tempdir().expect("dir");
+    let rules: Vec<Value> = (0..5001)
+        .map(|i| json!({ "id": i + 1, "action": { "type": "block" }, "condition": { "urlFilter": format!("ads{i}.example") } }))
+        .collect();
+    let id = install_unpacked(
+        &core,
+        folder.path(),
+        r#"{"name":"Big Blocker","version":"1","manifest_version":3,"permissions":["declarativeNetRequest"],
+            "declarative_net_request":{"rule_resources":[{"id":"r","enabled":true,"path":"rules.json"}]}}"#,
+        &[("rules.json", json!(rules).to_string())],
+    );
+    let overlap = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::Overlap {
+                id,
+                category,
+                default,
+                choices,
+                ..
+            } => Some((*id, category.clone(), *default, choices.clone())),
+            _ => None,
+        })
+    };
+    eventually("the overlap prompt", || overlap().is_some());
+    let (prompt, category, default, choices) = overlap().expect("prompt");
+    assert_eq!(
+        (category.as_str(), default),
+        ("adBlocker", OverlapChoice::ExtensionOnly)
+    );
+    assert!(!choices.contains(&OverlapChoice::MadoConnect));
+    let refused = ask(
+        &core,
+        Origin::Control {
+            client: ClientId::new(),
+        },
+        Command::ExtensionOverlapRespond {
+            prompt_id: prompt,
+            choice: default,
+        },
+    );
+    assert_eq!(refused.expect_err("protected").code, ErrorCode::Protected);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionOverlapRespond {
+            prompt_id: prompt,
+            choice: default,
+        },
+    )
+    .expect("chosen");
+    let blocker_on = || state_of(&core).settings.values["blocker.enabled"] == true;
+    assert!(
+        !blocker_on(),
+        "the extension blocks; Mado's blocker steps back"
+    );
+    let listed = ask(&core, Origin::Settings, Command::ExtensionOverlaps).expect("overlaps");
+    assert_eq!(listed[0]["category"], "adBlocker");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionRemove {
+            id,
+            delete_data: false,
+        },
+    )
+    .expect("removed");
+    assert!(blocker_on(), "back on");
+    assert!(
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.overlapRestored")
+    );
+}
+
+/// M3-T09 (09 §8): an extension that replaces the new tab page and the
+/// search engine asks first; Change it back turns it off and puts the
+/// search engine back.
+#[test]
+fn takeovers_ask_and_change_back() {
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let before = state_of(&core).settings.values["search.defaultEngine"].clone();
+    let folder = tempfile::tempdir().expect("dir");
+    let id = install_unpacked(
+        &core,
+        folder.path(),
+        r#"{"name":"Taker","version":"1","manifest_version":3,"chrome_url_overrides":{"newtab":"nt.html"},
+            "chrome_settings_overrides":{"search_provider":{"name":"Taker Search","keyword":"tk","search_url":"https://search.taker.example/?q={searchTerms}","is_default":true,"encoding":"UTF-8"}}}"#,
+        &[],
+    );
+    let takeovers = || {
+        state_of(&core)
+            .prompts
+            .values()
+            .filter_map(|p| match p {
+                PromptState::Takeover { id, what, .. } => Some((*id, what.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    eventually("two takeover prompts", || takeovers().len() == 2);
+    assert_eq!(
+        state_of(&core).settings.values["search.defaultEngine"],
+        json!(format!("ext-{id}"))
+    );
+    core.page.send(mado_engine::EngineEvent::ExtensionLoaded {
+        id: id.to_string(),
+        base_url: "webkit-extension://taker/".into(),
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    ask(
+        &core,
+        Origin::Ui { window: w },
+        Command::TabNew {
+            window_id: w,
+            url: None,
+            position: None,
+            background: false,
+            opener_id: None,
+        },
+    )
+    .expect("tab");
+    assert!(
+        state_of(&core)
+            .tabs
+            .values()
+            .any(|t| t.url == "webkit-extension://taker/nt.html")
+    );
+    let (search, _) = takeovers()
+        .into_iter()
+        .find(|(_, w)| w == "search")
+        .expect("search prompt");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ExtensionTakeoverRespond {
+            prompt_id: search,
+            keep: false,
+        },
+    )
+    .expect("changed back");
+    let st = state_of(&core);
+    assert!(!st.extensions.installed[0].enabled);
+    assert_eq!(st.settings.values["search.defaultEngine"], before);
+    assert!(
+        takeovers().is_empty(),
+        "the other prompt goes with the extension"
+    );
+}

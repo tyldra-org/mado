@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Extensions can talk to apps on the Mac through native messaging, using the hosts apps register for Chrome, so password manager extensions can reach their desktop apps.
 - The blocker hides page elements its lists name, including by their text, runs uBlock Origin's scriptlets where filters call for them, and lets you pick an element on a page to hide it there from then on, with Undo.
 - Extensions from the Chrome Web Store update daily; an update that asks for more stays off until you review it, and extensions Mado learns are harmful are turned off.
+- When an extension does what Mado already does (blocking ads, filling passwords, putting tabs to sleep), Mado asks which should do it, and gives its settings back when the extension goes. Extensions that change the new tab page, search engine or startup pages ask first, and the settings they control say so.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

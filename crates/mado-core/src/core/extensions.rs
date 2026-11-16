@@ -244,6 +244,12 @@ pub struct ExtInfo {
     pub requested_hosts: Vec<String>,
     /// It has a toolbar action.
     pub has_action: bool,
+    /// Rules in its declarative_net_request files (09 §8).
+    pub dnr_rules: usize,
+    /// `chrome_url_overrides.newtab`, a path in the extension.
+    pub new_tab: Option<String>,
+    pub search: Option<mado_extensions::SearchProvider>,
+    pub startup_pages: Vec<String>,
 }
 
 /// Moves unpacked files to `<dir>/<id>/<version>/`, removing other
@@ -303,11 +309,15 @@ pub(super) fn describe(
         })
         .collect();
     let info = ExtInfo {
-        path,
         base_url: None,
         options_page: m.options_page.clone(),
         requested_hosts: m.hosts.clone(),
         has_action: m.has_action,
+        dnr_rules: m.dnr_rule_count(&path),
+        new_tab: m.new_tab_override.clone(),
+        search: m.search_provider.clone(),
+        startup_pages: m.startup_pages.clone(),
+        path,
     };
     (summary.optional, shortcuts, info)
 }
@@ -801,12 +811,17 @@ impl Core {
             }
         });
         self.extension_notice("notice.extensionAdded", Some(&staged.manifest.name), rec);
+        self.extension_turned_on(&id, rec);
         self.refresh_store_pages();
     }
 
     /// "Remove from Mado" on the store page: the row and Mado's copy of
     /// the files go.
     pub(super) fn remove_extension(&mut self, id: &ExtensionId, rec: &mut PatchRecorder) {
+        if !self.state.extensions.installed.iter().any(|e| &e.id == id) {
+            return;
+        }
+        self.extension_turned_off(id, true, rec);
         let mut ext = self.state.extensions.clone();
         let Some(pos) = ext.installed.iter().position(|e| &e.id == id) else {
             return;

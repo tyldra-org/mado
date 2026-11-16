@@ -173,3 +173,32 @@ describe("extension toolbar", () => {
     expect(popup.anchor).toHaveProperty("width");
   });
 });
+
+describe("overlap prompt", () => {
+  test("it offers the choices and sends the one picked", async () => {
+    const seen = await shown({
+      prompts: {
+        "01a1d7aa-0000-7000-8000-0000000000f1": {
+          type: "overlap",
+          id: "01a1d7aa-0000-7000-8000-0000000000f1",
+          category: "adBlocker",
+          extensionId: "ddkjiahejlhfcafbddmgiahcphecmpfh",
+          name: "uBlock Origin Lite",
+          choices: ["extensionOnly", "both", "madoOnly"],
+          default: "extensionOnly",
+        },
+      },
+    });
+    const dialog = await screen.findByTestId("overlap-prompt");
+    expect(dialog.textContent).toContain("uBlock Origin Lite blocks ads.");
+    await fireEvent.click(screen.getByText("Both"));
+    await tick();
+    expect(sent(seen, "extension.overlapRespond")).toEqual([
+      {
+        type: "extension.overlapRespond",
+        promptId: "01a1d7aa-0000-7000-8000-0000000000f1",
+        choice: "both",
+      },
+    ]);
+  });
+});
