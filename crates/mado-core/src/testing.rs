@@ -163,6 +163,14 @@ thread_local! {
         bw: None,
         runner: std::sync::Arc::new(mado_autofill::runner::System),
     });
+    /// AI for the next `start`: secrets in memory, no local servers, and
+    /// OpenRouter nowhere.
+    pub static AI: std::cell::RefCell<crate::AiConfig> = std::cell::RefCell::new(crate::AiConfig {
+        openrouter_site: "http://127.0.0.1:9".into(),
+        openrouter_api: "http://127.0.0.1:9/api/v1".into(),
+        local: Vec::new(),
+        ..crate::AiConfig::in_memory()
+    });
     /// Where leak checks go: nowhere by default.
     pub static HIBP: std::cell::RefCell<String> = std::cell::RefCell::new("http://127.0.0.1:9".into());
     /// Extensions for the next `start`; the real store by default.
@@ -247,6 +255,7 @@ impl TestCore {
                 hsts_extra: ["hsts.example".to_owned()].into(),
                 home: IMPORT_HOME.with_borrow(Clone::clone),
                 password_clis: PASSWORD_CLIS.with_borrow(Clone::clone),
+                ai: AI.with_borrow(Clone::clone),
                 vault: (!PRIVATE.get()).then(|| {
                     open(
                         &root.join("vault.sqlite"),

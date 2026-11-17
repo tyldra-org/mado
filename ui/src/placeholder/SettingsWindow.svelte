@@ -15,6 +15,7 @@
   import BlockerSection from "./BlockerSection.svelte";
   import PasswordSources from "./PasswordSources.svelte";
   import PasswordsSection from "./PasswordsSection.svelte";
+  import AiConnections from "./AiConnections.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -111,6 +112,9 @@
     {#if hits === null && section === "passwords"}
       <PasswordsSection {store} />
       <PasswordSources {store} />
+    {/if}
+    {#if hits === null && section === "ai"}
+      <AiConnections {store} />
     {/if}
     {#if hits === null && section === "extensions"}
       <ExtensionsSection {store} />

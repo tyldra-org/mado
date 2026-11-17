@@ -1,6 +1,7 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
+mod ai;
 mod applinks;
 mod blocker;
 mod blocker_stats;
@@ -58,6 +59,7 @@ use crate::tabs::{ClosedEntry, Model};
 use crate::timers::{Timer, Timers};
 use crate::tokens::Tokens;
 use crate::ui::{UiSink, Updates};
+pub use ai::AiConfig;
 pub use blocker::BlockerConfig;
 pub use extensions::ExtensionsConfig;
 pub use lists::ListsConfig;
@@ -82,6 +84,8 @@ pub enum Input {
 /// Results of work the core spawned, and requests from the app itself.
 #[derive(Debug)]
 pub enum Internal {
+    /// AI work finished (spec 13).
+    Ai(ai::AiEvent),
     /// A vault job finished (spec 11 §2).
     VaultDone {
         result: Box<Result<vault::VaultOutcome, mado_vault::VaultError>>,
@@ -353,6 +357,8 @@ pub struct CoreConfig {
     pub vault: Option<vault::VaultConfig>,
     /// The password managers' CLIs (spec 11 §6.2, §6.3); tests pass fakes.
     pub password_clis: PasswordClis,
+    /// AI connections' secrets and addresses (spec 13).
+    pub ai: AiConfig,
 }
 
 /// Where `op` and `bw` are and how they run.
@@ -581,6 +587,8 @@ pub struct Core {
     onepassword: std::sync::Arc<mado_autofill::onepassword::OnePassword>,
     /// Bitwarden (spec 11 §6.3), used while `passwords.bitwarden` is on.
     bitwarden: std::sync::Arc<mado_autofill::bitwarden::Bitwarden>,
+    /// AI connections' secrets and addresses (spec 13).
+    ai: AiConfig,
     /// Where each open fill menu's values would go.
     fill_targets: BTreeMap<PromptId, fill::FillTarget>,
     /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
@@ -895,6 +903,7 @@ impl Core {
                 config.password_clis.bw.clone(),
                 std::sync::Arc::clone(&config.password_clis.runner),
             )),
+            ai: config.ai,
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
             otp_after: BTreeMap::new(),
@@ -967,6 +976,7 @@ impl Core {
         core.load_extensions();
         core.start_blocker();
         core.load_vault(&mut PatchRecorder::new());
+        core.load_ai();
         core
     }
 
@@ -1450,6 +1460,9 @@ impl Core {
             cmd if cmd.family() == mado_types::command::CommandFamily::Vault => {
                 self.vault_command(origin, cmd, reply_to, rec)
             }
+            cmd if cmd.family() == mado_types::command::CommandFamily::Ai => {
+                self.ai_command(origin, cmd, reply_to, rec)
+            }
             cmd if cmd.family() == mado_types::command::CommandFamily::Extension => {
                 self.extension_manage(origin, cmd, rec, reply_to)
             }
@@ -1569,6 +1582,7 @@ impl Core {
             Internal::ScreenLocked => self.lock_vault(rec),
             Internal::QrSnapshot { url, image, reply } => self.qr_snapshot(url, image, reply),
             Internal::AgentFill { tab, what, reply } => self.agent_fill(tab, what, reply),
+            Internal::Ai(event) => self.ai_event(event, rec),
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);

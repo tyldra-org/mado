@@ -948,6 +948,48 @@ pub struct AiState {
     pub enabled: bool,
     #[patch(map)]
     pub tasks: BTreeMap<TaskId, TaskSummary>,
+    /// Connections by ID (spec 13 §2); their secrets never appear here.
+    #[patch(map)]
+    pub connections: BTreeMap<String, AiConnection>,
+}
+
+/// Where a connection stands (spec 13 §2.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AiConnectionStatus {
+    Untested,
+    /// Waiting for the provider's sign-in page (OAuth).
+    Connecting,
+    Testing,
+    Ready,
+    /// The last test or request failed with `error`.
+    Error,
+}
+
+/// One AI connection (spec 13 §2.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, Patchable)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiConnection {
+    pub id: String,
+    /// `apiKey`, `oauth`, `local`, `subscriptionCli` or `onDevice`.
+    pub kind: String,
+    /// A provider key such as `anthropic` or `ollama`.
+    pub provider: String,
+    pub label: String,
+    /// Lower goes first.
+    pub priority: i64,
+    pub status: AiConnectionStatus,
+    /// `unauthorized`, `network`, `notFound`, `rateLimited`,
+    /// `quotaExceeded`, `invalid`, `refused` or `timedOut`.
+    pub error: Option<String>,
+    /// The secret's last four characters.
+    pub secret_hint: Option<String>,
+    /// The server, when not the provider's own.
+    pub base_url: Option<String>,
+    /// How many models the last test listed.
+    pub models: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]

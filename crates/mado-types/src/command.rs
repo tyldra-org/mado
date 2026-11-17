@@ -1118,6 +1118,43 @@ pub enum Command {
     /// Locks Bitwarden in Mado and forgets its session.
     #[serde(rename = "vault.bitwardenLock")]
     VaultBitwardenLock,
+    /// Adds an AI connection (spec 13 §2.2) and tests it; answers `{ id }`.
+    /// `secret` (an API key) is stored in the Keychain and never shown
+    /// again. An `oauth` connection opens the provider's sign-in page.
+    #[serde(rename = "ai.connection.add", rename_all = "camelCase")]
+    AiConnectionAdd {
+        kind: String,
+        provider: String,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        base_url: Option<String>,
+        #[serde(default)]
+        secret: Option<String>,
+    },
+    /// Changes a connection's label, priority or secret; a new secret is
+    /// tested.
+    #[serde(rename = "ai.connection.update", rename_all = "camelCase")]
+    AiConnectionUpdate {
+        id: String,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        priority: Option<i64>,
+        #[serde(default)]
+        secret: Option<String>,
+    },
+    /// Removes a connection, its secret and its models.
+    #[serde(rename = "ai.connection.remove", rename_all = "camelCase")]
+    AiConnectionRemove { id: String },
+    /// Lists the connection's models; answers `{ models }` (a count) or
+    /// the failure, which the connection's status keeps too.
+    #[serde(rename = "ai.connection.test", rename_all = "camelCase")]
+    AiConnectionTest { id: String },
+    /// Local servers that answer and are not connected yet (spec 13
+    /// §2.2): `[{ provider, baseUrl, models }]`.
+    #[serde(rename = "ai.connection.detectLocal")]
+    AiConnectionDetectLocal,
     /// Answers the save or update prompt (spec 11 §5); `username` and
     /// `password` are the prompt's edits.
     #[serde(rename = "vault.saveRespond", rename_all = "camelCase")]
@@ -1376,6 +1413,11 @@ impl Command {
             | Self::VaultAttachTotp { .. }
             | Self::VaultBitwardenUnlock { .. }
             | Self::VaultBitwardenLock => CommandFamily::Vault,
+            Self::AiConnectionAdd { .. }
+            | Self::AiConnectionUpdate { .. }
+            | Self::AiConnectionRemove { .. }
+            | Self::AiConnectionTest { .. }
+            | Self::AiConnectionDetectLocal => CommandFamily::Ai,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1570,6 +1612,11 @@ impl Command {
             Self::VaultAttachTotp { .. } => "vault.attachTotp",
             Self::VaultBitwardenUnlock { .. } => "vault.bitwardenUnlock",
             Self::VaultBitwardenLock => "vault.bitwardenLock",
+            Self::AiConnectionAdd { .. } => "ai.connection.add",
+            Self::AiConnectionUpdate { .. } => "ai.connection.update",
+            Self::AiConnectionRemove { .. } => "ai.connection.remove",
+            Self::AiConnectionTest { .. } => "ai.connection.test",
+            Self::AiConnectionDetectLocal => "ai.connection.detectLocal",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

@@ -19,6 +19,7 @@ workspace = true
 ammonia = "4.2.5"
 base64 = "0.23"
 jiff = "0.2.44"
+mado-ai = { version = "0.0.0", path = "../mado-ai" }
 mado-autofill = { version = "0.0.0", path = "../mado-autofill" }
 mado-blocker = { version = "0.0.0", path = "../mado-blocker" }
 mado-engine = { version = "0.0.0", path = "../mado-engine" }
@@ -47,6 +48,7 @@ zeroize = "1.9.1"
 
 [dev-dependencies]
 json-patch = "5.0.0"
+mado-ai = { version = "0.0.0", path = "../mado-ai", features = ["testing"] }
 mado-engine-fake = { version = "0.0.0", path = "../mado-engine-fake" }
 mado-import = { version = "0.0.0", path = "../mado-import", features = ["fixtures"] }
 mado-extensions = { version = "0.0.0", path = "../mado-extensions", features = ["fixtures"] }

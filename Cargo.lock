@@ -2803,6 +2803,18 @@ version = "0.0.0"
 [[package]]
 name = "mado-ai"
 version = "0.0.0"
+dependencies = [
+ "data-encoding",
+ "getrandom 0.4.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "mado-app"
@@ -2912,6 +2924,7 @@ dependencies = [
  "image",
  "jiff",
  "json-patch 5.0.0",
+ "mado-ai",
  "mado-autofill",
  "mado-blocker",
  "mado-engine",
