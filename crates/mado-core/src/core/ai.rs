@@ -29,6 +29,8 @@ pub struct AiConfig {
     pub openrouter_api: String,
     /// The local servers `ai.connection.detectLocal` probes.
     pub local: Vec<(Provider, String)>,
+    /// Never ask Apple's on-device model (tests).
+    pub skip_on_device: bool,
 }
 
 impl AiConfig {
@@ -42,6 +44,7 @@ impl AiConfig {
             openrouter_site: "https://openrouter.ai".into(),
             openrouter_api: "https://openrouter.ai/api/v1".into(),
             local: mado_ai::local::defaults(),
+            skip_on_device: false,
         }
     }
 
@@ -87,6 +90,10 @@ impl Secrets for Keychain {
 pub enum AiEvent {
     /// A chat job's progress (13 §5).
     Chat(super::chat::ChatEvent),
+    /// A page command's progress (13 §6).
+    Command(super::page_ai::CommandEvent),
+    /// Whether Apple's on-device model can answer.
+    OnDevice(bool),
     /// A connection test finished: its models, or the failure's key.
     Tested {
         id: String,
@@ -236,6 +243,18 @@ impl Core {
             });
         self.ai_models = models;
         self.ai_roles = roles;
+        let on = self.page_commands_on();
+        self.ui.ai_menu(on);
+        if !self.ai.skip_on_device {
+            let inputs = self.inputs.clone();
+            std::thread::spawn(move || {
+                let ready =
+                    mado_platform::ondevice::status() == mado_platform::ondevice::Status::Available;
+                let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::OnDevice(
+                    ready,
+                ))));
+            });
+        }
         // The first retention run soon after start, then daily (13 §5).
         self.timers.schedule(
             crate::Timer::AiRetention,
@@ -377,6 +396,14 @@ impl Core {
                 | Command::AiChatCancel { .. }
         ) {
             return self.chat_command(origin, cmd, reply_to);
+        }
+        if matches!(
+            cmd,
+            Command::AiCommandList
+                | Command::AiCommandRun { .. }
+                | Command::AiCommandRespond { .. }
+        ) {
+            return self.ai_page_command(origin, cmd, rec);
         }
         match cmd {
             Command::AiConnectionAdd {
@@ -603,9 +630,8 @@ impl Core {
         let kind = Kind::from_key(kind).ok_or_else(|| invalid("error.ai.unknownKind"))?;
         let provider =
             Provider::from_key(provider).ok_or_else(|| invalid("error.ai.unknownProvider"))?;
-        // Subscription CLIs (M5-T13) and Apple's on-device model (M5-T05)
-        // connect with their own tasks.
-        if matches!(kind, Kind::SubscriptionCli | Kind::OnDevice) {
+        // Subscription CLIs connect with M5-T13.
+        if kind == Kind::SubscriptionCli {
             return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.notYet"));
         }
         let secret = secret
@@ -730,6 +756,30 @@ impl Core {
             return;
         };
         let provider = Provider::from_key(&conn.provider);
+        if provider == Some(Provider::Apple) {
+            // Apple's on-device model has one model and no key.
+            let (inputs, id, skip) = (self.inputs.clone(), id.to_owned(), self.ai.skip_on_device);
+            std::thread::spawn(move || {
+                let ready = !skip
+                    && mado_platform::ondevice::status()
+                        == mado_platform::ondevice::Status::Available;
+                let result = if ready {
+                    Ok(vec![RemoteModel {
+                        id: "apple-on-device".into(),
+                        name: Some("Apple Intelligence".into()),
+                        context_tokens: Some(4096),
+                    }])
+                } else {
+                    Err("unavailable".to_owned())
+                };
+                let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::Tested {
+                    id,
+                    result,
+                    reply,
+                })));
+            });
+            return;
+        }
         let api = provider.map_or(Api::None, Provider::api);
         let base = provider
             .ok_or(connection::ConnectionError::BadUrl)
@@ -772,6 +822,8 @@ impl Core {
     pub(super) fn ai_event(&mut self, event: AiEvent, rec: &mut PatchRecorder) {
         match event {
             AiEvent::Chat(e) => self.chat_event(e),
+            AiEvent::Command(e) => self.command_event(e, rec),
+            AiEvent::OnDevice(ready) => self.ondevice_ready = ready,
             AiEvent::Tested { id, result, reply } => {
                 let Some(mut conn) = self.state.ai.connections.get(&id).cloned() else {
                     if let Some(r) = reply {

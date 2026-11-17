@@ -25,6 +25,7 @@ mod lock;
 mod marks;
 mod menus;
 mod nav;
+mod page_ai;
 mod pages;
 mod profiles;
 mod reader;
@@ -595,6 +596,10 @@ pub struct Core {
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Chats writing an answer (13 §5).
     chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
+    /// Page command result cards and what made them (13 §6).
+    page_runs: BTreeMap<PromptId, page_ai::Run>,
+    /// Apple's on-device model can answer (macOS 26+, 13 §2.1).
+    ondevice_ready: bool,
     /// Where each open fill menu's values would go.
     fill_targets: BTreeMap<PromptId, fill::FillTarget>,
     /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
@@ -913,6 +918,8 @@ impl Core {
             ai_models: Vec::new(),
             ai_roles: BTreeMap::new(),
             chat_jobs: BTreeMap::new(),
+            page_runs: BTreeMap::new(),
+            ondevice_ready: false,
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
             otp_after: BTreeMap::new(),
@@ -1844,6 +1851,14 @@ impl Core {
         }
         if out.changes.iter().any(|c| c.key == "blocker.lists") {
             self.blocker_lists_changed(rec);
+        }
+        if out
+            .changes
+            .iter()
+            .any(|c| c.key == "features.ai" || c.key == "features.textCommands")
+        {
+            let on = self.page_commands_on();
+            self.ui.ai_menu(on);
         }
         if out.changes.iter().any(|c| c.key == "ai.chatRetention") {
             self.chat_retention_changed();

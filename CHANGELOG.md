@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - With AI turned on, Settings › AI connects models: an API key for Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek, Groq, Cloudflare or any OpenAI-compatible server, signing in with OpenRouter, or Ollama and LM Studio on this Mac. Keys stay in the Keychain, and each connection is tested and shows why it doesn't work.
 - Settings › AI picks the model for each job (chat, agent tasks, quick jobs, hard problems, images, page commands) with how hard it thinks and a backup model, or lets Mado choose the best one you have; models can be hidden or starred, with their prices.
 - Chat in a side panel about the page you're on, with a screenshot or files if you like: answers stream as they're written, cite their sources when the model searched the web, and chats get a title and are kept for a week (or forever). Bank pages, pages with a password or card field, and Mado's own pages are never sent.
+- Ask AI in the page menu, with Text commands turned on: improve, fix, shorten, soften or sharpen what you selected in a text field and put it back in place, or summarize, explain, translate and check code you selected on a page. On macOS 26 and later with Apple Intelligence, the common ones run on your Mac. Apple Intelligence can also be added as a connection.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

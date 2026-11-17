@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Write</title>
+  </head>
+  <body>
+    <label>Note <textarea id="note" rows="4" cols="40">Dear Sam, teh cat sat on teh mat. Best, Ada</textarea></label>
+    <p id="events"></p>
+    <script>
+      const note = document.getElementById("note");
+      let inputs = 0;
+      note.addEventListener("input", () => {
+        inputs += 1;
+        document.getElementById("events").textContent = String(inputs);
+      });
+    </script>
+  </body>
+</html>

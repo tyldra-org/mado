@@ -227,7 +227,11 @@ fn replace(tab: TabId, view: &MadoWebView, menu: &NSMenu) {
     let target = target(mtm);
     menu.removeAllItems();
     let mut actions = Vec::new();
-    for entry in build(&context, &MenuEnv { can_search: true }) {
+    let env = MenuEnv {
+        can_search: true,
+        ai: AI_MENU.load(std::sync::atomic::Ordering::Relaxed),
+    };
+    for entry in build(&context, &env) {
         let MenuEntry::Item { action, label: key } = entry else {
             if menu.numberOfItems() > 0 {
                 menu.addItem(&NSMenuItem::separatorItem(mtm));
@@ -285,6 +289,14 @@ fn replace(tab: TabId, view: &MadoWebView, menu: &NSMenu) {
         menu.removeItemAtIndex(menu.numberOfItems() - 1);
     }
     OPEN.with_borrow_mut(|o| *o = Some((tab, wk.retain(), context, actions)));
+}
+
+/// Whether the "Ask AI" section shows (spec 13 §6).
+static AI_MENU: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turns the "Ask AI" section of the page menu on or off.
+pub fn set_ai_menu(on: bool) {
+    AI_MENU.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn chosen(tag: isize) {

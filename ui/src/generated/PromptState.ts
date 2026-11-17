@@ -19,7 +19,20 @@ import type { WindowId } from "./WindowId";
  * prompts in 11, approvals in 13, pairing in 14, takeover and restore in
  * 04.
  */
-export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "passkey", id: PromptId, windowId: WindowId, tabId: TabId, 
+export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "aiResult", id: PromptId, windowId: WindowId, tabId: TabId, commandId: string, 
+/**
+ * An `en.json` key for built-ins, the user's name for custom ones.
+ */
+name: string, text: string, done: boolean, error: string | null, 
+/**
+ * The selection came from an editable field: Replace and Insert
+ * below are offered.
+ */
+editable: boolean, 
+/**
+ * `<connectionId>:<modelId>`, or `onDevice`.
+ */
+model: string | null, } | { "type": "passkey", id: PromptId, windowId: WindowId, tabId: TabId, 
 /**
  * `create` or `get`.
  */

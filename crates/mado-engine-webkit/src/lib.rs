@@ -23,6 +23,7 @@ mod gesture;
 mod keys;
 
 pub use keys::{set_reserved as set_reserved_shortcuts, synthesize as synthesize_key};
+pub use menu::set_ai_menu;
 mod menu;
 mod scheme;
 mod timeouts;
