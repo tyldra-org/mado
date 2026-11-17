@@ -20,6 +20,7 @@ type State = {
   tabs: Record<string, Tab>;
   windows: Record<string, { activeTabId: string | null; focused: boolean }>;
   groups: Record<string, { title: string; agentTaskId: string | null }>;
+  prompts: Record<string, { id: string; type: string }>;
 };
 
 run("agent tabs", () => {
@@ -101,11 +102,29 @@ run("agent tabs", () => {
     const ref = /\b(e\d+)\b button "Add to cart"/.exec(snap.snapshot)?.[1];
     await tool("click", { tab: opened.tab, ref });
     expect((await state()).windows[windowId]?.activeTabId).toBe(before);
-    // The person's own tabs: never acted on without approval, never their active tab's address.
-    await expect(tool("click", { tab: before, ref: "e1" })).rejects.toThrow();
-    await expect(
-      tool("navigate", { tab: before, url: "http://pages.mado.test/" }),
-    ).rejects.toThrow();
+    // The person's own tabs: never acted on without approval (the person
+    // denies here), never their active tab's address.
+    const deny = async () => {
+      for (let i = 0; i < 100; i++) {
+        const c = Object.values((await state()).prompts).find((p) => p.type === "aiApproval");
+        if (c) {
+          await mado.control.call("test.asUser", {
+            command: { type: "ai.approval.respond", promptId: c.id, answer: "deny" },
+          });
+          return true;
+        }
+        await sleep(50);
+      }
+      return false;
+    };
+    const clicked = tool("click", { tab: before, ref: "e1" });
+    clicked.catch(() => {});
+    expect(await deny()).toBe(true);
+    await expect(clicked).rejects.toThrow(/deniedByUser/);
+    const navigated = tool("navigate", { tab: before, url: "http://pages.mado.test/" });
+    navigated.catch(() => {});
+    void deny();
+    await expect(navigated).rejects.toThrow();
     // Taking over: the person shows the agent tab, the agent pauses until handed back.
     await mado.control.call("test.asUser", {
       command: { type: "tab.activate", tabId: opened.tab },

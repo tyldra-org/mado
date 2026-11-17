@@ -33,6 +33,7 @@ impl Core {
             .control_clients
             .get(&client)
             .map_or_else(|| "Control".to_owned(), |c| c.name.clone());
+        self.ensure_task_row(task, &title, "control");
         self.state.tx(rec).ai().tasks().insert(
             task,
             TaskSummary {

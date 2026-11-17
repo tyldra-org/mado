@@ -439,6 +439,23 @@ pub enum PromptState {
         client_version: String,
         offer_full: bool,
     },
+    /// An agent's action that needs the person (spec 13 §9.3), answered
+    /// with `ai.approval.respond`.
+    #[serde(rename_all = "camelCase")]
+    AiApproval {
+        id: PromptId,
+        window_id: Option<WindowId>,
+        tab_id: Option<TabId>,
+        task_id: crate::TaskId,
+        /// `pay`, `delete`, `send`, `leaveScope`…
+        action: String,
+        /// The action in plain words.
+        detail: String,
+        site: String,
+        /// For payments, the total read from the page.
+        amount: Option<String>,
+        allow_for_task: bool,
+    },
     /// A page command's result card (spec 13 §6), answered with
     /// `ai.command.respond`. `text` grows while `done` is false.
     #[serde(rename_all = "camelCase")]

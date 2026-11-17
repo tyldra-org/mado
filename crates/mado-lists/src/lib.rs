@@ -14,13 +14,13 @@ mod signature;
 mod store;
 
 pub use current::{
-    Derived, compat, filter_lists, hsts_preload, models, payment_frames, sensitive_hosts, serial,
-    top_domains, tracking_params,
+    Derived, action_lexicon, compat, filter_lists, hsts_preload, models, payment_frames,
+    sensitive_hosts, serial, top_domains, tracking_params,
 };
 pub use data::{
-    Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload, ListKind,
-    MinSafeEngine, ModelInfo, Models, PaymentFrames, Price, ROLES, SensitiveHosts, Status,
-    TopDomainList, TrackingParams,
+    ActionLexicon, Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload,
+    ListKind, MinSafeEngine, ModelInfo, Models, PaymentFrames, Price, ROLES, SensitiveHosts,
+    Status, TopDomainList, TrackingParams,
 };
 pub use signature::{PUBLIC_KEY, file_comment, signed_serial, trusted_comment, verify_file};
 pub use store::{Installed, Store};
@@ -49,10 +49,12 @@ pub enum List {
     PaymentFrames,
     /// Known AI models, their prices and role ranks (13 §4).
     Models,
+    /// Words that make an agent's click consequential (13 §9.2).
+    ActionLexicon,
 }
 
 impl List {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Compat,
         Self::SensitiveHosts,
         Self::TopDomains,
@@ -61,6 +63,7 @@ impl List {
         Self::FilterLists,
         Self::PaymentFrames,
         Self::Models,
+        Self::ActionLexicon,
     ];
 
     /// The file name, in `lists/` and where it is published.
@@ -74,6 +77,7 @@ impl List {
             Self::FilterLists => "filter-lists.json",
             Self::PaymentFrames => "payment-frames.json",
             Self::Models => "models.json",
+            Self::ActionLexicon => "action-lexicon.json",
         }
     }
 
@@ -92,6 +96,7 @@ impl List {
             Self::FilterLists => include_bytes!("../../../lists/filter-lists.json"),
             Self::PaymentFrames => include_bytes!("../../../lists/payment-frames.json"),
             Self::Models => include_bytes!("../../../lists/models.json"),
+            Self::ActionLexicon => include_bytes!("../../../lists/action-lexicon.json"),
         }
     }
 

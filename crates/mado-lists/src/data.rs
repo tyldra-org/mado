@@ -221,6 +221,68 @@ impl Models {
     }
 }
 
+/// `action-lexicon.json` (13 §9.2): words that make a click consequential,
+/// by action class and language.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ActionLexicon {
+    pub classes: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+}
+
+impl ActionLexicon {
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, String> {
+        let list: Self = json(bytes)?;
+        for class in ["pay", "delete", "send", "transfer", "confirm"] {
+            let langs = list
+                .classes
+                .get(class)
+                .ok_or(format!("{class} is missing"))?;
+            for lang in ["en", "es", "fr", "de", "pt", "ja", "zh"] {
+                if langs.get(lang).is_none_or(Vec::is_empty) {
+                    return Err(format!("{class}: {lang} is missing"));
+                }
+            }
+        }
+        Ok(list)
+    }
+
+    /// The class of the first word of the lexicon in `text`, whole words
+    /// only for scripts with spaces.
+    pub fn class_of(&self, text: &str) -> Option<&str> {
+        let t = format!(
+            " {} ",
+            text.to_lowercase()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        // The most specific classes first.
+        for class in ["pay", "transfer", "delete", "send", "confirm"] {
+            let Some(langs) = self.classes.get(class) else {
+                continue;
+            };
+            for words in langs.values() {
+                for w in words {
+                    let spaced = w.chars().next().is_some_and(|c| {
+                        c.is_ascii()
+                            || c.is_alphabetic() && !(('\u{3040}'..='\u{9fff}').contains(&c))
+                    });
+                    let hit = if spaced {
+                        t.contains(&format!(" {w} "))
+                            || t.contains(&format!(" {w}:"))
+                            || t.contains(&format!(" {w}."))
+                    } else {
+                        t.contains(w.as_str())
+                    };
+                    if hit {
+                        return Some(class);
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
 /// `payment-frames.json` (11 §4.1): hosts whose frames may get card
 /// fills; a host matches itself only.
 #[derive(Debug, Clone, Deserialize)]

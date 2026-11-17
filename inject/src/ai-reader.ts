@@ -24,6 +24,7 @@ type Ai = {
   choose: (ref: string, value: string) => string | null;
   scroll: (ref: string | null, dx: number, dy: number) => boolean;
   quiet: () => number;
+  inspect: (ref: string) => Record<string, unknown> | null;
 };
 
 /** Where to click an element, or what covers it (spec 13 §8). */
@@ -309,6 +310,49 @@ function scroll(ref: string | null, dx: number, dy: number): boolean {
 }
 
 // Settling (13 §8): when the DOM last changed.
+/// What the approval rules need to know about an element (13 §9.2).
+const TOTAL =
+  /(?:grand total|order total|total due|amount due|to pay|total|gesamt(?:betrag|summe)?|importe total|montant total|valor total|合計|总计|合计)[^0-9$€£¥]{0,40}([$€£¥]\s?\d[\d.,]*|\d[\d.,]*\s?(?:USD|EUR|GBP|JPY|CNY|€|\$|£|¥|円|元))/i;
+
+function inspect(ref: string): Record<string, unknown> | null {
+  const el = byRef(ref);
+  if (!el) return null;
+  const form = el.closest("form");
+  const fields = form ? Array.from(form.querySelectorAll("input")) : [];
+  const near =
+    el
+      .closest("form, section, article, div")
+      ?.textContent?.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300) ?? "";
+  const type = (el as HTMLInputElement).type ?? "";
+  const accountish = /account|settings|profile|security|konto|cuenta|compte|conta/i.test(
+    location.pathname + document.title,
+  );
+  const total = TOTAL.exec(document.body?.innerText ?? "")?.[1] ?? null;
+  let actionHost: string | null = null;
+  try {
+    actionHost = form?.action ? new URL(form.action).hostname : null;
+  } catch {
+    actionHost = null;
+  }
+  return {
+    name: name(el),
+    value: value(el) ?? "",
+    nearby: near,
+    submit:
+      type === "submit" || (el instanceof HTMLButtonElement && el.type === "submit" && !!form),
+    inForm: !!form,
+    formHasCard: fields.some(
+      (f) => /^cc-/.test(f.autocomplete) || /card.?number|cardnumber/i.test(f.name),
+    ),
+    formHasPassword: fields.some((f) => f.type === "password"),
+    formActionHost: actionHost,
+    accountField: accountish && (type === "email" || type === "password" || type === "tel"),
+    total,
+  };
+}
+
 // Each evaluation runs this file again; only the first run's functions
 // and observer stay, under `Symbol.for("mado.ai")`.
 let lastMutation = performance.now();
@@ -318,6 +362,6 @@ if (!g[KEY]) {
   new MutationObserver(() => {
     lastMutation = performance.now();
   }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-  const ai: Ai = { text, snapshot, locate, focus, choose, scroll, quiet };
+  const ai: Ai = { text, snapshot, locate, focus, choose, scroll, quiet, inspect };
   g[KEY] = ai;
 }

@@ -9,6 +9,7 @@ import type { PasskeyAccount } from "./PasskeyAccount";
 import type { PromptId } from "./PromptId";
 import type { SafariReason } from "./SafariReason";
 import type { TabId } from "./TabId";
+import type { TaskId } from "./TaskId";
 import type { UnresponsivePrompt } from "./UnresponsivePrompt";
 import type { UnsavedTab } from "./UnsavedTab";
 import type { WindowId } from "./WindowId";
@@ -19,7 +20,19 @@ import type { WindowId } from "./WindowId";
  * prompts in 11, approvals in 13, pairing in 14, takeover and restore in
  * 04.
  */
-export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "controlPairing", id: PromptId, clientName: string, clientVersion: string, offerFull: boolean, } | { "type": "aiResult", id: PromptId, windowId: WindowId, tabId: TabId, commandId: string, 
+export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "controlPairing", id: PromptId, clientName: string, clientVersion: string, offerFull: boolean, } | { "type": "aiApproval", id: PromptId, windowId: WindowId | null, tabId: TabId | null, taskId: TaskId, 
+/**
+ * `pay`, `delete`, `send`, `leaveScope`…
+ */
+action: string, 
+/**
+ * The action in plain words.
+ */
+detail: string, site: string, 
+/**
+ * For payments, the total read from the page.
+ */
+amount: string | null, allowForTask: boolean, } | { "type": "aiResult", id: PromptId, windowId: WindowId, tabId: TabId, commandId: string, 
 /**
  * An `en.json` key for built-ins, the user's name for custom ones.
  */

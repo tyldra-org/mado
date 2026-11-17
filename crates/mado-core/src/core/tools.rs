@@ -180,11 +180,13 @@ impl Ctx {
         let origin = url::Url::parse(url)
             .map(|u| u.origin().ascii_serialization())
             .unwrap_or_default();
+        let joined = lines.join("\n");
+        self.note_read(&origin, &joined);
         Ok(json!({
             "tab": tab,
             "title": v["title"],
             "url": url,
-            "snapshot": mado_agent::untrusted::wrap(&origin, &lines.join("\n")),
+            "snapshot": mado_agent::untrusted::wrap(&origin, &joined),
         }))
     }
 
@@ -245,6 +247,58 @@ impl Ctx {
         )))
     }
 
+    /// Asks the person when the action needs it (13 §9); `Ok` to go on.
+    async fn guard(
+        &self,
+        tab: Option<TabId>,
+        class: mado_agent::safety::Class,
+        url: &str,
+        detail: String,
+        amount: Option<String>,
+    ) -> Result<(), MadoError> {
+        let (reply, rx) = oneshot::channel();
+        let _ = self.inputs.send(Input::Internal(Internal::ToolGuard {
+            ask: super::safety::Ask {
+                origin: self.origin,
+                tab,
+                class,
+                url: url.to_owned(),
+                detail,
+                amount,
+            },
+            reply,
+        }));
+        rx.await.map_err(|_| MadoError::internal())?
+    }
+
+    fn note_read(&self, from: &str, text: &str) {
+        let _ = self.inputs.send(Input::Internal(Internal::ToolRead {
+            origin: self.origin,
+            from: from.to_owned(),
+            text: text.to_owned(),
+        }));
+    }
+
+    async fn crosses(&self, target: &str, text: &str) -> Option<String> {
+        let (reply, rx) = oneshot::channel();
+        let _ = self.inputs.send(Input::Internal(Internal::ToolCrosses {
+            origin: self.origin,
+            target: target.to_owned(),
+            text: text.to_owned(),
+            reply,
+        }));
+        rx.await.ok().flatten()
+    }
+
+    /// What `ai-reader` says about an element, for the rules of 13 §9.2.
+    async fn inspect(&self, tab: TabId, at: &str) -> mado_agent::safety::Element {
+        self.ai(tab, "inspect", json!([at]))
+            .await
+            .ok()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
+    }
+
     /// Whether this caller may use `tab` for this tool (13 §7.3).
     async fn may(&self, tab: TabId, read_only: bool, navigates: bool) -> Result<(), MadoError> {
         let (reply, rx) = oneshot::channel();
@@ -269,8 +323,25 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
         .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.control.unknownMethod"))?;
     if args.get("tab").is_some_and(|t| !t.is_null()) {
         let tab = tab_of(&args)?;
-        ctx.may(tab, tool.read_only, tool.name == "navigate")
-            .await?;
+        match ctx.may(tab, tool.read_only, tool.name == "navigate").await {
+            // `askFirst`: the person decides (13 §7.3).
+            Err(e) if e.message_key == "error.ai.needsApproval" => {
+                let url = ctx.state().await?["tabs"][tab.to_string()]["url"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                let detail = format!("Use your tab: {}", tool.name);
+                ctx.guard(
+                    Some(tab),
+                    mado_agent::safety::Class::UserTab,
+                    &url,
+                    detail,
+                    None,
+                )
+                .await?;
+            }
+            other => other?,
+        }
     }
     match tool.name {
         "open" => {
@@ -278,6 +349,8 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
                 .as_str()
                 .ok_or_else(|| bad("error.ai.needsUrl"))?
                 .to_owned();
+            ctx.guard(None, mado_agent::safety::Class::LeaveScope, &url, format!("Open {url}"), None)
+                .await?;
             let (reply, rx) = oneshot::channel();
             let _ = ctx.inputs.send(Input::Internal(Internal::AgentOpen {
                 origin: ctx.origin,
@@ -296,6 +369,8 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
                 "forward" => json!({ "type": "tab.forward", "tabId": tab }),
                 "reload" => json!({ "type": "tab.reload", "tabId": tab, "bypassCache": false }),
                 u => {
+                    ctx.guard(Some(tab), mado_agent::safety::Class::LeaveScope, u, format!("Go to {u}"), None)
+                        .await?;
                     let window = ctx.state().await?["tabs"][tab.to_string()]["windowId"].clone();
                     json!({ "type": "nav.open", "windowId": window, "tabId": tab, "input": u, "disposition": "currentTab", "source": "agent", "ctrlEnter": false })
                 }
@@ -317,6 +392,7 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
             }
             let origin = url::Url::parse(&url).map(|u| u.origin().ascii_serialization()).unwrap_or_default();
             let (body, _) = mado_agent::untrusted::cap(v["text"].as_str().unwrap_or_default(), 30_000);
+            ctx.note_read(&origin, body);
             Ok(json!({ "tab": tab, "title": v["title"], "url": url, "text": mado_agent::untrusted::wrap(&origin, body) }))
         }
         "screenshot" => {
@@ -345,7 +421,16 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
         }
         "click" => {
             let tab = tab_of(&args)?;
-            ctx.page(tab).await?;
+            let url = ctx.page(tab).await?;
+            // 13 §9.2: a consequential click asks first, with the total for
+            // a payment.
+            if let Some(at) = args["ref"].as_str() {
+                let el = ctx.inspect(tab, at).await;
+                if let Some(class) = mado_agent::safety::classify_press(&el, &ctx.sensitive) {
+                    let amount = (class == mado_agent::safety::Class::Pay).then(|| el.total.clone()).flatten();
+                    ctx.guard(Some(tab), class, &url, format!("Click \"{}\"", el.name), amount).await?;
+                }
+            }
             ctx.act(tab, async {
                 match ctx.point(tab, &args).await? {
                     Err(why) => Ok(why),
@@ -373,8 +458,30 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
         }
         "type" => {
             let tab = tab_of(&args)?;
-            ctx.page(tab).await?;
+            let url = ctx.page(tab).await?;
             let text = args["text"].as_str().ok_or_else(|| bad("error.ai.needsText"))?.to_owned();
+            let target = url::Url::parse(&url).map(|u| u.origin().ascii_serialization()).unwrap_or_default();
+            // 13 §9.5: text read on another site needs the person, with its
+            // source; 9.1: account settings and, in Ask, any form.
+            if let Some(source) = ctx.crosses(&target, &text).await {
+                ctx.guard(Some(tab), mado_agent::safety::Class::CrossSiteData, &url, format!("Type text read on {source}"), None)
+                    .await?;
+            }
+            if let Some(at) = args["ref"].as_str() {
+                let el = ctx.inspect(tab, at).await;
+                if el.account_field {
+                    ctx.guard(Some(tab), mado_agent::safety::Class::AccountChange, &url, format!("Change \"{}\"", el.name), None)
+                        .await?;
+                } else if el.in_form {
+                    ctx.guard(Some(tab), mado_agent::safety::Class::TypeInForm, &url, format!("Type into \"{}\"", el.name), None)
+                        .await?;
+                }
+                if args["submit"] == true
+                    && let Some(class) = mado_agent::safety::classify_press(&el, &ctx.sensitive)
+                {
+                    ctx.guard(Some(tab), class, &url, format!("Submit \"{}\"", el.name), el.total.clone()).await?;
+                }
+            }
             ctx.act(tab, async {
                 if let Some(at) = args["ref"].as_str()
                     && ctx.ai(tab, "focus", json!([at])).await? != true
@@ -457,6 +564,11 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
         }
         "sign_in" | "autofill" => {
             let tab = tab_of(&args)?;
+            if tool.name == "sign_in" {
+                let url = ctx.page(tab).await?;
+                ctx.guard(Some(tab), mado_agent::safety::Class::SignIn, &url, "Sign in with your saved password".into(), None)
+                    .await?;
+            }
             let what = match (tool.name, args["what"].as_str()) {
                 ("sign_in", _) => super::fill::AgentFill::SignIn,
                 (_, Some("card")) => super::fill::AgentFill::Card,
@@ -494,6 +606,8 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
             .collect::<Vec<_>>())),
         "native_apply" => {
             let action = args["action"].as_str().ok_or_else(|| bad("error.ai.needsAction"))?;
+            ctx.guard(None, mado_agent::safety::Class::Settings, "mado://settings", format!("Change Mado: {action}"), None)
+                .await?;
             let mut cmd = args["args"].as_object().cloned().unwrap_or_default();
             cmd.insert("type".into(), json!(action));
             // The undo (13 §8): a setting's previous value, or reopening a
@@ -534,7 +648,10 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
         }
         "upload" => {
             let tab = tab_of(&args)?;
-            ctx.page(tab).await?;
+            let url = ctx.page(tab).await?;
+            let names: Vec<&str> = args["files"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            ctx.guard(Some(tab), mado_agent::safety::Class::Upload, &url, format!("Upload {}", names.join(", ")), None)
+                .await?;
             let files: Vec<std::path::PathBuf> = args["files"]
                 .as_array()
                 .into_iter()
@@ -558,7 +675,10 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
         }
         "download" => {
             let tab = tab_of(&args)?;
-            ctx.page(tab).await?;
+            let page = ctx.page(tab).await?;
+            let what = args["url"].as_str().unwrap_or("a link").to_owned();
+            ctx.guard(Some(tab), mado_agent::safety::Class::Download, &page, format!("Download {what}"), None)
+                .await?;
             if let Some(url) = args["url"].as_str() {
                 let src = format!(
                     "const a = document.createElement('a'); a.href = {}; a.download = ''; document.body.append(a); a.click(); a.remove(); return true;",
@@ -647,14 +767,16 @@ async fn fetch(ctx: &Ctx, args: &Value) -> Result<Value, MadoError> {
             break;
         }
     }
+    let body = String::from_utf8_lossy(&body).into_owned();
     let origin = url::Url::parse(&url)
         .map(|u| u.origin().ascii_serialization())
         .unwrap_or_default();
+    ctx.note_read(&origin, &body);
     Ok(json!({
         "url": url,
         "status": status,
         "contentType": kind,
-        "body": mado_agent::untrusted::wrap(&origin, &String::from_utf8_lossy(&body)),
+        "body": mado_agent::untrusted::wrap(&origin, &body),
     }))
 }
 
@@ -748,7 +870,23 @@ impl super::Core {
                 .filter(|p| !p.is_empty()),
         };
         tokio::task::spawn_local(async move {
-            let _ = reply.send(run(&ctx, &name, args).await);
+            // The audit keeps the call without what was typed (13 §9.7).
+            let mut logged = args.clone();
+            for key in ["text", "code"] {
+                if let Some(t) = logged.get(key).and_then(Value::as_str) {
+                    logged[key] = json!(format!("({} characters)", t.chars().count()));
+                }
+            }
+            let result = run(&ctx, &name, args).await;
+            let summary = match &result {
+                Ok(_) => json!({ "tool": name, "args": logged, "ok": true }),
+                Err(e) => json!({ "tool": name, "args": logged, "error": e.message_key }),
+            };
+            let _ = ctx.inputs.send(Input::Internal(Internal::ToolAudit {
+                origin: ctx.origin,
+                detail: summary,
+            }));
+            let _ = reply.send(result);
         });
     }
 }

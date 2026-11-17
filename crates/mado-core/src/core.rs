@@ -31,6 +31,7 @@ mod page_ai;
 mod pages;
 mod profiles;
 mod reader;
+mod safety;
 mod save;
 mod session;
 mod site;
@@ -110,6 +111,43 @@ pub enum Internal {
         url: String,
         reply: oneshot::Sender<Result<mado_types::TabId, MadoError>>,
     },
+    /// A tool's action that may need the person (13 §9).
+    ToolGuard {
+        ask: safety::Ask,
+        reply: oneshot::Sender<Result<(), MadoError>>,
+    },
+    /// Text a tool read, for the cross-site guard (13 §9.5).
+    ToolRead {
+        origin: Origin,
+        from: String,
+        text: String,
+    },
+    /// Whether text to be typed on `target` was read on another site.
+    ToolCrosses {
+        origin: Origin,
+        target: String,
+        text: String,
+        reply: oneshot::Sender<Option<String>>,
+    },
+    /// A model call's usage for a task (13 §9.6); answers whether a spend
+    /// limit paused the task.
+    ModelUsage {
+        task: mado_types::TaskId,
+        connection: String,
+        provider: String,
+        model: String,
+        usage: (u64, u64, u64),
+        reply: oneshot::Sender<bool>,
+    },
+    /// A task begins: its row, scope from the prompt, and mode (13 §9).
+    TaskBegins {
+        task: mado_types::TaskId,
+        prompt: String,
+        runtime: String,
+        mode: Option<mado_agent::safety::Mode>,
+    },
+    /// A tool call finished: its audit row (13 §9.7).
+    ToolAudit { origin: Origin, detail: Value },
     /// Whether a tool may use a tab (13 §7.3).
     ToolMayUse {
         origin: Origin,
@@ -641,6 +679,9 @@ pub struct Core {
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Chats writing an answer (13 §5).
     chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
+    /// Each task's safety state and the approval cards on screen (13 §9).
+    guards: BTreeMap<mado_types::TaskId, safety::TaskGuard>,
+    pending_approvals: BTreeMap<PromptId, safety::Pending>,
     /// Each control client's implicit task (spec 14 §4) and agent tabs the
     /// person handed back after taking them over (13 §7.3).
     control_tasks: BTreeMap<mado_types::ClientId, mado_types::TaskId>,
@@ -976,6 +1017,8 @@ impl Core {
             control_clients: BTreeMap::new(),
             pending_uploads: BTreeMap::new(),
             control_tasks: BTreeMap::new(),
+            guards: BTreeMap::new(),
+            pending_approvals: BTreeMap::new(),
             handed_back: std::collections::BTreeSet::new(),
             pairings: BTreeMap::new(),
             ondevice_ready: false,
@@ -1696,6 +1739,41 @@ impl Core {
             } => {
                 let task = self.task_of(&origin, rec);
                 let _ = reply.send(self.tool_may_use(task, tab, read_only, navigates));
+            }
+            Internal::ToolGuard { ask, reply } => self.ask_approval(ask, reply, rec),
+            Internal::ToolRead { origin, from, text } => self.note_read(&origin, &from, &text, rec),
+            Internal::ToolCrosses {
+                origin,
+                target,
+                text,
+                reply,
+            } => {
+                let _ = reply.send(self.crosses(&origin, &target, &text, rec));
+            }
+            Internal::ModelUsage {
+                task,
+                connection,
+                provider,
+                model,
+                usage,
+                reply,
+            } => {
+                let paused = self.account(task, &connection, &provider, &model, usage, rec);
+                let _ = reply.send(paused);
+            }
+            Internal::TaskBegins {
+                task,
+                prompt,
+                runtime,
+                mode,
+            } => {
+                self.ensure_task_row(task, &prompt, &runtime);
+                self.set_scope(task, &prompt, mode);
+            }
+            Internal::ToolAudit { origin, detail } => {
+                if let Some(task) = self.task_of(&origin, rec) {
+                    self.audit(task, "tool_call", detail);
+                }
             }
             Internal::PendingUpload { tab, files } => {
                 self.pending_uploads.insert(tab, files);
