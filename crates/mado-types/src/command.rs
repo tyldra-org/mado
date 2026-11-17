@@ -1218,6 +1218,10 @@ pub enum Command {
         #[serde(default)]
         model: Option<String>,
     },
+    /// Hands an agent tab back to its task after the person took it over
+    /// (spec 13 §7.3), the task view's Continue.
+    #[serde(rename = "ai.tab.handBack", rename_all = "camelCase")]
+    AiTabHandBack { tab_id: TabId },
     /// Paired control clients (spec 14 §2): `[{ id, name, scopes,
     /// createdAt, lastUsedAt, revoked }]`.
     #[serde(rename = "control.clients")]
@@ -1517,7 +1521,8 @@ impl Command {
             | Self::AiChatCancel { .. }
             | Self::AiCommandList
             | Self::AiCommandRun { .. }
-            | Self::AiCommandRespond { .. } => CommandFamily::Ai,
+            | Self::AiCommandRespond { .. }
+            | Self::AiTabHandBack { .. } => CommandFamily::Ai,
             Self::ControlClients | Self::ControlRevoke { .. } | Self::ControlPairRespond { .. } => {
                 CommandFamily::Control
             }
@@ -1731,6 +1736,7 @@ impl Command {
             Self::AiCommandList => "ai.command.list",
             Self::AiCommandRun { .. } => "ai.command.run",
             Self::AiCommandRespond { .. } => "ai.command.respond",
+            Self::AiTabHandBack { .. } => "ai.tab.handBack",
             Self::ControlClients => "control.clients",
             Self::ControlRevoke { .. } => "control.revoke",
             Self::ControlPairRespond { .. } => "control.pairRespond",

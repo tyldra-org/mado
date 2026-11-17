@@ -763,6 +763,14 @@ fn test_access(
                 if method == "test.click" {
                     return test_click(&app, &params).await;
                 }
+                if method == "test.agentHost" {
+                    // The agent host window's properties (spec 13 §7.3).
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = app.run_on_main_thread(move || {
+                        let _ = tx.send(mado_engine_webkit::agent_host_state());
+                    });
+                    return Ok(rx.await.ok().flatten().unwrap_or(serde_json::Value::Null));
+                }
                 if let Some(name) = method.strip_prefix("tool.") {
                     // The agent tools as a control client (spec 13 §8).
                     let (reply, rx) = tokio::sync::oneshot::channel();

@@ -245,13 +245,17 @@ impl Ctx {
         )))
     }
 
-    async fn window(&self) -> Result<Value, MadoError> {
-        let state = self.state().await?;
-        state["windows"]
-            .as_object()
-            .and_then(|w| w.keys().next().cloned())
-            .map(Value::String)
-            .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.window.notFound"))
+    /// Whether this caller may use `tab` for this tool (13 §7.3).
+    async fn may(&self, tab: TabId, read_only: bool, navigates: bool) -> Result<(), MadoError> {
+        let (reply, rx) = oneshot::channel();
+        let _ = self.inputs.send(Input::Internal(Internal::ToolMayUse {
+            origin: self.origin,
+            tab,
+            read_only,
+            navigates,
+            reply,
+        }));
+        rx.await.map_err(|_| MadoError::internal())?
     }
 }
 
@@ -263,14 +267,24 @@ fn tab_of(args: &Value) -> Result<TabId, MadoError> {
 pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError> {
     let tool = mado_agent::tools::find(name)
         .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.control.unknownMethod"))?;
+    if args.get("tab").is_some_and(|t| !t.is_null()) {
+        let tab = tab_of(&args)?;
+        ctx.may(tab, tool.read_only, tool.name == "navigate")
+            .await?;
+    }
     match tool.name {
         "open" => {
-            let url = args["url"].as_str().ok_or_else(|| bad("error.ai.needsUrl"))?;
-            let window = ctx.window().await?;
-            let r = ctx
-                .command(json!({ "type": "tab.new", "windowId": window, "url": url, "position": null, "background": true, "openerId": null }))
-                .await?;
-            let tab: TabId = serde_json::from_value(r["tabId"].clone()).map_err(|_| MadoError::internal())?;
+            let url = args["url"]
+                .as_str()
+                .ok_or_else(|| bad("error.ai.needsUrl"))?
+                .to_owned();
+            let (reply, rx) = oneshot::channel();
+            let _ = ctx.inputs.send(Input::Internal(Internal::AgentOpen {
+                origin: ctx.origin,
+                url,
+                reply,
+            }));
+            let tab = rx.await.map_err(|_| MadoError::internal())??;
             ctx.settle(tab).await;
             ctx.snapshot(tab, false, None).await
         }

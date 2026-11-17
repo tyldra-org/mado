@@ -397,6 +397,13 @@ impl Core {
         ) {
             return self.chat_command(origin, cmd, reply_to);
         }
+        if let Command::AiTabHandBack { tab_id } = cmd {
+            if !origin.is_user() {
+                return Err(not_allowed());
+            }
+            self.handed_back.insert(tab_id);
+            return Ok(Value::Null);
+        }
         if matches!(
             cmd,
             Command::AiCommandList
