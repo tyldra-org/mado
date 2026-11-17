@@ -5,6 +5,7 @@
 pub mod bitwarden;
 pub mod generator;
 pub mod onepassword;
+pub mod qr;
 pub mod runner;
 pub mod source;
 pub mod totp;

@@ -53,5 +53,7 @@ mado-extensions = { version = "0.0.0", path = "../mado-extensions", features = [
 mado-vault = { version = "0.0.0", path = "../mado-vault", features = ["testing"] }
 minisign = "0.10.0"
 proptest = "1.12.0"
+qrcode = { version = "0.14.1", default-features = false, features = ["image"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 serde_norway = "0.9.42"
 tempfile = "3.27.0"

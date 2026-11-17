@@ -1010,5 +1010,6 @@
   "passwords.source.error.bitwarden.notLoggedIn": "Sign in once with bw login in Terminal",
   "passwords.source.error.bitwarden.noAnswer": "The Bitwarden CLI did not answer",
   "error.bitwarden.wrongPassword": "That master password is wrong.",
-  "error.bitwarden.notLoggedIn": "Sign in to Bitwarden once with bw login in Terminal."
+  "error.bitwarden.notLoggedIn": "Sign in to Bitwarden once with bw login in Terminal.",
+  "error.vault.noQr": "No two-factor QR code is visible on this page."
 }

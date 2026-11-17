@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Mado Passwords fills sign-in, card, address and contact forms from a menu at the field you click: only visible fields in the page itself (or a payment provider's frame for cards), the password page of a two-step sign-in is offered the same login, and a saved two-factor code fills itself after signing in.
 - Mado Passwords offers to save a password after a sign-in that worked, or to update one that changed, with the username and password editable and "Never on this site"; sign-up and change-password forms offer a strong password that follows the site's rules and saves itself.
 - 1Password and Bitwarden join Mado Passwords as places passwords come from and go to: turn each on in Settings › Passwords (1Password through its CLI integration, Bitwarden unlocked with its master password once), and the fill menu shows items from all of them, a login saved in several places once.
+- Mado Passwords reads a two-factor QR code shown on a page and adds the code to that site's login, or as a code of its own.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

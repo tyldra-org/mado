@@ -111,6 +111,8 @@ pub struct FakeState {
     pub privacy: Option<mado_engine::PrivacyConfig>,
     /// Messages posted to pages, in order.
     pub posted: Vec<(TabId, serde_json::Value)>,
+    /// What `Snapshot` answers; an empty PNG by default.
+    pub snapshot: Option<Image>,
     /// Messages posted to one frame: tab, frame handle, message.
     pub frame_posts: Vec<(TabId, u64, serde_json::Value)>,
     /// Answers to `EvaluateInWorld`: the first whose marker starts the
@@ -693,13 +695,14 @@ impl Engine for FakeEngine {
                 });
             }
             TabCommand::Snapshot { reply, .. } => {
-                drop(state);
-                reply(Ok(Image {
+                let image = state.snapshot.clone().unwrap_or(Image {
                     width: 1,
                     height: 1,
                     format: ImageFormat::Png,
                     bytes: Vec::new(),
-                }));
+                });
+                drop(state);
+                reply(Ok(image));
             }
             TabCommand::EvaluateInWorld { reply, source, .. } => {
                 let answer = state

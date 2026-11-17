@@ -192,4 +192,32 @@ run("passwords", () => {
     });
     expect(items.item.password).toBe("a-new-password");
   }, 60_000);
+
+  test("a QR code on the page adds a two-factor code (11 §7)", async () => {
+    const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+      private: false,
+      urls: ["http://pages.mado.test/passwords/totp.html"],
+    });
+    const tabId = await until("the tab", async () => {
+      const s = await state();
+      const t = s.windows[windowId]?.tabOrder[0];
+      return t && s.tabs[t]?.title === "Two-factor setup" ? t : undefined;
+    });
+    await sleep(800);
+    const scan = (await asUser({ type: "vault.scanQr", tabId })) as {
+      scanId: string;
+      issuer: string;
+      account: string;
+    };
+    expect(scan.issuer).toBe("Mado Fixture");
+    expect(scan.account).toBe("me@example.com");
+    const { id } = (await asUser({ type: "vault.attachTotp", scanId: scan.scanId })) as {
+      id: string;
+    };
+    const got = (await asUser({ type: "vault.get", id })) as {
+      item: { kind: string; uri: string };
+    };
+    expect(got.item.kind).toBe("totp");
+    expect(got.item.uri).toContain("secret=JBSWY3DPEHPK3PXP");
+  }, 60_000);
 });
