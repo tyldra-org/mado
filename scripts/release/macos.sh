@@ -64,6 +64,11 @@ case " $found " in
   *" $sha1 "*) ;;
   *) echo "macos.sh: the identity is not the one in app/macos/cert-sha1.txt" >&2; exit 1 ;;
 esac
+# The mado command line (spec 14 §3) sits next to Mado's executable.
+cargo build --release --locked -p mado-cli --target "$target" --manifest-path "$root/Cargo.toml"
+cp "$root/target/$target/release/mado" "$app/Contents/MacOS/mado"
+codesign --force --options runtime --timestamp=none \
+  --keychain "$keychain" --sign "$sha1" "$app/Contents/MacOS/mado"
 # The on-device model helper (spec 13 §2.1) sits next to Mado's executable
 # and is signed first, so the bundle's signature covers it.
 arch=${target%%-*}

@@ -2908,6 +2908,14 @@ dependencies = [
 [[package]]
 name = "mado-cli"
 version = "0.0.0"
+dependencies = [
+ "mado-control",
+ "mado-platform",
+ "mado-types",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
 
 [[package]]
 name = "mado-control"
