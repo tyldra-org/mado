@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The mado command line: open pages, list tabs, read and change settings, run any command by name or by group (mado tab, mado bookmark, mado password…), and see what Mado offers with mado commands and mado guide. It starts Mado hidden when it isn't running and asks you on the Mac the first time.
 - Agent tools: AI agents and paired apps can open pages, read them as an accessibility tree, click, type, choose, press keys, hover, scroll and drag with real input, wait for pages to settle, fetch with your cookies, upload and download files, run small scripts of tool calls, sign in without seeing passwords, and change Mado's own tabs and settings with undo. Sensitive pages are never read.
 - mado mcp: AI apps that speak the Model Context Protocol, such as Claude Code, can use Mado's agent tools once you allow them in Mado.
+- Agents work in their own tabs, grouped under the task and drawn off to the side so your window keeps its tab and focus; showing one of their tabs takes it over until you hand it back. Agents leave your own tabs alone unless Settings › AI allows them.
 
 ### Fixed
 

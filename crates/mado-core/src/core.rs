@@ -1,6 +1,7 @@
 //! The core actor (spec 01 §2): the state document and every service, one
 //! input at a time, on a dedicated thread with a `current_thread` runtime.
 
+mod agent_tabs;
 mod ai;
 mod applinks;
 mod blocker;
@@ -103,6 +104,20 @@ pub enum Internal {
     },
     /// An engine operation from an async job of the core.
     EngineOp(EngineOp),
+    /// Opens an agent tab for a tool call's task (spec 13 §7.3).
+    AgentOpen {
+        origin: Origin,
+        url: String,
+        reply: oneshot::Sender<Result<mado_types::TabId, MadoError>>,
+    },
+    /// Whether a tool may use a tab (13 §7.3).
+    ToolMayUse {
+        origin: Origin,
+        tab: mado_types::TabId,
+        read_only: bool,
+        navigates: bool,
+        reply: oneshot::Sender<Result<(), MadoError>>,
+    },
     /// The next file chooser in `tab` gets these files (the `upload`
     /// tool, spec 13 §8).
     PendingUpload {
@@ -626,6 +641,10 @@ pub struct Core {
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Chats writing an answer (13 §5).
     chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
+    /// Each control client's implicit task (spec 14 §4) and agent tabs the
+    /// person handed back after taking them over (13 §7.3).
+    control_tasks: BTreeMap<mado_types::ClientId, mado_types::TaskId>,
+    handed_back: std::collections::BTreeSet<mado_types::TabId>,
     /// Files the next file chooser of a tab gets (the `upload` tool).
     pending_uploads: BTreeMap<mado_types::TabId, Vec<PathBuf>>,
     /// Paired control clients and pairing cards on screen (spec 14 §2).
@@ -956,6 +975,8 @@ impl Core {
             page_runs: BTreeMap::new(),
             control_clients: BTreeMap::new(),
             pending_uploads: BTreeMap::new(),
+            control_tasks: BTreeMap::new(),
+            handed_back: std::collections::BTreeSet::new(),
             pairings: BTreeMap::new(),
             ondevice_ready: false,
             fill_targets: BTreeMap::new(),
@@ -1659,6 +1680,23 @@ impl Core {
                 reply,
             } => self.tool_call(origin, name, args, reply),
             Internal::EngineOp(op) => self.outbox.push(op),
+            Internal::AgentOpen { origin, url, reply } => {
+                let result = match self.task_of(&origin, rec) {
+                    Some(task) => self.agent_open(task, url, rec),
+                    None => Err(MadoError::new(ErrorCode::Protected, "error.ai.notAllowed")),
+                };
+                let _ = reply.send(result);
+            }
+            Internal::ToolMayUse {
+                origin,
+                tab,
+                read_only,
+                navigates,
+                reply,
+            } => {
+                let task = self.task_of(&origin, rec);
+                let _ = reply.send(self.tool_may_use(task, tab, read_only, navigates));
+            }
             Internal::PendingUpload { tab, files } => {
                 self.pending_uploads.insert(tab, files);
             }

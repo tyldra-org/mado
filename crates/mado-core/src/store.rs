@@ -358,7 +358,10 @@ pub fn write(conn: &Connection, before: &Model, after: &Model, now: i64) -> rusq
     }
     for (tid, t) in &after.tabs {
         let extra = after.extras.get(tid).cloned().unwrap_or_default();
-        if before.tabs.get(tid) == Some(t) && before.extras.get(tid) == Some(&extra) {
+        // Agent tabs are never restored (spec 13 §7.3).
+        if t.agent.is_some()
+            || (before.tabs.get(tid) == Some(t) && before.extras.get(tid) == Some(&extra))
+        {
             continue;
         }
         conn.execute(

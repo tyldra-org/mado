@@ -639,7 +639,9 @@ impl Core {
         {
             return;
         }
-        let closed = self.model.close(tabs, now);
+        let mut closed = self.model.close(tabs, now);
+        // Agent tabs never go to the closed stack (spec 13 §7.3).
+        closed.tabs.retain(|r| r.tab.agent.is_none());
         let window_of = closed.tabs.first().map(|r| r.tab.window_id);
         let entry = match closed.tabs.as_slice() {
             [] => None,

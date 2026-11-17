@@ -356,7 +356,14 @@ impl Adapter {
         if self.tabs.contains_key(&spec.tab) {
             return Err(EngineError::Failed("the tab view exists".into()));
         }
-        let content = content_view(spec.window).ok_or(EngineError::NoWindow)?;
+        let user_content = content_view(spec.window).ok_or(EngineError::NoWindow)?;
+        // Agent tabs render in the agent host window (spec 13 §7.3).
+        let content = if spec.agent {
+            crate::agent::add(spec.tab);
+            crate::agent::content(self.mtm, Some(&user_content))
+        } else {
+            user_content
+        };
         INFO.with_borrow_mut(|i| i.insert(spec.tab, TabInfo::new(spec.javascript)));
         let delegate = TabDelegate::new(self.mtm, spec.tab);
         // SAFETY: a new configuration on the main thread.
@@ -368,13 +375,14 @@ impl Adapter {
             &spec.user_agent,
             spec.javascript,
         );
-        let frame = spec
-            .frame
-            .map_or_else(|| content.bounds(), |r| convert::frame_in(&content, r));
+        let frame = match spec.frame {
+            Some(r) if !spec.agent => convert::frame_in(&content, r),
+            _ => content.bounds(),
+        };
         let view = crate::menu::MadoWebView::create(self.mtm, spec.tab, frame, &config);
         // SAFETY: plain view setup on the main thread.
         unsafe {
-            view.setHidden(!spec.visible);
+            view.setHidden(!spec.visible && !spec.agent);
             view.setPageZoom(spec.zoom);
         }
         insert(&content, &view);
@@ -840,7 +848,9 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                 let _ = view.goToBackForwardListItem(&item);
             }
             TabCommand::SetFrame(rect) => {
-                if let Some(content) = content_view(window) {
+                if crate::agent::hosted(tab, false) {
+                    // Agent tabs fill the host window.
+                } else if let Some(content) = content_view(window) {
                     view.setFrame(convert::frame_in(&content, rect));
                 }
             }
@@ -854,6 +864,15 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                     }
                 });
             }
+            // Shown to the person: an agent tab moves into its window.
+            TabCommand::SetVisible(true) if crate::agent::hosted(tab, true) => {
+                let content = content_view(window).ok_or(EngineError::NoWindow)?;
+                view.removeFromSuperview();
+                insert(&content, &view);
+                view.setHidden(false);
+            }
+            // An agent tab keeps rendering while in the host window.
+            TabCommand::SetVisible(false) if crate::agent::hosted(tab, false) => {}
             TabCommand::SetVisible(v) => view.setHidden(!v),
             TabCommand::Focus => {
                 if let Some(w) = view.window() {

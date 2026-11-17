@@ -1272,5 +1272,10 @@
   "error.ai.fetchFailed": "The address couldn't be fetched.",
   "error.ai.notText": "That address isn't text.",
   "error.ai.runFailed": "The script failed.",
-  "error.ai.tooManySteps": "The script made more than 200 tool calls."
+  "error.ai.tooManySteps": "The script made more than 200 tool calls.",
+  "error.ai.userTookOver": "You took over this tab; hand it back with Continue.",
+  "error.ai.userTabsNever": "Agents may not use your own tabs (Settings › AI).",
+  "error.ai.userTabsReadOnly": "Agents may only read your own tabs (Settings › AI).",
+  "error.ai.notYourActiveTab": "Agents never change the address of the tab you're looking at.",
+  "error.ai.needsApproval": "This needs your approval."
 }

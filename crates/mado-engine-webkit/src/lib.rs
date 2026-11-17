@@ -11,6 +11,7 @@
 
 #![cfg(target_os = "macos")]
 
+mod agent;
 mod blocker;
 mod certificate;
 mod convert;
@@ -22,6 +23,7 @@ mod fullscreen;
 mod gesture;
 mod keys;
 
+pub use agent::host_state as agent_host_state;
 pub use keys::{set_reserved as set_reserved_shortcuts, synthesize as synthesize_key};
 pub use menu::set_ai_menu;
 mod menu;
