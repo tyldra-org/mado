@@ -211,17 +211,29 @@ impl Core {
     /// 1Password and Bitwarden join with M4-T06 and T07.
     pub(super) fn fill_sources(&self) -> Vec<Arc<dyn FillSource>> {
         let mut out: Vec<Arc<dyn FillSource>> = Vec::new();
-        if let (Some(cfg), Some(keys)) = (&self.vault, &self.vault_keys) {
+        // `passwords.whoFills` (11 §6.4): every ready source, one of them,
+        // or none when an extension fills.
+        let who = self.setting_str("passwords.whoFills");
+        let wants = |s: SourceId| who == "automatic" || who == s.key();
+        if wants(SourceId::Mado)
+            && let (Some(cfg), Some(keys)) = (&self.vault, &self.vault_keys)
+        {
             out.push(Arc::new(MadoSource {
                 db: cfg.db.clone(),
                 keys: Arc::clone(keys),
                 now: self.now(),
             }));
         }
-        if self.vault.is_some() && self.setting("passwords.onePassword") == true {
+        if wants(SourceId::OnePassword)
+            && self.vault.is_some()
+            && self.setting("passwords.onePassword") == true
+        {
             out.push(Arc::clone(&self.onepassword) as Arc<dyn FillSource>);
         }
-        if self.vault.is_some() && self.setting("passwords.bitwarden") == true {
+        if wants(SourceId::Bitwarden)
+            && self.vault.is_some()
+            && self.setting("passwords.bitwarden") == true
+        {
             out.push(Arc::clone(&self.bitwarden) as Arc<dyn FillSource>);
         }
         out
@@ -255,6 +267,9 @@ impl Core {
         f: FieldFocused,
         rec: &mut PatchRecorder,
     ) {
+        if self.setting_str("passwords.whoFills") == "extension" {
+            return;
+        }
         let managers = self.setting("passwords.onePassword") == true
             || self.setting("passwords.bitwarden") == true;
         if self.vault.is_none() || (self.state.vault.status == VaultStatus::None && !managers) {
@@ -560,6 +575,10 @@ impl Core {
         let seconds = u64::try_from(now / 1000).unwrap_or(0);
         let values = values_for(&stored.item, &form.fields, seconds);
         let filled = values.len();
+        let username = match &stored.item {
+            Item::Login(l) => Some(l.username.clone()),
+            _ => None,
+        };
         self.post_fill(&target, values);
         self.vault_fill_until = now
             + self
@@ -590,8 +609,79 @@ impl Core {
             _ => {}
         }
         if let Some(r) = reply {
-            let _ = r.send(Ok(json!({ "filled": filled })));
+            // Agents get this and nothing else of the item (11 §11).
+            let _ = r.send(Ok(
+                json!({ "filled": filled > 0, "fields": filled, "username": username }),
+            ));
         }
+    }
+
+    /// The agent tool `sign_in(tab)` (11 §11, used by M5): the best login
+    /// for the tab's sign-in form goes from its source to the page script;
+    /// the answer is `{ filled, username }` only. No gesture is needed;
+    /// the agent's own approval rules apply in M5.
+    pub(super) fn agent_sign_in(&mut self, tab: TabId, reply: Reply) {
+        let no_form = || MadoError::new(ErrorCode::NotFound, "error.vault.noForm");
+        let Some((origin, form)) = self.page_forms.get(&tab).and_then(|frames| {
+            frames.iter().filter(|f| f.main).find_map(|f| {
+                f.forms
+                    .iter()
+                    .find(|x| matches!(x.kind, FormKind::Login | FormKind::UsernameOnly))
+                    .map(|x| (f.origin.clone(), x.clone()))
+            })
+        }) else {
+            let _ = reply.send(Err(no_form()));
+            return;
+        };
+        let Some(site) = site(&origin) else {
+            let _ = reply.send(Err(no_form()));
+            return;
+        };
+        let sources = self.fill_sources();
+        if sources.is_empty() {
+            let _ = reply.send(Err(MadoError::new(ErrorCode::Locked, "error.vault.locked")));
+            return;
+        }
+        let preferred = self.preferred_source();
+        let target = FillTarget {
+            tab,
+            frame: 0,
+            origin,
+            main: true,
+            form_key: form.form_key.clone(),
+            kind: form.kind,
+            site: site.clone(),
+            rules: None,
+        };
+        let now = self.now();
+        let _ = self.vault_job(Some(reply), move |_, _| {
+            let found = sources
+                .iter()
+                .filter(|s| s.status() == SourceStatus::Ready)
+                .filter_map(|s| s.find(&site, &[ItemKind::Login]).ok().map(|i| (s.id(), i)))
+                .collect();
+            let best = merge(found, preferred)
+                .into_iter()
+                .next()
+                .ok_or(VaultError::NotFound)?;
+            let source = sources
+                .iter()
+                .find(|s| s.id() == best.source)
+                .ok_or(VaultError::NotFound)?;
+            let item = source.reveal(&best.summary.id).map_err(source_error)?;
+            Ok(VaultOutcome::Fill {
+                target: Box::new(target),
+                item: Box::new(Stored {
+                    id: format!("{}:{}", best.source.key(), best.summary.id),
+                    item,
+                    created_at: now,
+                    updated_at: now,
+                    last_used_at: Some(now),
+                    deleted_at: None,
+                }),
+                reply: None,
+            })
+        });
     }
 
     /// "Use a strong password": a new password honouring the field's

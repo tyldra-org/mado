@@ -370,10 +370,11 @@ impl Core {
             Ok(VaultOutcome::Fill {
                 target,
                 item,
-                reply,
+                reply: inner,
             }) => {
                 let now = self.now();
-                self.fill_resolved(*target, *item, reply, now);
+                // The job's own reply (an agent's sign_in) answers the fill.
+                self.fill_resolved(*target, *item, inner.or(reply), now);
                 return;
             }
             Err(e) => {
