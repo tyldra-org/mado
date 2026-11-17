@@ -1061,6 +1061,13 @@ pub enum Command {
     /// `locked`, `ready` or `{ error }`.
     #[serde(rename = "vault.sources")]
     VaultSources,
+    /// Unlocks Bitwarden with its master password (spec 11 §6.3); the
+    /// session is kept wrapped by Mado's vault.
+    #[serde(rename = "vault.bitwardenUnlock", rename_all = "camelCase")]
+    VaultBitwardenUnlock { password: String },
+    /// Locks Bitwarden in Mado and forgets its session.
+    #[serde(rename = "vault.bitwardenLock")]
+    VaultBitwardenLock,
     /// Answers the save or update prompt (spec 11 §5); `username` and
     /// `password` are the prompt's edits.
     #[serde(rename = "vault.saveRespond", rename_all = "camelCase")]
@@ -1308,7 +1315,9 @@ impl Command {
             | Self::VaultDeleteForever { .. }
             | Self::VaultFill { .. }
             | Self::VaultSaveRespond { .. }
-            | Self::VaultSources => CommandFamily::Vault,
+            | Self::VaultSources
+            | Self::VaultBitwardenUnlock { .. }
+            | Self::VaultBitwardenLock => CommandFamily::Vault,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1493,6 +1502,8 @@ impl Command {
             Self::VaultFill { .. } => "vault.fill",
             Self::VaultSaveRespond { .. } => "vault.saveRespond",
             Self::VaultSources => "vault.sources",
+            Self::VaultBitwardenUnlock { .. } => "vault.bitwardenUnlock",
+            Self::VaultBitwardenLock => "vault.bitwardenLock",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

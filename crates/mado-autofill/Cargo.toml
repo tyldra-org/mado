@@ -23,6 +23,7 @@ sha1 = "0.11.0"
 sha2 = "0.11.1"
 thiserror = "2.0.21"
 url = "2.5.8"
+zeroize = "1.9.1"
 
 [dev-dependencies]
 mado-storage = { version = "0.0.0", path = "../mado-storage" }

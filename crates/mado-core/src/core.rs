@@ -561,6 +561,8 @@ pub struct Core {
     vault_fill_until: i64,
     /// 1Password (spec 11 §6.2), used while `passwords.onePassword` is on.
     onepassword: std::sync::Arc<mado_autofill::onepassword::OnePassword>,
+    /// Bitwarden (spec 11 §6.3), used while `passwords.bitwarden` is on.
+    bitwarden: std::sync::Arc<mado_autofill::bitwarden::Bitwarden>,
     /// Where each open fill menu's values would go.
     fill_targets: BTreeMap<PromptId, fill::FillTarget>,
     /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
@@ -863,6 +865,10 @@ impl Core {
             vault_fill_until: 0,
             onepassword: std::sync::Arc::new(mado_autofill::onepassword::OnePassword::new(
                 config.password_clis.op.clone(),
+                std::sync::Arc::clone(&config.password_clis.runner),
+            )),
+            bitwarden: std::sync::Arc::new(mado_autofill::bitwarden::Bitwarden::new(
+                config.password_clis.bw.clone(),
                 std::sync::Arc::clone(&config.password_clis.runner),
             )),
             fill_targets: BTreeMap::new(),

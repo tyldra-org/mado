@@ -16,6 +16,10 @@ use serde_json::{Value, json};
 
 use super::{Core, Internal, Reply, Timer};
 
+/// Bitwarden's session, wrapped by the vault (spec 11 §6.3).
+const BITWARDEN_FILE: &str = "bitwarden.wrapped";
+const BITWARDEN_LABEL: &str = "mado-bitwarden-session-v1";
+
 /// How often the inactivity lock looks.
 pub(super) const LOCK_CHECK: Duration = Duration::from_secs(30);
 
@@ -77,6 +81,9 @@ pub(super) fn error(e: &VaultError) -> MadoError {
         VaultError::BadKey => (ErrorCode::PermissionDenied, "error.vault.badKey"),
         VaultError::BadRecoverySecret => (ErrorCode::InvalidInput, "error.vault.badRecoverySecret"),
         VaultError::NotFound => (ErrorCode::NotFound, "error.vault.notFound"),
+        VaultError::Platform(m) if m.starts_with("bitwarden.") => {
+            return MadoError::new(ErrorCode::PermissionDenied, format!("error.{m}"));
+        }
         _ => (ErrorCode::Internal, "error.vault.failed"),
     };
     MadoError::new(code, key)
@@ -168,8 +175,29 @@ impl Core {
         }
     }
 
+    /// After Mado's vault unlocks: Bitwarden's kept session comes back.
+    fn restore_bitwarden(&self) {
+        let (Some(cfg), Some(keys)) = (&self.vault, &self.vault_keys) else {
+            return;
+        };
+        if self.setting("passwords.bitwarden") != true || self.bitwarden.session().is_some() {
+            return;
+        }
+        let Ok(blob) = std::fs::read(cfg.dir.join(BITWARDEN_FILE)) else {
+            return;
+        };
+        if let Ok(session) = keys.open_secret(BITWARDEN_LABEL, &blob)
+            && let Ok(text) = String::from_utf8(session.to_vec())
+        {
+            self.bitwarden
+                .set_session(Some(zeroize::Zeroizing::new(text)));
+        }
+    }
+
     /// Locks: the keys go (spec 11 §2.3).
     pub(super) fn lock_vault(&mut self, rec: &mut PatchRecorder) {
+        // Bitwarden locks with Mado; its session stays wrapped on disk.
+        self.bitwarden.lock();
         if self.vault_keys.take().is_some() {
             tracing::info!("the vault locked");
         }
@@ -242,6 +270,7 @@ impl Core {
                     .unwrap_or(300_000);
                 self.vault_fill_until = now + window;
                 self.set_vault_status(VaultStatus::Unlocked, rec);
+                self.restore_bitwarden();
                 self.refresh_fill_menus(rec);
                 Ok(secret.map_or(Value::Null, |s| json!({ "recoverySecret": s })))
             }
@@ -328,6 +357,10 @@ impl Core {
                     self.setting("passwords.onePassword") == true,
                     std::sync::Arc::clone(&self.onepassword),
                 );
+                let bw = (
+                    self.setting("passwords.bitwarden") == true,
+                    std::sync::Arc::clone(&self.bitwarden),
+                );
                 self.vault_job(reply_to.take(), move |_, _| {
                     use mado_autofill::source::FillSource as _;
                     Ok(VaultOutcome::Value(json!([
@@ -337,8 +370,34 @@ impl Core {
                             VaultStatus::Unlocked => json!("ready"),
                         } },
                         { "id": "onePassword", "enabled": op.0, "status": op.1.status() },
+                        { "id": "bitwarden", "enabled": bw.0, "status": bw.1.status() },
                     ])))
                 })?;
+                Ok(Value::Null)
+            }
+            Command::VaultBitwardenUnlock { password } => {
+                let bw = std::sync::Arc::clone(&self.bitwarden);
+                let keys = self.vault_keys.clone();
+                self.vault_job(reply_to.take(), move |_, cfg| {
+                    let session = bw.unlock(&password).map_err(|e| match e {
+                        mado_autofill::source::SourceError::Failed(m) => VaultError::Platform(m),
+                        _ => VaultError::Cancelled,
+                    })?;
+                    // Kept wrapped by Mado's vault, so it survives restarts
+                    // until Bitwarden or Mado locks (11 §6.3).
+                    if let Some(keys) = keys {
+                        let blob = keys.seal_secret(BITWARDEN_LABEL, session.as_bytes());
+                        mado_vault::wrap::write_private(&cfg.dir.join(BITWARDEN_FILE), &blob)?;
+                    }
+                    Ok(VaultOutcome::Value(Value::Null))
+                })?;
+                Ok(Value::Null)
+            }
+            Command::VaultBitwardenLock => {
+                self.bitwarden.lock();
+                if let Some(cfg) = &self.vault {
+                    let _ = std::fs::remove_file(cfg.dir.join(BITWARDEN_FILE));
+                }
                 Ok(Value::Null)
             }
             Command::VaultLock => {

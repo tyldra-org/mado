@@ -1002,5 +1002,13 @@
   "passwords.source.status.locked": "Locked: sign in to the app",
   "passwords.source.status.notInstalled": "Not set up",
   "passwords.source.error.onePassword.integrationOff": "Turn on Integrate with 1Password CLI in 1Password",
-  "passwords.onePassword.setup": "Install the 1Password CLI (brew install 1password-cli) and turn on 1Password › Settings › Developer › Integrate with 1Password CLI. 1Password may refuse an app without a Developer ID; then it says so here."
+  "passwords.onePassword.setup": "Install the 1Password CLI (brew install 1password-cli) and turn on 1Password › Settings › Developer › Integrate with 1Password CLI. 1Password may refuse an app without a Developer ID; then it says so here.",
+  "passwords.bitwarden.master": "Bitwarden master password",
+  "passwords.bitwarden.unlock": "Unlock Bitwarden",
+  "passwords.bitwarden.lock": "Lock Bitwarden",
+  "passwords.bitwarden.setup": "Install the Bitwarden CLI (brew install bitwarden-cli) and sign in once with bw login in Terminal.",
+  "passwords.source.error.bitwarden.notLoggedIn": "Sign in once with bw login in Terminal",
+  "passwords.source.error.bitwarden.noAnswer": "The Bitwarden CLI did not answer",
+  "error.bitwarden.wrongPassword": "That master password is wrong.",
+  "error.bitwarden.notLoggedIn": "Sign in to Bitwarden once with bw login in Terminal."
 }

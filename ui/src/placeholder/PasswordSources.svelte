@@ -16,9 +16,27 @@
       .catch(() => {});
   $effect(() => {
     void store.state?.settings.values["passwords.onePassword"];
+    void store.state?.settings.values["passwords.bitwarden"];
     void store.state?.vault?.status;
     void load();
   });
+  let master = $state("");
+  let message = $state("");
+  const unlockBitwarden = () =>
+    store.client.call({ type: "vault.bitwardenUnlock", password: master }).then(
+      () => {
+        master = "";
+        message = "";
+        void load();
+      },
+      (e: { error?: { messageKey?: string } }) =>
+        (message = t(e.error?.messageKey ?? "error.unknown")),
+    );
+  const lockBitwarden = () =>
+    store.client
+      .call({ type: "vault.bitwardenLock" })
+      .then(load)
+      .catch(() => {});
   const label = (s: Source) =>
     typeof s.status === "string"
       ? t(`passwords.source.status.${s.status}`)
@@ -33,6 +51,20 @@
         {t(`fill.source.${s.id}`)}: {label(s)}
         {#if s.id === "onePassword" && s.enabled && s.status !== "ready"}
           <p>{t("passwords.onePassword.setup")}</p>
+        {/if}
+        {#if s.id === "bitwarden" && s.enabled && s.status === "locked"}
+          {#if message}<p role="alert">{message}</p>{/if}
+          <label
+            >{t("passwords.bitwarden.master")}
+            <input type="password" bind:value={master} autocomplete="off" /></label
+          >
+          <button type="button" disabled={!master} onclick={unlockBitwarden}
+            >{t("passwords.bitwarden.unlock")}</button
+          >
+        {:else if s.id === "bitwarden" && s.enabled && s.status === "ready"}
+          <button type="button" onclick={lockBitwarden}>{t("passwords.bitwarden.lock")}</button>
+        {:else if s.id === "bitwarden" && s.enabled && s.status !== "ready"}
+          <p>{t("passwords.bitwarden.setup")}</p>
         {/if}
       </li>
     {/each}

@@ -4039,6 +4039,292 @@ fn onepassword_items_join_the_menu_and_take_saves() {
     });
 }
 
+/// `op` and `bw` behind one runner, by program name (spec 11 §6.2, §6.3).
+#[derive(Debug, Default)]
+struct FakeClis {
+    op: FakeOp,
+    bw_calls: std::sync::Mutex<Vec<Vec<String>>>,
+}
+
+impl mado_autofill::runner::Runner for FakeClis {
+    fn run(
+        &self,
+        program: &std::path::Path,
+        args: &[&str],
+        env: &[(&str, &str)],
+        stdin: Option<&str>,
+        limit: std::time::Duration,
+    ) -> Option<mado_autofill::runner::Output> {
+        if program.ends_with("op") {
+            return self.op.run(program, args, env, stdin, limit);
+        }
+        self.bw_calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(args.iter().map(|s| (*s).to_owned()).collect());
+        let ok = |s: &str| {
+            Some(mado_autofill::runner::Output {
+                ok: true,
+                stdout: s.into(),
+                stderr: String::new(),
+            })
+        };
+        let session = env.iter().any(|(k, v)| *k == "BW_SESSION" && *v == "BWS");
+        match args[0] {
+            "unlock" if env.contains(&("MADO_BW_PW", "master")) => ok("BWS"),
+            "unlock" => Some(mado_autofill::runner::Output {
+                ok: false,
+                stdout: String::new(),
+                stderr: "Invalid master password.".into(),
+            }),
+            "status" => ok(if session {
+                r#"{"status":"unlocked"}"#
+            } else {
+                r#"{"status":"locked"}"#
+            }),
+            _ if !session => Some(mado_autofill::runner::Output {
+                ok: false,
+                stdout: String::new(),
+                stderr: "Vault is locked.".into(),
+            }),
+            "sync" => ok("Syncing complete."),
+            "list" => ok(
+                r#"[{"id":"b1","type":1,"name":"Example","login":{"username":"family","password":"bw-pw","uris":[{"uri":"https://example.com/"}]}}]"#,
+            ),
+            "get" => ok(
+                r#"{"id":"b1","type":1,"name":"Example","login":{"username":"family","password":"bw-pw","uris":[{"uri":"https://example.com/"}]}}"#,
+            ),
+            "create" => ok(r#"{"id":"b2"}"#),
+            _ => None,
+        }
+    }
+}
+
+/// Spec 11 §12 check 6: with 1Password and Bitwarden both connected, the
+/// fill menu shows items from both with their sources, and saving goes to
+/// the chosen destination. Bitwarden's session survives a restart, wrapped
+/// by Mado's vault, and locks with it.
+#[test]
+fn both_password_managers_fill_and_save_to_the_chosen_one() {
+    use mado_engine::page::{
+        CredentialsSubmitted, DetectedField, DetectedForm, FieldClass, FieldFocused, FieldRect,
+        FormKind, Forms, PageMessage,
+    };
+    use mado_types::command::SaveAction;
+    use mado_types::state::PromptState;
+    use std::sync::atomic::Ordering;
+    crate::testing::GESTURE.store(1_800_000_000_000, Ordering::SeqCst);
+    let clis = std::sync::Arc::new(FakeClis::default());
+    let install = || {
+        crate::testing::PASSWORD_CLIS.with_borrow_mut(|c| {
+            *c = crate::PasswordClis {
+                op: Some("/opt/homebrew/bin/op".into()),
+                bw: Some("/opt/homebrew/bin/bw".into()),
+                runner: std::sync::Arc::clone(&clis)
+                    as std::sync::Arc<dyn mado_autofill::runner::Runner>,
+            };
+        });
+    };
+    install();
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    let set = |core: &TestCore, key: &str, value: serde_json::Value| {
+        let token = ask(core, user, Command::AppAuthenticate { reason: "t".into() }).expect("auth")
+            ["token"]
+            .as_str()
+            .map(str::to_owned);
+        ask(
+            core,
+            user,
+            Command::SettingsSet {
+                key: key.into(),
+                value,
+                token,
+            },
+        )
+        .expect(key);
+    };
+    set(&core, "passwords.onePassword", serde_json::json!(true));
+    set(&core, "passwords.bitwarden", serde_json::json!(true));
+    assert_eq!(
+        ask(
+            &core,
+            user,
+            Command::VaultBitwardenUnlock {
+                password: "wrong".into()
+            }
+        )
+        .expect_err("wrong password")
+        .message_key,
+        "error.bitwarden.wrongPassword"
+    );
+    ask(
+        &core,
+        user,
+        Command::VaultBitwardenUnlock {
+            password: "master".into(),
+        },
+    )
+    .expect("unlocked");
+    let sources = ask(&core, user, Command::VaultSources).expect("sources");
+    assert_eq!(sources[1]["status"], "ready");
+    assert_eq!(sources[2]["status"], "ready");
+
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let send = |core: &TestCore, message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame: frame(true, "https://www.example.com"),
+            message,
+        });
+    };
+    let field = |key: &str, class: FieldClass| DetectedField {
+        field_key: key.into(),
+        class,
+        rect: FieldRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        visible: true,
+        in_viewport: true,
+    };
+    let login = || {
+        PageMessage::Forms(Forms {
+            forms: vec![DetectedForm {
+                form_key: "f1".into(),
+                kind: FormKind::Login,
+                action: None,
+                fields: vec![
+                    field("a1", FieldClass::Username),
+                    field("a2", FieldClass::Password),
+                ],
+            }],
+        })
+    };
+    let focus = || {
+        PageMessage::FieldFocused(FieldFocused {
+            form_key: "f1".into(),
+            field_key: "a1".into(),
+            rect: FieldRect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 30.0,
+            },
+            password_rules: None,
+        })
+    };
+    send(&core, login());
+    send(&core, focus());
+    let menu = |core: &TestCore| {
+        state_of(core).prompts.values().find_map(|p| match p {
+            PromptState::FillMenu(m) if !m.loading => Some(m.clone()),
+            _ => None,
+        })
+    };
+    eventually("items from both", || {
+        menu(&core).is_some_and(|m| m.items.len() == 3)
+    });
+    let sources: Vec<String> = menu(&core)
+        .expect("menu")
+        .items
+        .iter()
+        .map(|i| i.source.clone())
+        .collect();
+    assert!(
+        sources.contains(&"onePassword".to_owned()) && sources.contains(&"bitwarden".to_owned()),
+        "{sources:?}"
+    );
+
+    // Bitwarden is the destination: a new login saves there.
+    set(
+        &core,
+        "vault.saveDestination.logins",
+        serde_json::json!("bitwarden"),
+    );
+    send(
+        &core,
+        PageMessage::CredentialsSubmitted(CredentialsSubmitted {
+            form_key: "f1".into(),
+            kind: FormKind::Login,
+            username: "guest".into(),
+            password: "pw".into(),
+        }),
+    );
+    send(&core, PageMessage::Forms(Forms { forms: vec![] }));
+    let prompt = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::SavePassword { id, .. } => Some(*id),
+            _ => None,
+        })
+    };
+    eventually("the save prompt", || prompt().is_some());
+    ask(
+        &core,
+        user,
+        Command::VaultSaveRespond {
+            prompt_id: prompt().expect("prompt"),
+            action: SaveAction::Save,
+            username: None,
+            password: None,
+        },
+    )
+    .expect("saved");
+    eventually("created in Bitwarden", || {
+        clis.bw_calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|c| c[0] == "create")
+    });
+    assert!(
+        !clis
+            .op
+            .calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|c| c[1] == "create"),
+        "not 1Password"
+    );
+
+    // Locking Mado locks Bitwarden; a restart brings its session back once
+    // Mado unlocks, without the master password.
+    ask(&core, user, Command::VaultLock).expect("locked");
+    assert_eq!(
+        ask(&core, user, Command::VaultSources).expect("sources")[2]["status"],
+        "locked"
+    );
+    let root = core.stop();
+    install();
+    let core = TestCore::start_in(root, false);
+    // Test cores start with fresh settings.
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    set(&core, "passwords.bitwarden", serde_json::json!(true));
+    assert_eq!(
+        ask(&core, user, Command::VaultSources).expect("sources")[2]["status"],
+        "locked"
+    );
+    ask(&core, user, Command::VaultUnlock).expect("unlocked");
+    eventually("Bitwarden is back", || {
+        ask(&core, user, Command::VaultSources).expect("sources")[2]["status"] == "ready"
+    });
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {
