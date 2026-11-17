@@ -11,6 +11,9 @@ pub trait UiSink: Send {
     /// Remote search suggestions for one window's address bar, as the
     /// `mado://suggest` event (spec 05 §2).
     fn suggest(&mut self, _window: mado_types::WindowId, _payload: &serde_json::Value) {}
+    /// AI progress for every window, as the `mado://ai` event (spec 13
+    /// §5): chat deltas, notes, answers and titles.
+    fn ai(&mut self, _payload: &serde_json::Value) {}
     /// Shows a page's notification through macOS (spec 07 §1.1).
     fn show_notification(&mut self, _id: &str, _title: &str, _body: &str) {}
     /// Opens a macOS privacy pane (spec 07 §4).

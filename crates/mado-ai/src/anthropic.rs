@@ -56,12 +56,16 @@ pub(crate) fn body(req: &ModelRequest) -> Value {
         "messages": messages,
         "stream": true,
     });
-    if !req.tools.is_empty() {
-        body["tools"] = req
-            .tools
-            .iter()
-            .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters }))
-            .collect();
+    let mut tools: Vec<Value> = req
+        .tools
+        .iter()
+        .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters }))
+        .collect();
+    if req.web_search {
+        tools.push(json!({ "type": "web_search_20250305", "name": "web_search", "max_uses": 5 }));
+    }
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
     }
     if let Some(budget) = req.effort.anthropic_budget() {
         body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
@@ -130,6 +134,15 @@ impl State {
                     }),
                     ("input_json_delta", Some(Open::Tool { json, .. })) => {
                         json.push_str(d["partial_json"].as_str().unwrap_or_default());
+                    }
+                    ("citations_delta", _) => {
+                        let c = &d["citation"];
+                        if let Some(url) = c["url"].as_str() {
+                            out.push_back(ModelEvent::Source {
+                                url: url.to_owned(),
+                                title: c["title"].as_str().unwrap_or(url).to_owned(),
+                            });
+                        }
                     }
                     ("thinking_delta", Some(Open::Thinking(b))) => {
                         let t = b["thinking"].as_str().unwrap_or_default().to_owned()

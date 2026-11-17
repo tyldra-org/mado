@@ -35,11 +35,20 @@ pub struct Sent {
     pub settings_opened: usize,
     /// Relaunches asked of the updater: `true` when only if idle.
     pub relaunches: Vec<bool>,
+    /// `mado://ai` events (spec 13 §5).
+    pub ai: Vec<serde_json::Value>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
 
 impl UiSink for Collect {
+    fn ai(&mut self, payload: &serde_json::Value) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .ai
+            .push(payload.clone());
+    }
     fn window_action(&mut self, window: mado_types::WindowId, action: &str) {
         self.0
             .lock()

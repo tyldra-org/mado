@@ -147,6 +147,10 @@ pub struct ModelRequest {
     #[serde(default)]
     pub effort: Effort,
     pub max_output_tokens: u32,
+    /// Let the provider search the web with its own tool (13 §5); only for
+    /// models the catalogue marks `webSearch`.
+    #[serde(default)]
+    pub web_search: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,6 +185,11 @@ pub enum ModelEvent {
         input: u64,
         output: u64,
         cached: u64,
+    },
+    /// A web page the answer cites (web search).
+    Source {
+        url: String,
+        title: String,
     },
     Stop {
         reason: StopReason,
@@ -491,6 +500,8 @@ pub struct Turn {
     /// `(input, output, cached)` tokens.
     pub usage: (u64, u64, u64),
     pub stop: StopReason,
+    /// Web pages the answer cites, `(url, title)`, each once, in order.
+    pub sources: Vec<(String, String)>,
 }
 
 impl Turn {
@@ -516,6 +527,7 @@ pub async fn collect(
     let mut text = String::new();
     let mut usage = (0, 0, 0);
     let mut stop = StopReason::Other;
+    let mut sources: Vec<(String, String)> = Vec::new();
     while let Some(event) = stream.next().await {
         match event? {
             ModelEvent::TextDelta { text: t } => {
@@ -543,6 +555,11 @@ pub async fn collect(
                 output,
                 cached,
             } => usage = (input, output, cached),
+            ModelEvent::Source { url, title } => {
+                if !sources.iter().any(|(u, _)| *u == url) {
+                    sources.push((url, title));
+                }
+            }
             ModelEvent::Stop { reason } => stop = reason,
         }
     }
@@ -554,6 +571,7 @@ pub async fn collect(
         text,
         usage,
         stop,
+        sources,
     })
 }
 

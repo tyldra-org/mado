@@ -1170,6 +1170,29 @@ pub enum Command {
         #[serde(default)]
         starred: Option<bool>,
     },
+    /// Sends a chat message (spec 13 §5) with the pages, selection,
+    /// screenshot and files it is about; answers `{ chatId, messageId }`
+    /// at once. The answer streams on the `mado://ai` event.
+    #[serde(rename = "ai.chat.send", rename_all = "camelCase")]
+    AiChatSend {
+        #[serde(default)]
+        chat_id: Option<String>,
+        text: String,
+        #[serde(default)]
+        context: ChatContext,
+    },
+    /// Chats, newest first: `[{ id, title, updatedAt }]`.
+    #[serde(rename = "ai.chat.list")]
+    AiChatList,
+    /// A chat's messages: `{ id, title, messages: [{ id, role, text,
+    /// sources, notes, model, createdAt }] }`.
+    #[serde(rename = "ai.chat.get", rename_all = "camelCase")]
+    AiChatGet { chat_id: String },
+    #[serde(rename = "ai.chat.delete", rename_all = "camelCase")]
+    AiChatDelete { chat_id: String },
+    /// Stops the answer being written.
+    #[serde(rename = "ai.chat.cancel", rename_all = "camelCase")]
+    AiChatCancel { chat_id: String },
     /// Sets a role's model (`auto` or `<connectionId>:<modelId>`), effort
     /// and fallback model (spec 13 §4).
     #[serde(rename = "ai.role.set", rename_all = "camelCase")]
@@ -1445,7 +1468,12 @@ impl Command {
             | Self::AiConnectionDetectLocal
             | Self::AiModelList
             | Self::AiModelSet { .. }
-            | Self::AiRoleSet { .. } => CommandFamily::Ai,
+            | Self::AiRoleSet { .. }
+            | Self::AiChatSend { .. }
+            | Self::AiChatList
+            | Self::AiChatGet { .. }
+            | Self::AiChatDelete { .. }
+            | Self::AiChatCancel { .. } => CommandFamily::Ai,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1648,6 +1676,11 @@ impl Command {
             Self::AiModelList => "ai.model.list",
             Self::AiModelSet { .. } => "ai.model.set",
             Self::AiRoleSet { .. } => "ai.role.set",
+            Self::AiChatSend { .. } => "ai.chat.send",
+            Self::AiChatList => "ai.chat.list",
+            Self::AiChatGet { .. } => "ai.chat.get",
+            Self::AiChatDelete { .. } => "ai.chat.delete",
+            Self::AiChatCancel { .. } => "ai.chat.cancel",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
@@ -1701,8 +1734,35 @@ impl Command {
                 | Self::BlockerAvailableLists
                 | Self::BlockerCustomFilters
                 | Self::SitePrivacyReport { .. }
+                | Self::AiChatList
+                | Self::AiChatGet { .. }
+                | Self::AiModelList
         )
     }
+}
+
+/// What a chat message is about (spec 13 §5).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatContext {
+    #[serde(default)]
+    pub tab_ids: Vec<TabId>,
+    #[serde(default)]
+    pub selection: Option<ChatSelection>,
+    #[serde(default)]
+    pub screenshot_tab_id: Option<TabId>,
+    /// Absolute paths of text files.
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatSelection {
+    pub tab_id: TabId,
+    pub text: String,
 }
 
 /// How a passkey sheet was answered (spec 11 §8).

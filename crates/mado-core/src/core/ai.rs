@@ -85,6 +85,8 @@ impl Secrets for Keychain {
 /// Work the core spawned for AI, coming back.
 #[derive(Debug)]
 pub enum AiEvent {
+    /// A chat job's progress (13 §5).
+    Chat(super::chat::ChatEvent),
     /// A connection test finished: its models, or the failure's key.
     Tested {
         id: String,
@@ -234,6 +236,11 @@ impl Core {
             });
         self.ai_models = models;
         self.ai_roles = roles;
+        // The first retention run soon after start, then daily (13 §5).
+        self.timers.schedule(
+            crate::Timer::AiRetention,
+            std::time::Duration::from_secs(5 * 60),
+        );
         self.state.ai.roles = self.resolved_roles();
     }
 
@@ -360,6 +367,16 @@ impl Core {
         // 13: with `features.ai` off none of this runs.
         if self.setting("features.ai") != true {
             return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off"));
+        }
+        if matches!(
+            cmd,
+            Command::AiChatSend { .. }
+                | Command::AiChatList
+                | Command::AiChatGet { .. }
+                | Command::AiChatDelete { .. }
+                | Command::AiChatCancel { .. }
+        ) {
+            return self.chat_command(origin, cmd, reply_to);
         }
         match cmd {
             Command::AiConnectionAdd {
@@ -754,6 +771,7 @@ impl Core {
 
     pub(super) fn ai_event(&mut self, event: AiEvent, rec: &mut PatchRecorder) {
         match event {
+            AiEvent::Chat(e) => self.chat_event(e),
             AiEvent::Tested { id, result, reply } => {
                 let Some(mut conn) = self.state.ai.connections.get(&id).cloned() else {
                     if let Some(r) = reply {

@@ -5,6 +5,7 @@ mod ai;
 mod applinks;
 mod blocker;
 mod blocker_stats;
+mod chat;
 mod clear;
 mod cosmetic;
 mod dialogs;
@@ -592,6 +593,8 @@ pub struct Core {
     /// Every connection's models, and each role's choice (13 §4).
     ai_models: Vec<ai::ModelRow>,
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
+    /// Chats writing an answer (13 §5).
+    chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
     /// Where each open fill menu's values would go.
     fill_targets: BTreeMap<PromptId, fill::FillTarget>,
     /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
@@ -909,6 +912,7 @@ impl Core {
             ai: config.ai,
             ai_models: Vec::new(),
             ai_roles: BTreeMap::new(),
+            chat_jobs: BTreeMap::new(),
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
             otp_after: BTreeMap::new(),
@@ -1841,6 +1845,9 @@ impl Core {
         if out.changes.iter().any(|c| c.key == "blocker.lists") {
             self.blocker_lists_changed(rec);
         }
+        if out.changes.iter().any(|c| c.key == "ai.chatRetention") {
+            self.chat_retention_changed();
+        }
         if out.changes.iter().any(|c| c.key == "blocker.enabled") {
             self.push_blocker_rules();
         }
@@ -1923,6 +1930,7 @@ impl Core {
             Timer::ListsFetch => self.fetch_lists(),
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
+            Timer::AiRetention => self.chat_retention(),
             Timer::VaultLock => self.vault_lock_check(&mut rec),
             Timer::BlockerStatsFlush => self.flush_blocker_stats_later(),
             Timer::AutoRevoke => {

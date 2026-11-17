@@ -10,3 +10,10 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+mado-ai = { version = "0.0.0", path = "../mado-ai" }
+mado-lists = { version = "0.0.0", path = "../mado-lists" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+url = "2.5.8"

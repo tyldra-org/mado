@@ -662,6 +662,18 @@ const PROTOCOL_HANDLERS: &str = include_str!(concat!(
     "/../../app/resources/inject/protocol-handlers.js"
 ));
 
+const AI_READER: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/ai-reader.js"
+));
+
+/// The body for `EvaluateInWorld` that answers the page's readable text
+/// for AI (spec 13 §5): `{ title, url, text, readable, sensitiveField }`.
+/// Starts with `// ai-text`, which tests match.
+pub fn ai_text() -> String {
+    format!("// ai-text\n{AI_READER}\nreturn globalThis[Symbol.for(\"mado.ai\")].text();")
+}
+
 const READER_PROBE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/reader-probe.js"
