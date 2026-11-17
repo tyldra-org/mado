@@ -50,6 +50,7 @@ tracing = "0.1.44"
 url = "2.5.8"
 uuid = { version = "1.29.2", features = ["v7"] }
 zeroize = "1.9.1"
+rquickjs = { version = "0.14.0", default-features = false }
 
 [dev-dependencies]
 json-patch = "5.0.0"

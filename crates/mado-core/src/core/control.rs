@@ -376,6 +376,15 @@ impl Core {
         reply: Reply,
         rec: &mut PatchRecorder,
     ) {
+        if let Some(name) = method.strip_prefix("tool.") {
+            match self.tool_check(client, name) {
+                Ok(origin) => self.tool_call(origin, name.to_owned(), params, reply),
+                Err(e) => {
+                    let _ = reply.send(Err(e));
+                }
+            }
+            return;
+        }
         let result = self.control_check(client, &method, params);
         let (origin, cmd) = match result {
             Ok(x) => x,
@@ -441,6 +450,30 @@ impl Core {
             },
             cmd,
         ))
+    }
+
+    /// A `tool.<name>` call: `read` for tools that only read, `act` for
+    /// the rest (14 §2).
+    fn tool_check(&mut self, client: ClientId, name: &str) -> Result<Origin, MadoError> {
+        if !self.control_on() {
+            return Err(err(ErrorCode::PermissionDenied, "error.control.disabled"));
+        }
+        let c = self
+            .control_clients
+            .get(&client)
+            .filter(|c| !c.revoked)
+            .cloned()
+            .ok_or_else(|| err(ErrorCode::PermissionDenied, "error.control.unauthorized"))?;
+        let tool = mado_agent::tools::find(name)
+            .ok_or_else(|| err(ErrorCode::NotFound, "error.control.unknownMethod"))?;
+        let scope = if tool.read_only { "read" } else { "act" };
+        let full = self.full(&c);
+        if !full && !c.scopes.iter().any(|s| s == scope) {
+            return Err(err(ErrorCode::Protected, "error.control.scope").arg("scope", scope));
+        }
+        // Tools act as an ordinary control client: a full session's
+        // protected reach is for direct commands only (14 §2.1).
+        Ok(Origin::Control { client })
     }
 
     /// 14 §2.1: every full-control call goes to the audit log and shows a

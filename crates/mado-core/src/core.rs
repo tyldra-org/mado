@@ -33,6 +33,7 @@ mod reader;
 mod save;
 mod session;
 mod site;
+pub(crate) mod tools;
 pub(crate) mod totp;
 pub(crate) mod vault;
 mod vault_io;
@@ -92,6 +93,21 @@ pub enum Internal {
         client: mado_control::ClientInfo,
         token: Option<String>,
         reply: oneshot::Sender<mado_control::HelloAnswer>,
+    },
+    /// An agent tool (spec 13 §8) for a control client or a task.
+    ToolCall {
+        origin: Origin,
+        name: String,
+        args: Value,
+        reply: Reply,
+    },
+    /// An engine operation from an async job of the core.
+    EngineOp(EngineOp),
+    /// The next file chooser in `tab` gets these files (the `upload`
+    /// tool, spec 13 §8).
+    PendingUpload {
+        tab: mado_types::TabId,
+        files: Vec<PathBuf>,
     },
     /// A paired client's call.
     ControlCall {
@@ -610,6 +626,8 @@ pub struct Core {
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Chats writing an answer (13 §5).
     chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
+    /// Files the next file chooser of a tab gets (the `upload` tool).
+    pending_uploads: BTreeMap<mado_types::TabId, Vec<PathBuf>>,
     /// Paired control clients and pairing cards on screen (spec 14 §2).
     control_clients: BTreeMap<mado_types::ClientId, control::Client>,
     pairings: BTreeMap<PromptId, control::Pairing>,
@@ -937,6 +955,7 @@ impl Core {
             chat_jobs: BTreeMap::new(),
             page_runs: BTreeMap::new(),
             control_clients: BTreeMap::new(),
+            pending_uploads: BTreeMap::new(),
             pairings: BTreeMap::new(),
             ondevice_ready: false,
             fill_targets: BTreeMap::new(),
@@ -1633,6 +1652,16 @@ impl Core {
                 params,
                 reply,
             } => self.control_call(client, method, params, reply, rec),
+            Internal::ToolCall {
+                origin,
+                name,
+                args,
+                reply,
+            } => self.tool_call(origin, name, args, reply),
+            Internal::EngineOp(op) => self.outbox.push(op),
+            Internal::PendingUpload { tab, files } => {
+                self.pending_uploads.insert(tab, files);
+            }
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);

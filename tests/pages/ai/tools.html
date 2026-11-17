@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tools</title>
+    <style>
+      #cover { position: relative; }
+      #veil { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.1); }
+      .box { width: 80px; height: 40px; border: 1px solid #888; margin: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Shop</h1>
+    <p id="count">0 items</p>
+    <button id="add" type="button">Add to cart</button>
+    <label>Name <input id="name" /></label>
+    <label>Size
+      <select id="size"><option value="s">Small</option><option value="l">Large</option></select>
+    </label>
+    <p id="hovered">not hovered</p>
+    <button id="hover" class="box" type="button" aria-label="Hover me"></button>
+    <div id="cover"><button id="hidden" type="button">Covered</button><div id="veil" role="dialog" aria-label="Cookie banner"></div></div>
+    <button id="from" class="box" type="button" aria-label="Drag source"></button>
+    <button id="to" class="box" type="button" aria-label="Drop target"></button>
+    <p id="dropped">nothing dropped</p>
+    <label>Attachment <input id="file" type="file" /></label>
+    <a id="dl" href="/ai/report.txt" download>Download report</a>
+    <p id="log"></p>
+    <script>
+      let n = 0;
+      const log = (s) => (document.getElementById("log").textContent += `${s};`);
+      document.getElementById("add").addEventListener("click", (e) => {
+        n += 1;
+        document.getElementById("count").textContent = n + (n === 1 ? " item" : " items");
+        log(`click:${e.isTrusted}`);
+      });
+      document.getElementById("name").addEventListener("input", (e) => log(`input:${e.isTrusted}`));
+      document.getElementById("name").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") log(`enter:${e.isTrusted}`);
+      });
+      document.getElementById("size").addEventListener("change", () => log(`size:${document.getElementById("size").value}`));
+      document.getElementById("hover").addEventListener("mouseover", () => (document.getElementById("hovered").textContent = "hovered"));
+      document.getElementById("file").addEventListener("change", (e) => {
+        log(`file:${Array.from(e.target.files).map((f) => f.name).join(",")}`);
+      });
+      let down = false;
+      document.getElementById("from").addEventListener("mousedown", () => (down = true));
+      document.addEventListener("mouseup", (e) => {
+        if (down && document.getElementById("to").contains(document.elementFromPoint(e.clientX, e.clientY))) {
+          document.getElementById("dropped").textContent = "dropped";
+        }
+        down = false;
+      });
+    </script>
+  </body>
+</html>

@@ -9,12 +9,14 @@
 // Lets `#[derive(Patchable)]` name `::mado_types` inside this crate too.
 extern crate self as mado_types;
 
+pub mod catalog;
 pub mod command;
 pub mod error;
 pub mod ids;
 pub mod menu;
 pub mod patch;
 pub mod state;
+pub mod tools;
 
 pub use command::{Command, CommandFamily, Origin, Request, Response};
 pub use error::{ErrorCode, MadoError};

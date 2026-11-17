@@ -763,6 +763,22 @@ fn test_access(
                 if method == "test.click" {
                     return test_click(&app, &params).await;
                 }
+                if let Some(name) = method.strip_prefix("tool.") {
+                    // The agent tools as a control client (spec 13 §8).
+                    let (reply, rx) = tokio::sync::oneshot::channel();
+                    core.send(Input::Internal(Internal::ToolCall {
+                        origin: Origin::Control { client },
+                        name: name.to_owned(),
+                        args: params,
+                        reply,
+                    }));
+                    return rx.await.unwrap_or_else(|_| {
+                        Err(mado_types::MadoError::new(
+                            mado_types::ErrorCode::Internal,
+                            "error.coreStopped",
+                        ))
+                    });
+                }
                 if method == "test.relaunchForUpdate" {
                     // The relaunch of an update, without an update to
                     // install (spec 15 §5, 16 §3).

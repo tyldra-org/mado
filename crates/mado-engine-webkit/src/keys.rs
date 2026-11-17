@@ -67,6 +67,13 @@ pub fn key_code(key: &str) -> Option<u16> {
         "." => 47,
         "`" => 50,
         "TAB" => 48,
+        "ENTER" | "RETURN" => 36,
+        "BACKSPACE" => 51,
+        "DELETE" => 117,
+        "HOME" => 115,
+        "END" => 119,
+        "PAGEUP" => 116,
+        "PAGEDOWN" => 121,
         "SPACE" => 49,
         "ESC" | "ESCAPE" => 53,
         "LEFT" => 123,
@@ -99,6 +106,29 @@ const MASK: NSEventModifierFlags = NSEventModifierFlags(
         | NSEventModifierFlags::Control.0
         | NSEventModifierFlags::Shift.0,
 );
+
+/// The characters AppKit gives a key: control characters and function-key
+/// code points for named keys, else the key in lower case.
+fn key_chars(key: &str) -> String {
+    let c = |u: u32| char::from_u32(u).map(String::from).unwrap_or_default();
+    match key.to_ascii_uppercase().as_str() {
+        "ENTER" | "RETURN" => "\r".into(),
+        "TAB" => "\t".into(),
+        "SPACE" => " ".into(),
+        "ESC" | "ESCAPE" => c(0x1b),
+        "BACKSPACE" => c(0x7f),
+        "DELETE" => c(0xF728),
+        "UP" => c(0xF700),
+        "DOWN" => c(0xF701),
+        "LEFT" => c(0xF702),
+        "RIGHT" => c(0xF703),
+        "HOME" => c(0xF729),
+        "END" => c(0xF72B),
+        "PAGEUP" => c(0xF72C),
+        "PAGEDOWN" => c(0xF72D),
+        _ => key.to_ascii_lowercase(),
+    }
+}
 
 /// `Cmd+Shift+T` as (key code, modifier bits).
 pub fn parse(shortcut: &str) -> Option<(u16, usize)> {
@@ -146,17 +176,11 @@ pub fn synthesize(tab: mado_types::TabId, shortcut: &str) -> Result<(), mado_eng
     use objc2_app_kit::NSEventType;
     let (code, flags) =
         parse(shortcut).ok_or_else(|| EngineError::Failed("not a shortcut".into()))?;
-    let key = shortcut
-        .rsplit('+')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
+    let key = key_chars(shortcut.rsplit('+').next().unwrap_or_default());
     let view = crate::with(|a| a.view(tab))
         .flatten()
         .ok_or_else(|| EngineError::Failed("no view for that tab".into()))?;
-    let window = view
-        .window()
-        .ok_or_else(|| EngineError::Failed("the tab is not in a window".into()))?;
+    let window_number = view.window().map_or(0, |w| w.windowNumber());
     let chars = objc2_foundation::NSString::from_str(&key);
     let time = objc2_foundation::NSProcessInfo::processInfo().systemUptime();
     let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
@@ -164,7 +188,7 @@ pub fn synthesize(tab: mado_types::TabId, shortcut: &str) -> Result<(), mado_eng
         objc2_foundation::NSPoint::new(0.0, 0.0),
         NSEventModifierFlags(flags),
         time,
-        window.windowNumber(),
+        window_number,
         None,
         &chars,
         &chars,
@@ -174,6 +198,50 @@ pub fn synthesize(tab: mado_types::TabId, shortcut: &str) -> Result<(), mado_eng
     .ok_or_else(|| EngineError::Failed("AppKit refused the key event".into()))?;
     if !view.performKeyEquivalent(&event) {
         view.keyDown(&event);
+    }
+    Ok(())
+}
+
+/// Types `text` into the focused element of a tab's page: a key-down and
+/// key-up per character, which WebKit turns into trusted `keydown`,
+/// `input` and `keyup` events (spec 13 §8).
+pub fn type_text(tab: mado_types::TabId, text: &str) -> Result<(), mado_engine::EngineError> {
+    use mado_engine::EngineError;
+    use objc2_app_kit::NSEventType;
+    let view = crate::with(|a| a.view(tab))
+        .flatten()
+        .ok_or_else(|| EngineError::Failed("no view for that tab".into()))?;
+    // A hidden tab may be outside any window; its view still takes keys.
+    let window_number = view.window().map_or(0, |w| w.windowNumber());
+    let mut buf = [0u8; 4];
+    for c in text.chars() {
+        let (code, chars) = match c {
+            '\n' => (36u16, "\r"),
+            '\t' => (48, "\t"),
+            c => (0, &*c.encode_utf8(&mut buf)),
+        };
+        let chars = objc2_foundation::NSString::from_str(chars);
+        for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
+            let time = objc2_foundation::NSProcessInfo::processInfo().systemUptime();
+            let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+                kind,
+                objc2_foundation::NSPoint::new(0.0, 0.0),
+                NSEventModifierFlags(0),
+                time,
+                window_number,
+                None,
+                &chars,
+                &chars,
+                false,
+                code,
+            )
+            .ok_or_else(|| EngineError::Failed("AppKit refused the key event".into()))?;
+            if kind == NSEventType::KeyDown {
+                view.keyDown(&event);
+            } else {
+                view.keyUp(&event);
+            }
+        }
     }
     Ok(())
 }

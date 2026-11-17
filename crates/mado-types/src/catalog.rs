@@ -1,7 +1,7 @@
 //! Every command (spec 01 §4.2) with its parameters, read from the
 //! TypeScript the `Command` enum generates, so the CLI's `call`,
-//! `commands` and command groups follow the enum without a list of their
-//! own (spec 14 §3).
+//! `commands` and command groups (spec 14 §3) and `native_actions` (13 §8)
+//! follow the enum without a list of their own.
 
 const GENERATED: &str = include_str!("../../../ui/src/generated/Command.ts");
 

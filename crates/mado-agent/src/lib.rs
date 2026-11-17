@@ -5,3 +5,7 @@
 pub mod chat;
 pub mod commands;
 pub mod untrusted;
+
+/// The command list and the tool table live in mado-types, so the CLI can
+/// read them without the agent.
+pub use mado_types::{catalog, tools};
