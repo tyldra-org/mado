@@ -31,6 +31,7 @@ mod site;
 pub(crate) mod totp;
 pub(crate) mod vault;
 mod visits;
+pub(crate) mod webauthn;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::AssertUnwindSafe;
@@ -582,6 +583,10 @@ pub struct Core {
     username_hints: BTreeMap<TabId, (String, String, i64)>,
     /// A generated password per tab: site, password, time.
     generated: BTreeMap<TabId, (String, String, i64)>,
+    /// Passkey requests pages wait on (spec 11 §8).
+    webauthn: webauthn::Requests,
+    /// The conditional passkey request of each tab.
+    conditional: BTreeMap<TabId, u32>,
     /// Scanned codes waiting for `vault.attachTotp`.
     scans: BTreeMap<String, totp::Scan>,
     /// What each open save prompt would store.
@@ -888,6 +893,8 @@ impl Core {
             generated: BTreeMap::new(),
             save_prompts: BTreeMap::new(),
             scans: BTreeMap::new(),
+            webauthn: BTreeMap::new(),
+            conditional: BTreeMap::new(),
             blocker_stats: blocker_stats::StatsBuffer::default(),
             reloads: BTreeMap::new(),
             extension_installs: BTreeMap::new(),
@@ -1807,7 +1814,11 @@ impl Core {
         if out.changes.iter().any(|c| c.key == "blocker.enabled") {
             self.push_blocker_rules();
         }
-        if out.changes.iter().any(|c| c.key == "privacy.gpc") {
+        if out
+            .changes
+            .iter()
+            .any(|c| c.key == "privacy.gpc" || c.key == "passwords.whoFills")
+        {
             self.outbox.push(EngineOp::SetPageScripts(self.scripts()));
         }
         if let Some(log_id) = out.undo_notice
@@ -2011,6 +2022,9 @@ impl Core {
         let mut set = self.page_scripts.clone();
         if self.settings.get::<mado_settings::PrivacyGpc>() {
             set.scripts.push(mado_engine::page::gpc());
+        }
+        if self.handles_passkeys() {
+            set.scripts.push(mado_engine::page::webauthn());
         }
         set
     }

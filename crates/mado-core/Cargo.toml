@@ -52,7 +52,9 @@ mado-import = { version = "0.0.0", path = "../mado-import", features = ["fixture
 mado-extensions = { version = "0.0.0", path = "../mado-extensions", features = ["fixtures"] }
 mado-vault = { version = "0.0.0", path = "../mado-vault", features = ["testing"] }
 minisign = "0.10.0"
+p256 = { version = "0.14.0", features = ["ecdsa", "pkcs8"] }
 proptest = "1.12.0"
+sha2 = "0.11.1"
 qrcode = { version = "0.14.1", default-features = false, features = ["image"] }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 serde_norway = "0.9.42"

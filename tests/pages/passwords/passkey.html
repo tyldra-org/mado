@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Passkeys</title>
+  </head>
+  <body>
+    <!-- Spec 11 §12 check 3 on WebKit (tests/e2e/passwords.test.ts): a
+         passkey made here signs a sign-in this page verifies with WebCrypto,
+         as a site's server would. Results go in data attributes. -->
+    <button id="create" type="button" style="width: 200px; height: 40px">Create a passkey</button>
+    <button id="get" type="button" style="width: 200px; height: 40px">Sign in</button>
+    <script>
+      const out = document.body.dataset;
+      const random = (n) => crypto.getRandomValues(new Uint8Array(n));
+      let publicKey = null;
+      let credentialId = null;
+      const fail = (where) => (e) => {
+        out[where] = `error:${e.name}`;
+      };
+      document.getElementById("create").addEventListener("click", () => {
+        navigator.credentials
+          .create({
+            publicKey: {
+              rp: { name: "Mado fixture" },
+              user: { id: random(16), name: "me@mado.test", displayName: "Me" },
+              challenge: random(32),
+              pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            },
+          })
+          .then((c) => {
+            publicKey = c.response.getPublicKey();
+            credentialId = c.rawId;
+            const cd = JSON.parse(new TextDecoder().decode(c.response.clientDataJSON));
+            out.created = `${c.type}:${cd.type}:${c instanceof PublicKeyCredential}`;
+          }, fail("created"));
+      });
+      // A DER ECDSA signature as WebCrypto's r ‖ s.
+      const raw = (der) => {
+        const b = new Uint8Array(der);
+        const int = (at) => {
+          const len = b[at + 1];
+          let v = b.slice(at + 2, at + 2 + len);
+          while (v.length > 32 && v[0] === 0) v = v.slice(1);
+          const r = new Uint8Array(32);
+          r.set(v, 32 - v.length);
+          return [r, at + 2 + len];
+        };
+        const [r, next] = int(2);
+        const [s] = int(next);
+        const sig = new Uint8Array(64);
+        sig.set(r);
+        sig.set(s, 32);
+        return sig;
+      };
+      document.getElementById("get").addEventListener("click", async () => {
+        try {
+          const challenge = random(32);
+          const c = await navigator.credentials.get({
+            publicKey: { challenge, allowCredentials: [{ type: "public-key", id: credentialId }] },
+          });
+          const key = await crypto.subtle.importKey("spki", publicKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+          const hash = await crypto.subtle.digest("SHA-256", c.response.clientDataJSON);
+          const data = new Uint8Array(c.response.authenticatorData.byteLength + 32);
+          data.set(new Uint8Array(c.response.authenticatorData));
+          data.set(new Uint8Array(hash), c.response.authenticatorData.byteLength);
+          const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, raw(c.response.signature), data);
+          const cd = JSON.parse(new TextDecoder().decode(c.response.clientDataJSON));
+          const sent = btoa(String.fromCharCode(...challenge)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+          out.verified = ok && cd.challenge === sent && cd.origin === location.origin ? "yes" : "no";
+        } catch (e) {
+          fail("verified")(e);
+        }
+      });
+    </script>
+  </body>
+</html>

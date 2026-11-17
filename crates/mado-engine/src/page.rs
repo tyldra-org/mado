@@ -136,14 +136,41 @@ macro_rules! empty_payloads {
     )*};
 }
 
-empty_payloads!(
-    WebauthnCreate,
-    WebauthnGet,
-    NotificationRequest,
-    AiSnapshot,
-    AiText,
-    AiActionResult,
-);
+/// `webauthn`: `navigator.credentials.create` (spec 11 §8.2). Byte
+/// strings are base64url.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WebauthnCreate {
+    pub id: u32,
+    pub rp_id: Option<String>,
+    pub rp_name: String,
+    pub user_id: String,
+    pub user_name: String,
+    pub user_display_name: String,
+    pub challenge: String,
+    pub algs: Vec<i64>,
+    pub exclude: Vec<String>,
+}
+
+/// `webauthn`: `navigator.credentials.get` (spec 11 §8.3).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WebauthnGet {
+    pub id: u32,
+    pub rp_id: Option<String>,
+    pub challenge: String,
+    pub allow: Vec<String>,
+    pub conditional: bool,
+}
+
+/// `webauthn`: the page aborted request `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebauthnCancel {
+    pub id: u32,
+}
+
+empty_payloads!(NotificationRequest, AiSnapshot, AiText, AiActionResult,);
 
 /// `internal`: a `mado://` page sends a command (spec 01 §4.4). The core
 /// checks the sending frame and the page's allow-list before parsing it.
@@ -434,6 +461,7 @@ messages! {
     FillDone(FillDone) = "fillDone" from ["forms"],
     WebauthnCreate(WebauthnCreate) = "webauthnCreate" from ["webauthn"],
     WebauthnGet(WebauthnGet) = "webauthnGet" from ["webauthn"],
+    WebauthnCancel(WebauthnCancel) = "webauthnCancel" from ["webauthn"],
     NotificationRequest(NotificationRequest) = "notificationRequest" from ["notifications"],
     NotificationShow(NotificationShow) = "notificationShow" from ["notifications"],
     NotificationClose(NotificationClose) = "notificationClose" from ["notifications"],
@@ -506,6 +534,33 @@ fn within_limits(m: &PageMessage) -> bool {
         PageMessage::OpenSearch(o) => o.href.len() <= 2048 && o.href.starts_with("https://"),
         PageMessage::Invoke(i) => i.command.to_string().len() <= 64 * 1024,
         PageMessage::FillDone(d) => d.form_key.len() <= 64,
+        PageMessage::WebauthnCreate(w) => {
+            let b64 = |s: &str| {
+                s.len() <= 1024
+                    && s.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            };
+            opt(&w.rp_id)
+                && w.rp_name.len() <= 1024
+                && w.user_name.len() <= 1024
+                && w.user_display_name.len() <= 1024
+                && b64(&w.user_id)
+                && b64(&w.challenge)
+                && w.algs.len() <= 16
+                && w.exclude.len() <= 64
+                && w.exclude.iter().all(|c| b64(c))
+        }
+        PageMessage::WebauthnGet(w) => {
+            let b64 = |s: &str| {
+                s.len() <= 1024
+                    && s.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            };
+            opt(&w.rp_id)
+                && b64(&w.challenge)
+                && w.allow.len() <= 64
+                && w.allow.iter().all(|c| b64(c))
+        }
         PageMessage::CredentialsSubmitted(c) => {
             c.form_key.len() <= 64
                 && (c.kind == FormKind::UsernameOnly || !c.password.is_empty())
@@ -566,6 +621,22 @@ const RELAY: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/relay.js"
 ));
+const WEBAUTHN: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../app/resources/inject/webauthn.js"
+));
+
+/// `webauthn` (spec 11 §8.1), added while Mado Passwords handles passkeys.
+pub fn webauthn() -> crate::PageScript {
+    crate::PageScript {
+        name: "webauthn",
+        world: crate::World::Page,
+        at: crate::InjectAt::DocumentStart,
+        main_frame_only: true,
+        source: WEBAUTHN.to_owned(),
+    }
+}
+
 const NOTIFICATIONS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/notifications.js"

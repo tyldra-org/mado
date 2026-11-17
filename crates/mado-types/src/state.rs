@@ -429,6 +429,23 @@ pub enum PromptState {
     /// The fill menu at a form field (spec 11 §4.1), answered with
     /// `vault.fill` or dismissed with `prompt.dismiss`.
     FillMenu(FillMenuPrompt),
+    /// "Create a passkey for <rpId>?" or "Sign in to <rpId> with a passkey"
+    /// (spec 11 §8), answered with `vault.passkeyRespond`.
+    #[serde(rename_all = "camelCase")]
+    Passkey {
+        id: PromptId,
+        window_id: WindowId,
+        tab_id: TabId,
+        /// `create` or `get`.
+        mode: String,
+        rp_id: String,
+        /// The account being created.
+        user_name: String,
+        /// The passkeys to choose from (`get`).
+        accounts: Vec<PasskeyAccount>,
+        /// The vault is locked: unlock first.
+        locked: bool,
+    },
     /// "Save password for <site>?" or, with `update`, "Update password"
     /// (spec 11 §5), answered with `vault.saveRespond`. The password stays
     /// in the core.
@@ -756,6 +773,16 @@ pub struct ExtensionShortcut {
     pub command: String,
     pub description: String,
     pub keys: Option<String>,
+}
+
+/// A passkey offered in the sign-in sheet (spec 11 §8.3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PasskeyAccount {
+    pub item_id: String,
+    pub user_name: String,
+    pub user_display_name: String,
 }
 
 /// The fill menu (spec 11 §4.1).

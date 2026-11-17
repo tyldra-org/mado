@@ -1,5 +1,5 @@
 // Carries requests from the page-world shims (`notifications`,
-// `geolocation`, `protocol-handlers`, `apple-pay`) to the core, and answers back, as DOM
+// `geolocation`, `protocol-handlers`, `apple-pay`, `webauthn`) to the core, and answers back, as DOM
 // events. A page can send the same events itself; they only ask for what
 // the page could ask for through the real API. Mado world, document start,
 // main frame.
@@ -15,6 +15,9 @@ const SCRIPTS: Record<string, string> = {
   geolocationClear: "geolocation",
   protocolHandlerRegister: "protocol-handlers",
   applePayProbe: "apple-pay",
+  webauthnCreate: "webauthn",
+  webauthnGet: "webauthn",
+  webauthnCancel: "webauthn",
 };
 
 document.addEventListener("mado:request", (e) => {
@@ -26,7 +29,12 @@ document.addEventListener("mado:request", (e) => {
   if (script) b?.send(script, type, payload).catch(() => {});
 });
 
-for (const type of ["notificationPermission", "notificationClick", "geolocationPosition"]) {
+for (const type of [
+  "notificationPermission",
+  "notificationClick",
+  "geolocationPosition",
+  "webauthnResult",
+]) {
   b?.on(type, (m) => {
     document.dispatchEvent(new CustomEvent("mado:reply", { detail: JSON.stringify(m) }));
   });

@@ -151,6 +151,9 @@ impl Core {
                 }
             }
             PageMessage::CredentialsSubmitted(c) => self.credentials_submitted(tab, frame, c),
+            PageMessage::WebauthnCreate(w) => self.webauthn_create(tab, frame, w, rec),
+            PageMessage::WebauthnGet(w) => self.webauthn_get(tab, frame, w, rec),
+            PageMessage::WebauthnCancel(c) => self.webauthn_cancel(tab, &c, rec),
             PageMessage::FieldFocused(f) => self.field_focused(tab, frame, f, rec),
             PageMessage::FillDone(d) => self.fill_done(tab, &d),
             // 07 §9: no Apple Pay in WKWebView here; offer Safari, once per
@@ -254,6 +257,7 @@ impl Core {
         self.drm_failed.remove(&tab);
         self.page_forms.remove(&tab);
         self.close_fill_menus(tab, rec);
+        self.forget_webauthn(tab, rec);
     }
 
     pub(super) fn forget_tab(&mut self, tab: TabId) {

@@ -4450,6 +4450,270 @@ fn a_qr_code_on_the_page_adds_a_code() {
     );
 }
 
+/// Spec 11 §8 and §12 check 3: a passkey is created after the sheet's
+/// Save, signs a sign-in the site can verify, answers a conditional
+/// request from the fill menu, and other RP IDs and algorithms are refused
+/// or fall through.
+#[test]
+fn passkeys_are_created_and_sign_in() {
+    use mado_engine::page::{
+        DetectedField, DetectedForm, FieldClass, FieldFocused, FieldRect, FormKind, Forms,
+        PageMessage, WebauthnCreate, WebauthnGet,
+    };
+    use mado_types::command::PasskeyAction;
+    use mado_types::state::PromptState;
+    use p256::ecdsa::signature::Verifier as _;
+    use p256::pkcs8::DecodePublicKey as _;
+    use sha2::Digest as _;
+    use std::sync::atomic::Ordering;
+    crate::testing::GESTURE.store(1_800_000_000_000, Ordering::SeqCst);
+    let unb64 = |s: &str| mado_autofill::passkey::unb64(s).expect("base64url");
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let main = frame(true, "https://www.example.com");
+    let send = |message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Page,
+            frame: main.clone(),
+            message,
+        });
+    };
+    let result = |id: u32| -> Option<serde_json::Value> {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .rev()
+            .find(|(t, m)| *t == tab && m["type"] == "webauthnResult" && m["id"] == id)
+            .map(|(_, m)| m.clone())
+    };
+    let sheet = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::Passkey {
+                id, mode, accounts, ..
+            } => Some((*id, mode.clone(), accounts.clone())),
+            _ => None,
+        })
+    };
+    let create = |id: u32, rp: &str, algs: Vec<i64>| {
+        PageMessage::WebauthnCreate(WebauthnCreate {
+            id,
+            rp_id: Some(rp.into()),
+            rp_name: "Example".into(),
+            user_id: "dXNlcg".into(),
+            user_name: "me@example.com".into(),
+            user_display_name: "Me".into(),
+            challenge: "Y2hhbGxlbmdl".into(),
+            algs,
+            exclude: vec![],
+        })
+    };
+
+    // Another site's RP ID is refused; a request without ES256 falls through.
+    send(create(1, "other.com", vec![-7]));
+    eventually("refused", || result(1).is_some());
+    assert_eq!(result(1).expect("answer")["error"], "SecurityError");
+    send(create(2, "example.com", vec![-257]));
+    eventually("fell through", || result(2).is_some());
+    assert_eq!(result(2).expect("answer")["fallThrough"], true);
+
+    // Create: the sheet, Save, a registration response.
+    send(create(3, "example.com", vec![-8, -7]));
+    eventually("the create sheet", || {
+        sheet().is_some_and(|s| s.1 == "create")
+    });
+    let (prompt, _, _) = sheet().expect("sheet");
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Control {
+                client: ClientId::new()
+            },
+            Command::VaultPasskeyRespond {
+                prompt_id: prompt,
+                action: PasskeyAction::Save,
+                item_id: None
+            }
+        )
+        .expect_err("protected")
+        .code,
+        ErrorCode::Protected
+    );
+    ask(
+        &core,
+        user,
+        Command::VaultPasskeyRespond {
+            prompt_id: prompt,
+            action: PasskeyAction::Save,
+            item_id: None,
+        },
+    )
+    .expect("saved");
+    eventually("created", || result(3).is_some());
+    let made = result(3).expect("answer")["credential"].clone();
+    let spki = p256::ecdsa::VerifyingKey::from_public_key_der(&unb64(
+        made["publicKey"].as_str().expect("key"),
+    ))
+    .expect("spki");
+    let cd: serde_json::Value =
+        serde_json::from_slice(&unb64(made["clientDataJSON"].as_str().expect("cd"))).expect("json");
+    assert_eq!(
+        (cd["type"].as_str(), cd["origin"].as_str()),
+        (Some("webauthn.create"), Some("https://www.example.com"))
+    );
+    assert!(sheet().is_none(), "the sheet closed");
+
+    // Get: the sheet lists it; Use signs.
+    send(PageMessage::WebauthnGet(WebauthnGet {
+        id: 4,
+        rp_id: Some("example.com".into()),
+        challenge: "bm9uY2U".into(),
+        allow: vec![],
+        conditional: false,
+    }));
+    eventually("the sign-in sheet", || {
+        sheet().is_some_and(|s| s.1 == "get" && s.2.len() == 1)
+    });
+    let (prompt, _, accounts) = sheet().expect("sheet");
+    assert_eq!(accounts[0].user_name, "me@example.com");
+    ask(
+        &core,
+        user,
+        Command::VaultPasskeyRespond {
+            prompt_id: prompt,
+            action: PasskeyAction::Use,
+            item_id: Some(accounts[0].item_id.clone()),
+        },
+    )
+    .expect("used");
+    eventually("signed", || result(4).is_some());
+    let got = result(4).expect("answer")["credential"].clone();
+    assert_eq!(got["id"], made["id"]);
+    assert_eq!(got["userHandle"], "dXNlcg");
+    let mut signed = unb64(got["authenticatorData"].as_str().expect("ad"));
+    signed.extend(sha2::Sha256::digest(unb64(
+        got["clientDataJSON"].as_str().expect("cd"),
+    )));
+    let sig = p256::ecdsa::Signature::from_der(&unb64(got["signature"].as_str().expect("sig")))
+        .expect("der");
+    spki.verify(&signed, &sig)
+        .expect("the site verifies the signature");
+
+    // Cancel answers NotAllowedError; a passkey the page does not allow falls through.
+    send(PageMessage::WebauthnGet(WebauthnGet {
+        id: 5,
+        rp_id: Some("example.com".into()),
+        challenge: "eA".into(),
+        allow: vec![],
+        conditional: false,
+    }));
+    eventually("the sheet", || sheet().is_some());
+    ask(
+        &core,
+        user,
+        Command::VaultPasskeyRespond {
+            prompt_id: sheet().expect("sheet").0,
+            action: PasskeyAction::Cancel,
+            item_id: None,
+        },
+    )
+    .expect("cancelled");
+    eventually("cancelled", || result(5).is_some());
+    assert_eq!(result(5).expect("answer")["error"], "NotAllowedError");
+    send(PageMessage::WebauthnGet(WebauthnGet {
+        id: 6,
+        rp_id: Some("example.com".into()),
+        challenge: "eA".into(),
+        allow: vec!["bm9wZQ".into()],
+        conditional: false,
+    }));
+    eventually("fell through", || result(6).is_some());
+    assert_eq!(result(6).expect("answer")["fallThrough"], true);
+
+    // Conditional: the fill menu offers the passkey; choosing it answers.
+    send(PageMessage::WebauthnGet(WebauthnGet {
+        id: 7,
+        rp_id: Some("example.com".into()),
+        challenge: "Y29uZA".into(),
+        allow: vec![],
+        conditional: true,
+    }));
+    send(PageMessage::Forms(Forms {
+        forms: vec![DetectedForm {
+            form_key: "f1".into(),
+            kind: FormKind::UsernameOnly,
+            action: None,
+            fields: vec![DetectedField {
+                field_key: "a1".into(),
+                class: FieldClass::Username,
+                rect: FieldRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 30.0,
+                },
+                visible: true,
+                in_viewport: true,
+            }],
+        }],
+    }));
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Mado,
+        frame: main.clone(),
+        message: PageMessage::FieldFocused(FieldFocused {
+            form_key: "f1".into(),
+            field_key: "a1".into(),
+            rect: FieldRect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 30.0,
+            },
+            password_rules: None,
+        }),
+    });
+    let menu = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::FillMenu(m) if !m.loading => Some(m.clone()),
+            _ => None,
+        })
+    };
+    eventually("the passkey in the menu", || {
+        menu().is_some_and(|m| m.items.iter().any(|i| i.kind == "passkey"))
+    });
+    let item = menu()
+        .expect("menu")
+        .items
+        .iter()
+        .find(|i| i.kind == "passkey")
+        .expect("passkey")
+        .item_ref
+        .clone();
+    ask(
+        &core,
+        user,
+        Command::VaultFill {
+            tab_id: tab,
+            form_key: "f1".into(),
+            item_ref: item,
+        },
+    )
+    .expect("chosen");
+    eventually("conditional answer", || {
+        result(7).is_some_and(|r| r["credential"]["id"] == made["id"])
+    });
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

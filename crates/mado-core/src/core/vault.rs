@@ -54,6 +54,18 @@ pub enum VaultOutcome {
     Value(Value),
     /// A fill menu's items (spec 11 §4.1).
     MenuItems(mado_types::PromptId, Vec<mado_types::state::FillMenuItem>),
+    /// A passkey job's answer to the page (spec 11 §8).
+    Webauthn {
+        tab: mado_types::TabId,
+        id: u32,
+        answer: Value,
+    },
+    /// The passkeys a sign-in sheet offers.
+    PasskeyAccounts {
+        tab: mado_types::TabId,
+        id: u32,
+        accounts: Vec<mado_types::state::PasskeyAccount>,
+    },
     /// A QR scan's result (spec 11 §7).
     Scanned(Option<Box<(super::totp::Scan, Value)>>),
     /// A login was saved (spec 11 §5); `changed` when anything was written.
@@ -173,7 +185,13 @@ impl Core {
 
     fn set_vault_status(&mut self, status: VaultStatus, rec: &mut PatchRecorder) {
         if self.state.vault.status != status {
+            let was_none = self.state.vault.status == VaultStatus::None;
             self.state.tx(rec).vault().set_status(status);
+            // Set up: the `webauthn` script joins (11 §8.1).
+            if was_none {
+                self.outbox
+                    .push(mado_engine::EngineOp::SetPageScripts(self.scripts()));
+            }
         }
     }
 
@@ -274,10 +292,19 @@ impl Core {
                 self.set_vault_status(VaultStatus::Unlocked, rec);
                 self.restore_bitwarden();
                 self.refresh_fill_menus(rec);
+                self.refresh_passkey_sheets();
                 Ok(secret.map_or(Value::Null, |s| json!({ "recoverySecret": s })))
             }
             Ok(VaultOutcome::Value(v)) => Ok(v),
             Ok(VaultOutcome::Scanned(found)) => self.scanned(found),
+            Ok(VaultOutcome::Webauthn { tab, id, answer }) => {
+                self.webauthn_done(tab, id, answer, rec);
+                Ok(Value::Null)
+            }
+            Ok(VaultOutcome::PasskeyAccounts { tab, id, accounts }) => {
+                self.passkey_accounts(tab, id, accounts, rec);
+                return;
+            }
             Ok(VaultOutcome::Saved { site, changed }) => {
                 if changed {
                     self.saved_notice(&site, rec);
@@ -354,6 +381,9 @@ impl Core {
                 item_ref,
             } => self.vault_fill(origin, tab_id, &form_key, &item_ref, reply_to, rec),
             cmd @ Command::VaultSaveRespond { .. } => self.save_respond(origin, cmd, reply_to, rec),
+            cmd @ Command::VaultPasskeyRespond { .. } => {
+                self.passkey_respond(origin, cmd, reply_to, rec)
+            }
             Command::VaultSources => {
                 let mado = self.state.vault.status;
                 let op = (

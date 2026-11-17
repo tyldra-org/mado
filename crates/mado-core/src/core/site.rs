@@ -395,6 +395,18 @@ impl Core {
             Command::PromptDismiss { id } => {
                 match self.state.prompts.get(&id) {
                     Some(PromptState::Permission { .. }) => {}
+                    Some(PromptState::Passkey { .. }) => {
+                        return self.passkey_respond(
+                            origin,
+                            Command::VaultPasskeyRespond {
+                                prompt_id: id,
+                                action: mado_types::command::PasskeyAction::Cancel,
+                                item_id: None,
+                            },
+                            reply_to,
+                            rec,
+                        );
+                    }
                     Some(PromptState::SavePassword { .. }) => {
                         self.save_prompts.remove(&id);
                         let mut prompts = self.state.prompts.clone();

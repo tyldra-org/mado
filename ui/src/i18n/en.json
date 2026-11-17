@@ -1011,5 +1011,12 @@
   "passwords.source.error.bitwarden.noAnswer": "The Bitwarden CLI did not answer",
   "error.bitwarden.wrongPassword": "That master password is wrong.",
   "error.bitwarden.notLoggedIn": "Sign in to Bitwarden once with bw login in Terminal.",
-  "error.vault.noQr": "No two-factor QR code is visible on this page."
+  "error.vault.noQr": "No two-factor QR code is visible on this page.",
+  "passkey.create.title": "Create a passkey for {site}?",
+  "passkey.get.title": "Sign in to {site} with a passkey",
+  "passkey.unlock": "Unlock Mado Passwords",
+  "passkey.save": "Save in Mado",
+  "passkey.otherDevice": "Use another device",
+  "passkey.otherDevice.note": "Mado can't use iCloud Keychain passkeys without Apple's browser entitlement, so another device may not work on every site.",
+  "passkey.cancel": "Cancel"
 }
