@@ -7,6 +7,7 @@
 //! recovery secret (`recovery`). The core holds the derived keys
 //! (`Keys`) while the vault is unlocked and drops them on lock.
 
+pub mod backup;
 mod crypto;
 pub mod item;
 pub mod recovery;

@@ -3,6 +3,7 @@
 //! Specification: `mado-docs/spec/11-passwords-autofill.md`. Roadmap: M4.
 
 pub mod bitwarden;
+pub mod csvio;
 pub mod generator;
 pub mod health;
 pub mod onepassword;

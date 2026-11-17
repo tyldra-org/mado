@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+csv = "1.4.0"
 data-encoding = "2.11.1"
 getrandom = "0.4.3"
 hmac = "0.13.0"

@@ -97,6 +97,10 @@ pub(super) fn error(e: &VaultError) -> MadoError {
         VaultError::Cancelled => (ErrorCode::PermissionDenied, "error.vault.cancelled"),
         VaultError::BadKey => (ErrorCode::PermissionDenied, "error.vault.badKey"),
         VaultError::BadRecoverySecret => (ErrorCode::InvalidInput, "error.vault.badRecoverySecret"),
+        VaultError::Platform(m) if m.starts_with("csv: ") => {
+            return MadoError::new(ErrorCode::InvalidInput, "error.vault.badCsv")
+                .arg("reason", m[5..].to_owned());
+        }
         VaultError::NotFound => (ErrorCode::NotFound, "error.vault.notFound"),
         VaultError::Platform(m) if m.starts_with("bitwarden.") => {
             return MadoError::new(ErrorCode::PermissionDenied, format!("error.{m}"));
@@ -377,7 +381,19 @@ impl Core {
         }
         let now = self.now();
         match cmd {
-            Command::VaultStatus => Ok(json!({ "status": self.state.vault.status })),
+            Command::VaultStatus => {
+                // A profile imported from a `.madoprofile` brings its
+                // passwords as a file to import (12 §1.5).
+                let pending = self
+                    .vault
+                    .as_ref()
+                    .map(|c| c.dir.join(super::vault_io::PENDING))
+                    .filter(|p| p.exists());
+                Ok(json!({
+                    "status": self.state.vault.status,
+                    "pendingImport": pending.map(|p| p.to_string_lossy().into_owned()),
+                }))
+            }
             Command::VaultFill {
                 tab_id,
                 form_key,
@@ -441,6 +457,14 @@ impl Core {
                 self.attach_totp(origin, &scan_id, item_id, reply_to)
             }
             Command::VaultHealth { check_leaks } => self.vault_health(check_leaks, reply_to),
+            Command::VaultImportCsv { path } => self.vault_import_csv(&path, reply_to),
+            Command::VaultExportCsv { path } => self.vault_export_csv(&path, reply_to),
+            Command::VaultExport { path, passphrase } => {
+                self.vault_export(&path, passphrase, reply_to)
+            }
+            Command::VaultImport { path, passphrase } => {
+                self.vault_import(&path, passphrase, reply_to)
+            }
             Command::VaultLock => {
                 self.lock_vault(rec);
                 Ok(Value::Null)

@@ -1061,6 +1061,19 @@ pub enum Command {
     /// `locked`, `ready` or `{ error }`.
     #[serde(rename = "vault.sources")]
     VaultSources,
+    /// Imports a password CSV (spec 11 §10); `{ format, added, updated,
+    /// unchanged }`. `path` is absolute.
+    #[serde(rename = "vault.importCsv", rename_all = "camelCase")]
+    VaultImportCsv { path: String },
+    /// Writes every login as CSV, after Touch ID.
+    #[serde(rename = "vault.exportCsv", rename_all = "camelCase")]
+    VaultExportCsv { path: String },
+    /// Writes every item as a `.madovault` sealed with `passphrase`.
+    #[serde(rename = "vault.export", rename_all = "camelCase")]
+    VaultExport { path: String, passphrase: String },
+    /// Adds the items of a `.madovault`, merging logins.
+    #[serde(rename = "vault.import", rename_all = "camelCase")]
+    VaultImport { path: String, passphrase: String },
     /// Password health (spec 11 §9): `{ reused: [[item]], weak: [item],
     /// leaked: [item] | null }`, items `{ id, title, username }`. Leaks are
     /// checked only with `checkLeaks`.
@@ -1347,6 +1360,10 @@ impl Command {
             | Self::VaultFill { .. }
             | Self::VaultSaveRespond { .. }
             | Self::VaultSources
+            | Self::VaultImportCsv { .. }
+            | Self::VaultExportCsv { .. }
+            | Self::VaultExport { .. }
+            | Self::VaultImport { .. }
             | Self::VaultHealth { .. }
             | Self::VaultPasskeyRespond { .. }
             | Self::VaultScanQr { .. }
@@ -1537,6 +1554,10 @@ impl Command {
             Self::VaultFill { .. } => "vault.fill",
             Self::VaultSaveRespond { .. } => "vault.saveRespond",
             Self::VaultSources => "vault.sources",
+            Self::VaultImportCsv { .. } => "vault.importCsv",
+            Self::VaultExportCsv { .. } => "vault.exportCsv",
+            Self::VaultExport { .. } => "vault.export",
+            Self::VaultImport { .. } => "vault.import",
             Self::VaultHealth { .. } => "vault.health",
             Self::VaultPasskeyRespond { .. } => "vault.passkeyRespond",
             Self::VaultScanQr { .. } => "vault.scanQr",

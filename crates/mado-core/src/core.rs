@@ -31,6 +31,7 @@ mod session;
 mod site;
 pub(crate) mod totp;
 pub(crate) mod vault;
+mod vault_io;
 mod visits;
 pub(crate) mod webauthn;
 
