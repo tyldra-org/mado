@@ -26,6 +26,7 @@ describe("findViolations", () => {
 
   test("rejects the CLI depending on anything but mado-types", () => {
     expect(findViolations({ "mado-cli": ["mado-core"] })).toHaveLength(1);
+    expect(findViolations({ "mado-cli": ["mado-control", "mado-platform"] })).toHaveLength(0);
   });
 
   test("rejects anything depending on the app", () => {
