@@ -26,6 +26,8 @@ pub enum Timer {
     ExtensionUpdate,
     /// Deletes expired chats (spec 13 §5).
     AiRetention,
+    /// A control pairing card had its two minutes (spec 14 §2).
+    PairingTimeout(mado_types::PromptId),
     /// Locks the vault after `vault.lockAfter` without use (spec 11 §2.3).
     VaultLock,
     /// Writes the blocker's counts (spec 10 §7).

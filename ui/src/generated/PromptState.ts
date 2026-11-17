@@ -19,7 +19,7 @@ import type { WindowId } from "./WindowId";
  * prompts in 11, approvals in 13, pairing in 14, takeover and restore in
  * 04.
  */
-export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "aiResult", id: PromptId, windowId: WindowId, tabId: TabId, commandId: string, 
+export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "controlPairing", id: PromptId, clientName: string, clientVersion: string, offerFull: boolean, } | { "type": "aiResult", id: PromptId, windowId: WindowId, tabId: TabId, commandId: string, 
 /**
  * An `en.json` key for built-ins, the user's name for custom ones.
  */

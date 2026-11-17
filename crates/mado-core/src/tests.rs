@@ -5961,6 +5961,220 @@ fn page_commands_run_from_the_menu_and_replace_the_selection() {
     assert_eq!(list.as_array().map(Vec::len), Some(10));
 }
 
+/// Spec 14 §6 checks 2, 3, 4, 7 and 8 in the core: a client without a
+/// token gets a pairing card, Deny refuses and Allow pairs; revoking makes
+/// the next call `unauthorized`; without full control a protected setting
+/// is refused; the `mado` CLI with full control changes it with a notice
+/// that undoes it and an audit row, but never reaches passwords; turning
+/// full control off takes it away.
+#[test]
+fn control_clients_pair_revoke_and_use_full_control() {
+    use mado_control::{ClientInfo, HelloAnswer, PairingDecision};
+    use mado_types::state::PromptState;
+    let core = TestCore::start();
+    startup(&core);
+    let hello = |name: &str, token: Option<String>| {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        core.handle.send(Input::Internal(Internal::ControlHello {
+            client: ClientInfo {
+                name: name.into(),
+                version: "1".into(),
+            },
+            token,
+            reply,
+        }));
+        rx.blocking_recv().expect("an answer")
+    };
+    let call = |client: mado_types::ClientId, method: &str, params: Value| {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        core.handle.send(Input::Internal(Internal::ControlCall {
+            client,
+            method: method.into(),
+            params,
+            reply,
+        }));
+        rx.blocking_recv().expect("an answer")
+    };
+    let set_protected = |key: &str, value: Value| {
+        let token = auth(&core);
+        ask(
+            &core,
+            Origin::Settings,
+            Command::SettingsSet {
+                key: key.into(),
+                value,
+                token,
+            },
+        )
+        .expect("set");
+    };
+    let refused = |a: HelloAnswer| match a {
+        HelloAnswer::Refused(e) => e.message_key,
+        other => panic!("not refused: {other:?}"),
+    };
+    assert_eq!(refused(hello("tool", None)), "error.control.disabled");
+    set_protected("developer.controlEnabled", json!(true));
+    // Pairing: a card; Deny refuses.
+    let pair = |name: &str, allow: bool, scopes: &[&str]| -> PairingDecision {
+        let HelloAnswer::Pairing { mut decision, .. } = hello(name, None) else {
+            panic!("no pairing");
+        };
+        let (id, offer_full) = state_of(&core)
+            .prompts
+            .values()
+            .find_map(|p| match p {
+                PromptState::ControlPairing {
+                    id,
+                    client_name,
+                    offer_full,
+                    ..
+                } if client_name == name => Some((*id, *offer_full)),
+                _ => None,
+            })
+            .expect("a pairing card");
+        assert_eq!(
+            offer_full,
+            name == "mado" && allow && scopes.contains(&"full")
+        );
+        assert_eq!(
+            refused(hello(name, None)),
+            "error.control.pairingPending",
+            "one pending pairing per name"
+        );
+        ask(
+            &core,
+            Origin::Settings,
+            Command::ControlPairRespond {
+                prompt_id: id,
+                allow,
+                scopes: scopes.iter().map(|s| (*s).to_owned()).collect(),
+            },
+        )
+        .expect("answered");
+        let mut got = None;
+        eventually("the decision", || {
+            got = decision.try_recv().ok();
+            got.is_some()
+        });
+        got.expect("a decision")
+    };
+    assert_eq!(pair("tool", false, &["read"]), PairingDecision::Denied);
+    let PairingDecision::Approved {
+        client,
+        token,
+        scopes,
+    } = pair("tool", true, &["read", "act", "full"])
+    else {
+        panic!("not approved");
+    };
+    assert_eq!(scopes, ["read", "act"], "full is only for the mado CLI");
+    // The token opens a session next time, without a card.
+    let HelloAnswer::Session { client: again, .. } = hello("tool", Some(token.clone())) else {
+        panic!("no session");
+    };
+    assert_eq!(again, client);
+    assert_eq!(
+        refused(hello("tool", Some("nope".into()))),
+        "error.control.unauthorized"
+    );
+    assert!(call(client, "state.get", Value::Null).is_ok());
+    // Check 4: no settings scope, and blocker.enabled is protected anyway.
+    let e = call(
+        client,
+        "settings.set",
+        json!({ "key": "blocker.enabled", "value": false, "token": null }),
+    )
+    .expect_err("refused");
+    assert_eq!(e.code, ErrorCode::Protected);
+    assert_eq!(
+        state_of(&core).settings.values.get("blocker.enabled"),
+        Some(&json!(true)),
+        "unchanged"
+    );
+    // Check 3: revoked, the next call fails.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::ControlRevoke { client_id: client },
+    )
+    .expect("revoked");
+    assert_eq!(
+        call(client, "state.get", Value::Null)
+            .expect_err("revoked")
+            .message_key,
+        "error.control.unauthorized"
+    );
+    // Checks 7 and 8: the CLI with full control.
+    set_protected("developer.cliFullControl", json!(true));
+    let PairingDecision::Approved { client: cli, .. } = pair("mado", true, &["full"]) else {
+        panic!("not approved");
+    };
+    call(
+        cli,
+        "settings.set",
+        json!({ "key": "blocker.enabled", "value": false, "token": null }),
+    )
+    .expect("full control sets a protected setting");
+    assert_eq!(
+        state_of(&core).settings.values["blocker.enabled"],
+        json!(false)
+    );
+    let undo = state_of(&core)
+        .notices
+        .iter()
+        .find(|n| n.message_key == "notice.settingChanged")
+        .and_then(|n| n.undo.clone())
+        .expect("a notice with Undo");
+    ask(&core, Origin::Settings, undo).expect("undone");
+    assert_eq!(
+        state_of(&core).settings.values.get("blocker.enabled"),
+        Some(&json!(true)),
+        "Undo puts it back"
+    );
+    call(
+        cli,
+        "bookmark.add",
+        json!({ "parentId": null, "title": "A", "url": "https://a.example/", "index": null }),
+    )
+    .expect("a command");
+    assert!(
+        state_of(&core)
+            .notices
+            .iter()
+            .any(|n| n.message_key == "notice.controlCall")
+    );
+    assert_eq!(
+        call(cli, "vault.get", json!({ "id": "x", "token": null }))
+            .expect_err("needs the person")
+            .message_key,
+        "error.control.needsUser"
+    );
+    eventually("audited", || {
+        core.profile_rows("SELECT COUNT(*) FROM control_audit WHERE client_name = 'mado'") == 2
+    });
+    // Full control off: the CLI is an ordinary client again.
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "developer.cliFullControl".into(),
+            value: json!(false),
+            token: None,
+        },
+    )
+    .expect("off");
+    assert_eq!(
+        call(
+            cli,
+            "settings.set",
+            json!({ "key": "blocker.enabled", "value": false, "token": null })
+        )
+        .expect_err("protected")
+        .code,
+        ErrorCode::Protected
+    );
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

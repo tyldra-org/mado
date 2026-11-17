@@ -170,11 +170,16 @@ pub struct Settings {
 fn requires_auth(def: &SettingDef, new: &Value) -> bool {
     def.key.starts_with("vault.")
         || def.key == "developer.controlEnabled"
+        || (def.key == "developer.cliFullControl" && new == true)
         || (def.key == "ai.approvalMode" && new == "full")
 }
 
 fn may_change(def: &SettingDef, origin: &Origin) -> bool {
-    !def.opts.protected || matches!(origin, Origin::Settings | Origin::System)
+    !def.opts.protected
+        || matches!(
+            origin,
+            Origin::Settings | Origin::System | Origin::FullControl { .. }
+        )
 }
 
 /// Keys macOS keeps for itself, which no command may take.
@@ -207,6 +212,7 @@ fn origin_name(origin: &Origin) -> String {
         Origin::Overlay { .. } => "overlay".into(),
         Origin::Settings => "settings".into(),
         Origin::Control { client } => format!("control:{client}"),
+        Origin::FullControl { client } => format!("fullControl:{client}"),
         Origin::Agent { task } => format!("agent:{task}"),
         Origin::InternalPage { tab, .. } => format!("internalPage:{tab}"),
         Origin::System => "system".into(),
@@ -420,7 +426,8 @@ impl Settings {
             }
         }
         let entry = self.log_entry(def.key, old_stored, new, origin_name(origin), at);
-        if def.opts.undo_notice {
+        // A change by a client with full control always offers Undo (14 §2.1).
+        if def.opts.undo_notice || matches!(origin, Origin::FullControl { .. }) {
             out.undo_notice = Some(entry.id);
         }
         out.writes.push(Write::Log(entry));

@@ -429,6 +429,16 @@ pub enum PromptState {
     /// The fill menu at a form field (spec 11 §4.1), answered with
     /// `vault.fill` or dismissed with `prompt.dismiss`.
     FillMenu(FillMenuPrompt),
+    /// "Allow <name> to control Mado?" (spec 14 §2), answered with
+    /// `control.pairRespond`. `offerFull`: the client is the `mado` CLI and
+    /// `developer.cliFullControl` is on.
+    #[serde(rename_all = "camelCase")]
+    ControlPairing {
+        id: PromptId,
+        client_name: String,
+        client_version: String,
+        offer_full: bool,
+    },
     /// A page command's result card (spec 13 §6), answered with
     /// `ai.command.respond`. `text` grows while `done` is false.
     #[serde(rename_all = "camelCase")]

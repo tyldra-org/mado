@@ -355,6 +355,13 @@ impl TestCore {
 
 impl TestCore {
     /// Quits the way the app does and hands back the databases.
+    /// One number from the profile database, read beside the core.
+    pub fn profile_rows(&self, sql: &str) -> i64 {
+        rusqlite::Connection::open(self.dir.path().join("profile.sqlite"))
+            .and_then(|c| c.query_row(sql, [], |r| r.get(0)))
+            .unwrap_or(-1)
+    }
+
     pub fn stop(mut self) -> tempfile::TempDir {
         let (done, rx) = tokio::sync::oneshot::channel();
         self.handle
