@@ -653,6 +653,14 @@ settings! {
         section: Developers,
         protected: true,
     }
+    DeveloperCliFullControl: bool {
+        key: "developer.cliFullControl",
+        ty: SettingType::Bool,
+        default: r#"false"#,
+        scope: Profile,
+        section: Developers,
+        protected: true,
+    }
     DeveloperMcpEnabled: bool {
         key: "developer.mcpEnabled",
         ty: SettingType::Bool,

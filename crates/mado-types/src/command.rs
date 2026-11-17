@@ -1218,6 +1218,22 @@ pub enum Command {
         #[serde(default)]
         model: Option<String>,
     },
+    /// Paired control clients (spec 14 §2): `[{ id, name, scopes,
+    /// createdAt, lastUsedAt, revoked }]`.
+    #[serde(rename = "control.clients")]
+    ControlClients,
+    /// Revokes a client: its next call fails with `unauthorized`.
+    #[serde(rename = "control.revoke", rename_all = "camelCase")]
+    ControlRevoke { client_id: ClientId },
+    /// Answers a pairing card: `scopes` from `read`, `act`, `tasks`,
+    /// `settings` and `full`.
+    #[serde(rename = "control.pairRespond", rename_all = "camelCase")]
+    ControlPairRespond {
+        prompt_id: crate::PromptId,
+        allow: bool,
+        #[serde(default)]
+        scopes: Vec<String>,
+    },
     /// Sets a role's model (`auto` or `<connectionId>:<modelId>`), effort
     /// and fallback model (spec 13 §4).
     #[serde(rename = "ai.role.set", rename_all = "camelCase")]
@@ -1502,6 +1518,9 @@ impl Command {
             | Self::AiCommandList
             | Self::AiCommandRun { .. }
             | Self::AiCommandRespond { .. } => CommandFamily::Ai,
+            Self::ControlClients | Self::ControlRevoke { .. } | Self::ControlPairRespond { .. } => {
+                CommandFamily::Control
+            }
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1712,6 +1731,9 @@ impl Command {
             Self::AiCommandList => "ai.command.list",
             Self::AiCommandRun { .. } => "ai.command.run",
             Self::AiCommandRespond { .. } => "ai.command.respond",
+            Self::ControlClients => "control.clients",
+            Self::ControlRevoke { .. } => "control.revoke",
+            Self::ControlPairRespond { .. } => "control.pairRespond",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",
@@ -1734,6 +1756,24 @@ impl Command {
             Self::AppAuthenticate { .. } => "app.authenticate",
             Self::UpdateCheck => "update.check",
             Self::UpdateRelaunch => "update.relaunch",
+        }
+    }
+
+    /// The control scope a client needs for this command (spec 14 §2):
+    /// `read` for queries, `settings` for settings, `tasks` for chats and
+    /// tasks, `act` for the rest. Protected commands also need `full`.
+    pub fn control_scope(&self) -> &'static str {
+        match self.family() {
+            CommandFamily::Settings if !self.is_query() => "settings",
+            _ if self.is_query() => "read",
+            _ if matches!(
+                self,
+                Self::AiChatSend { .. } | Self::AiChatCancel { .. } | Self::AiChatDelete { .. }
+            ) =>
+            {
+                "tasks"
+            }
+            _ => "act",
         }
     }
 
@@ -2061,6 +2101,11 @@ pub enum Origin {
     },
     Settings,
     Control {
+        client: ClientId,
+    },
+    /// A control client with the `full` scope (spec 14 §2.1): the CLI,
+    /// treated as the settings window for protection checks.
+    FullControl {
         client: ClientId,
     },
     Agent {

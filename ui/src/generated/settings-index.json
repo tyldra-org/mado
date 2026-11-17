@@ -1349,6 +1349,20 @@
   },
   {
     "feature": null,
+    "help": "settings.developer.cliFullControl.help",
+    "key": "developer.cliFullControl",
+    "keywords": "settings.developer.cliFullControl.keywords",
+    "label": "settings.developer.cliFullControl.label",
+    "options": null,
+    "protected": true,
+    "renderer": "toggle",
+    "restart": "none",
+    "scope": "profile",
+    "section": "developers",
+    "undoNotice": false
+  },
+  {
+    "feature": null,
     "help": "settings.developer.mcpEnabled.help",
     "key": "developer.mcpEnabled",
     "keywords": "settings.developer.mcpEnabled.keywords",

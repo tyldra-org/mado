@@ -7,6 +7,7 @@ mod blocker;
 mod blocker_stats;
 mod chat;
 mod clear;
+mod control;
 mod cosmetic;
 mod dialogs;
 mod dl;
@@ -86,6 +87,19 @@ pub enum Input {
 /// Results of work the core spawned, and requests from the app itself.
 #[derive(Debug)]
 pub enum Internal {
+    /// A control client said `hello` (spec 14 §2).
+    ControlHello {
+        client: mado_control::ClientInfo,
+        token: Option<String>,
+        reply: oneshot::Sender<mado_control::HelloAnswer>,
+    },
+    /// A paired client's call.
+    ControlCall {
+        client: mado_types::ClientId,
+        method: String,
+        params: Value,
+        reply: Reply,
+    },
     /// AI work finished (spec 13).
     Ai(ai::AiEvent),
     /// A vault job finished (spec 11 §2).
@@ -596,6 +610,9 @@ pub struct Core {
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Chats writing an answer (13 §5).
     chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
+    /// Paired control clients and pairing cards on screen (spec 14 §2).
+    control_clients: BTreeMap<mado_types::ClientId, control::Client>,
+    pairings: BTreeMap<PromptId, control::Pairing>,
     /// Page command result cards and what made them (13 §6).
     page_runs: BTreeMap<PromptId, page_ai::Run>,
     /// Apple's on-device model can answer (macOS 26+, 13 §2.1).
@@ -919,6 +936,8 @@ impl Core {
             ai_roles: BTreeMap::new(),
             chat_jobs: BTreeMap::new(),
             page_runs: BTreeMap::new(),
+            control_clients: BTreeMap::new(),
+            pairings: BTreeMap::new(),
             ondevice_ready: false,
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
@@ -993,6 +1012,7 @@ impl Core {
         core.start_blocker();
         core.load_vault(&mut PatchRecorder::new());
         core.load_ai();
+        core.load_control();
         core
     }
 
@@ -1476,6 +1496,9 @@ impl Core {
             cmd if cmd.family() == mado_types::command::CommandFamily::Vault => {
                 self.vault_command(origin, cmd, reply_to, rec)
             }
+            cmd if cmd.family() == mado_types::command::CommandFamily::Control => {
+                self.control_command(origin, cmd, rec)
+            }
             cmd if cmd.family() == mado_types::command::CommandFamily::Ai => {
                 self.ai_command(origin, cmd, reply_to, rec)
             }
@@ -1599,6 +1622,17 @@ impl Core {
             Internal::QrSnapshot { url, image, reply } => self.qr_snapshot(url, image, reply),
             Internal::AgentFill { tab, what, reply } => self.agent_fill(tab, what, reply),
             Internal::Ai(event) => self.ai_event(event, rec),
+            Internal::ControlHello {
+                client,
+                token,
+                reply,
+            } => self.control_hello(client, token, reply, rec),
+            Internal::ControlCall {
+                client,
+                method,
+                params,
+                reply,
+            } => self.control_call(client, method, params, reply, rec),
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);
@@ -1860,6 +1894,13 @@ impl Core {
             let on = self.page_commands_on();
             self.ui.ai_menu(on);
         }
+        if out
+            .changes
+            .iter()
+            .any(|c| c.key == "developer.cliFullControl" && c.new == false)
+        {
+            self.full_control_off();
+        }
         if out.changes.iter().any(|c| c.key == "ai.chatRetention") {
             self.chat_retention_changed();
         }
@@ -1946,6 +1987,7 @@ impl Core {
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
             Timer::AiRetention => self.chat_retention(),
+            Timer::PairingTimeout(id) => self.pairing_timed_out(id, &mut rec),
             Timer::VaultLock => self.vault_lock_check(&mut rec),
             Timer::BlockerStatsFlush => self.flush_blocker_stats_later(),
             Timer::AutoRevoke => {

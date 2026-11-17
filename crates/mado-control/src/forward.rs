@@ -80,7 +80,7 @@ mod tests {
             Box::pin(async { Ok(()) })
         });
         let endpoint = Endpoint::bind(&socket).expect("binds");
-        let server = tokio::spawn(serve(endpoint, secret.clone(), handler, None));
+        let server = tokio::spawn(serve(endpoint, secret.clone(), handler, None, None));
         let request = LaunchRequest {
             urls: vec!["https://example.com/".into()],
             files: vec![],
@@ -157,6 +157,7 @@ mod tests {
             Endpoint::bind(&socket).expect("binds"),
             secret,
             handler,
+            None,
             Some(test),
         ));
         let stream = UnixStream::connect(&socket).await.expect("connects");
@@ -212,5 +213,102 @@ mod tests {
             forward(&dir.path().join("none.sock"), &secret, &request).await,
             Err(ForwardError::NotListening(_))
         ));
+    }
+    /// 14 §2: a client without a token gets `pairingRequired`, then the
+    /// approval and its token as a notification, and its calls go to the
+    /// core as that client; a cancelled call never answers.
+    #[tokio::test]
+    async fn pairing_approves_and_calls_run_as_the_client() {
+        let dir = tempfile::tempdir().expect("dir");
+        let socket = dir.path().join("p.sock");
+        let secret = LaunchSecret::load_or_create(&dir.path().join("s")).expect("secret");
+        let handler: ForwardHandler = Arc::new(|_| Box::pin(async { Ok(()) }));
+        let client = mado_types::ClientId::new();
+        let control = crate::ControlAccess {
+            hello: Arc::new(move |info, token| {
+                Box::pin(async move {
+                    match token {
+                        Some(t) if t == "good" => crate::HelloAnswer::Session {
+                            client,
+                            scopes: vec!["read".into()],
+                        },
+                        Some(_) => crate::HelloAnswer::Refused(mado_types::MadoError::new(
+                            mado_types::ErrorCode::PermissionDenied,
+                            "error.control.unauthorized",
+                        )),
+                        None => {
+                            assert_eq!(info.name, "cli");
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                                let _ = tx.send(crate::PairingDecision::Approved {
+                                    client,
+                                    token: "good".into(),
+                                    scopes: vec!["read".into()],
+                                });
+                            });
+                            crate::HelloAnswer::Pairing {
+                                pairing_id: "p1".into(),
+                                decision: rx,
+                            }
+                        }
+                    }
+                })
+            }),
+            call: Arc::new(move |who, method, _| {
+                Box::pin(async move {
+                    if method == "slow" {
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    }
+                    Ok(serde_json::json!({ "client": who, "method": method }))
+                })
+            }),
+        };
+        let server = tokio::spawn(serve(
+            Endpoint::bind(&socket).expect("binds"),
+            secret,
+            handler,
+            Some(control),
+            None,
+        ));
+        let stream = UnixStream::connect(&socket).await.expect("connects");
+        let (read, mut write) = stream.into_split();
+        let mut lines = BufReader::new(read);
+        let mut next = async || -> Value {
+            let mut line = String::new();
+            lines.read_line(&mut line).await.expect("reads");
+            serde_json::from_str(&line).expect("json")
+        };
+        write
+            .write_all(b"{\"id\":1,\"method\":\"state.get\"}\n")
+            .await
+            .expect("writes");
+        assert_eq!(next().await["error"]["code"], -32001, "no session");
+        write
+            .write_all(b"{\"id\":2,\"method\":\"hello\",\"params\":{\"client\":{\"name\":\"cli\",\"version\":\"1\"}}}\n")
+            .await
+            .expect("writes");
+        assert_eq!(next().await["result"]["pairingRequired"], true);
+        let note = next().await;
+        assert_eq!(
+            (note["method"].as_str(), note["params"]["token"].as_str()),
+            (Some("pairing.approved"), Some("good"))
+        );
+        write
+            .write_all(b"{\"id\":3,\"method\":\"slow\"}\n")
+            .await
+            .expect("writes");
+        write
+            .write_all(b"{\"method\":\"$/cancel\",\"params\":{\"id\":3}}\n")
+            .await
+            .expect("writes");
+        write
+            .write_all(b"{\"id\":4,\"method\":\"state.get\"}\n")
+            .await
+            .expect("writes");
+        let answer = next().await;
+        assert_eq!(answer["id"], 4, "the cancelled call never answers");
+        assert_eq!(answer["result"]["client"], serde_json::json!(client));
+        server.abort();
     }
 }

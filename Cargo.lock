@@ -2929,6 +2929,8 @@ version = "0.0.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
+ "data-encoding",
+ "getrandom 0.4.3",
  "image",
  "jiff",
  "json-patch 5.0.0",
@@ -2936,6 +2938,7 @@ dependencies = [
  "mado-ai",
  "mado-autofill",
  "mado-blocker",
+ "mado-control",
  "mado-engine",
  "mado-engine-fake",
  "mado-extensions",

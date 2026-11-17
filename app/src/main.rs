@@ -630,6 +630,7 @@ fn start_owner(
         endpoint,
         secret,
         on_forward,
+        Some(control_access(&handle)),
         test_access(
             &handle,
             app,
@@ -974,6 +975,49 @@ fn test_access(
     _relaunch: RelaunchParts,
 ) -> Option<mado_control::TestAccess> {
     None
+}
+
+/// Paired clients' `hello` and calls go to the core, which decides
+/// (spec 14 §2).
+fn control_access(core: &CoreHandle) -> mado_control::ControlAccess {
+    let (c1, c2) = (core.clone(), core.clone());
+    mado_control::ControlAccess {
+        hello: Arc::new(move |client, token| {
+            let core = c1.clone();
+            Box::pin(async move {
+                let (reply, rx) = tokio::sync::oneshot::channel();
+                core.send(Input::Internal(Internal::ControlHello {
+                    client,
+                    token,
+                    reply,
+                }));
+                rx.await.unwrap_or_else(|_| {
+                    mado_control::HelloAnswer::Refused(mado_types::MadoError::new(
+                        mado_types::ErrorCode::Internal,
+                        "error.coreStopped",
+                    ))
+                })
+            })
+        }),
+        call: Arc::new(move |client, method, params| {
+            let core = c2.clone();
+            Box::pin(async move {
+                let (reply, rx) = tokio::sync::oneshot::channel();
+                core.send(Input::Internal(Internal::ControlCall {
+                    client,
+                    method,
+                    params,
+                    reply,
+                }));
+                rx.await.unwrap_or_else(|_| {
+                    Err(mado_types::MadoError::new(
+                        mado_types::ErrorCode::Internal,
+                        "error.coreStopped",
+                    ))
+                })
+            })
+        }),
+    }
 }
 
 /// `<root>/Control/<ProfileId>.json`, written atomically (spec 14 §1).

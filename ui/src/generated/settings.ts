@@ -86,6 +86,7 @@ export type SettingKey =
   | "ai.commands.custom"
   | "ai.helpersPerTask"
   | "developer.controlEnabled"
+  | "developer.cliFullControl"
   | "developer.mcpEnabled"
   | "developer.inspectPages"
   | "proxy.mode"
@@ -240,6 +241,7 @@ export interface SettingValues {
   "ai.commands.custom": Array<unknown>;
   "ai.helpersPerTask": number;
   "developer.controlEnabled": boolean;
+  "developer.cliFullControl": boolean;
   "developer.mcpEnabled": boolean;
   "developer.inspectPages": boolean;
   "proxy.mode": "system" | "direct" | "manual";
@@ -394,6 +396,7 @@ export const settingDefaults: SettingValues = {
   "ai.commands.custom": [],
   "ai.helpersPerTask": 6,
   "developer.controlEnabled": false,
+  "developer.cliFullControl": false,
   "developer.mcpEnabled": false,
   "developer.inspectPages": true,
   "proxy.mode": "system",

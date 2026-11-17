@@ -9,6 +9,9 @@ mod endpoint;
 mod forward;
 mod secret;
 
-pub use endpoint::{CallHandler, Endpoint, ForwardHandler, TestAccess, serve};
+pub use endpoint::{
+    CallHandler, ClientInfo, ControlAccess, Endpoint, ForwardHandler, HelloAnswer, PairingDecision,
+    TestAccess, rpc_code, serve,
+};
 pub use forward::{ForwardError, forward};
 pub use secret::LaunchSecret;

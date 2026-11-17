@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings › AI picks the model for each job (chat, agent tasks, quick jobs, hard problems, images, page commands) with how hard it thinks and a backup model, or lets Mado choose the best one you have; models can be hidden or starred, with their prices.
 - Chat in a side panel about the page you're on, with a screenshot or files if you like: answers stream as they're written, cite their sources when the model searched the web, and chats get a title and are kept for a week (or forever). Bank pages, pages with a password or card field, and Mado's own pages are never sent.
 - Ask AI in the page menu, with Text commands turned on: improve, fix, shorten, soften or sharpen what you selected in a text field and put it back in place, or summarize, explain, translate and check code you selected on a page. On macOS 26 and later with Apple Intelligence, the common ones run on your Mac. Apple Intelligence can also be added as a connection.
+- Apps on this Mac can control Mado once you turn it on in Settings › Developers and allow each one on a card that says what it may do; you see and revoke them there. The mado command can be given full control, protected settings included, with a notice and an audit entry for every action; passwords and macOS's own prompts still need you.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.
