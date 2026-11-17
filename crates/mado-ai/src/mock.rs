@@ -15,20 +15,38 @@ pub struct Request {
     pub body: String,
 }
 
+/// What the mock answers: a status, a body and extra headers.
+#[derive(Debug, Clone)]
+pub struct Answer {
+    pub status: u16,
+    pub body: String,
+    pub headers: Vec<(String, String)>,
+}
+
+impl From<(u16, String)> for Answer {
+    fn from((status, body): (u16, String)) -> Self {
+        Self {
+            status,
+            body,
+            headers: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Mock {
     port: u16,
 }
 
-type Handler = dyn Fn(&Request) -> (u16, String) + Send + Sync;
+type Handler = dyn Fn(&Request) -> Answer + Send + Sync;
 
 impl Mock {
-    pub async fn start(
-        handler: impl Fn(&Request) -> (u16, String) + Send + Sync + 'static,
+    pub async fn start<A: Into<Answer>>(
+        handler: impl Fn(&Request) -> A + Send + Sync + 'static,
     ) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("bind");
         let port = listener.local_addr().expect("addr").port();
-        let handler: Arc<Handler> = Arc::new(handler);
+        let handler: Arc<Handler> = Arc::new(move |r: &Request| handler(r).into());
         tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
                 let handler = Arc::clone(&handler);
@@ -36,9 +54,17 @@ impl Mock {
                     let Some(request) = read(&mut stream).await else {
                         return;
                     };
-                    let (status, body) = handler(&request);
+                    let Answer {
+                        status,
+                        body,
+                        headers,
+                    } = handler(&request);
+                    let extra: String = headers
+                        .iter()
+                        .map(|(k, v)| format!("{k}: {v}\r\n"))
+                        .collect();
                     let reply = format!(
-                        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
                     );
                     let _ = stream.write_all(reply.as_bytes()).await;
@@ -49,8 +75,8 @@ impl Mock {
     }
 
     /// A mock on its own thread and runtime, for tests without one.
-    pub fn start_thread(
-        handler: impl Fn(&Request) -> (u16, String) + Send + Sync + 'static,
+    pub fn start_thread<A: Into<Answer> + 'static>(
+        handler: impl Fn(&Request) -> A + Send + Sync + 'static,
     ) -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {

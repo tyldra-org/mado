@@ -1,0 +1,4 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"The title is "}]}}]}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Example Domain."}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":200,"candidatesTokenCount":7}}
+
