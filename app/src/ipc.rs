@@ -198,6 +198,12 @@ impl UiSink for TauriUi {
         });
     }
 
+    fn ai(&mut self, payload: &serde_json::Value) {
+        if let Err(e) = self.app.emit("mado://ai", payload) {
+            tracing::warn!(error = %e, "an AI event was not delivered");
+        }
+    }
+
     fn suggest(&mut self, window: WindowId, payload: &serde_json::Value) {
         let label = format!("ui-{window}");
         if let Err(e) = self

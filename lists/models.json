@@ -8,6 +8,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 15,
         "output": 75,
@@ -26,6 +27,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 3,
         "output": 15,
@@ -46,6 +48,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 1,
         "output": 5,
@@ -65,6 +68,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 1.25,
         "output": 10,
@@ -84,6 +88,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 0.25,
         "output": 2,
@@ -118,6 +123,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 1.25,
         "output": 10,
@@ -137,6 +143,7 @@
       "vision": true,
       "tools": true,
       "reasoning": true,
+      "webSearch": true,
       "pricePerMTok": {
         "input": 0.3,
         "output": 2.5,

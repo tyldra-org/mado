@@ -24,6 +24,8 @@ pub enum Timer {
     BlockerUpdate,
     /// The daily extension update check (spec 09 §10).
     ExtensionUpdate,
+    /// Deletes expired chats (spec 13 §5).
+    AiRetention,
     /// Locks the vault after `vault.lockAfter` without use (spec 11 §2.3).
     VaultLock,
     /// Writes the blocker's counts (spec 10 §7).

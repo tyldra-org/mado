@@ -21,6 +21,7 @@
   import ProfileMenu from "./ProfileMenu.svelte";
   import SafariPrompt from "./SafariPrompt.svelte";
   import SavePrompt from "./SavePrompt.svelte";
+  import SideChat from "./SideChat.svelte";
   import PasskeySheet from "./PasskeySheet.svelte";
   import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
@@ -98,6 +99,7 @@
     <ExtensionInstallPrompt {store} {windowId} />
     <OverlapPrompt {store} />
     <DialogSheet {store} {windowId} />
+    <SideChat {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}>
     {#if locked}

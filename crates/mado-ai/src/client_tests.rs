@@ -47,6 +47,7 @@ fn request(effort: Effort) -> ModelRequest {
         }],
         effort,
         max_output_tokens: 1000,
+        web_search: false,
     }
 }
 
@@ -354,4 +355,80 @@ fn clients_need_an_http_provider() {
     assert!(
         ModelClient::new(Provider::OpenaiCompatible, Some("http://example.com"), None).is_err()
     );
+}
+
+#[tokio::test]
+async fn web_search_adds_the_providers_tool_and_reads_its_sources() {
+    let streams = [
+        (
+            Provider::Anthropic,
+            "/v1/messages",
+            concat!(
+                "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n",
+                "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"citations_delta\",\"citation\":{\"type\":\"web_search_result_location\",\"url\":\"https://a.example/\",\"title\":\"A\",\"cited_text\":\"x\"}}}\n\n",
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Found.\"}}\n\n",
+                "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+                "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n",
+                "data: {\"type\":\"message_stop\"}\n\n"
+            ),
+        ),
+        (
+            Provider::Openai,
+            "/v1/responses",
+            concat!(
+                "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Found.\"}\n\n",
+                "data: {\"type\":\"response.output_text.annotation.added\",\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://a.example/\",\"title\":\"A\"}}\n\n",
+                "data: {\"type\":\"response.output_text.annotation.added\",\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://a.example/\",\"title\":\"A\"}}\n\n",
+                "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}}\n\n"
+            ),
+        ),
+        (
+            Provider::Google,
+            "/v1beta/models/m-1:streamGenerateContent?alt=sse",
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Found.\"}]},\"finishReason\":\"STOP\",\"groundingMetadata\":{\"groundingChunks\":[{\"web\":{\"uri\":\"https://a.example/\",\"title\":\"A\"}}]}}]}\n\n",
+        ),
+    ];
+    for (provider, path, stream) in streams {
+        let seen: Arc<Mutex<Vec<Request>>> = Arc::default();
+        let log = Arc::clone(&seen);
+        let body = stream.to_owned();
+        let mock = Mock::start(move |r: &Request| {
+            log.lock().expect("lock").push(r.clone());
+            sse(body.clone())
+        })
+        .await;
+        let base = if provider == Provider::Openai {
+            format!("{}/v1", mock.base())
+        } else {
+            mock.base()
+        };
+        let client = ModelClient::new(provider, Some(&base), Some("k".into())).expect("client");
+        let req = ModelRequest {
+            tools: Vec::new(),
+            web_search: true,
+            ..request(Effort::Auto)
+        };
+        let mut s = client.stream(&req).await.expect("started");
+        let turn = collect(&mut s, |_| {}).await.expect("answered");
+        assert_eq!(
+            (turn.text.as_str(), turn.sources.clone()),
+            (
+                "Found.",
+                vec![("https://a.example/".to_owned(), "A".to_owned())]
+            ),
+            "{provider:?}"
+        );
+        let r = seen.lock().expect("lock")[0].clone();
+        assert_eq!(r.path, path);
+        let tools = body_of(&r)["tools"].to_string();
+        assert!(
+            tools.contains("web_search") || tools.contains("google_search"),
+            "{provider:?}: {tools}"
+        );
+    }
+}
+
+fn body_of(r: &Request) -> Value {
+    serde_json::from_str(&r.body).expect("a JSON body")
 }

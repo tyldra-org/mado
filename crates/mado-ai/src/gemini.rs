@@ -86,6 +86,11 @@ pub(crate) fn body(req: &ModelRequest) -> Value {
             .collect();
         body["tools"] = json!([{ "functionDeclarations": decls }]);
     }
+    if req.web_search {
+        let mut tools = body["tools"].as_array().cloned().unwrap_or_default();
+        tools.push(json!({ "google_search": {} }));
+        body["tools"] = json!(tools);
+    }
     if let Some(budget) = req.effort.gemini_budget() {
         body["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": budget });
     }
@@ -131,6 +136,18 @@ impl State {
                 && let Some(t) = p["text"].as_str()
             {
                 out.push_back(ModelEvent::TextDelta { text: t.to_owned() });
+            }
+        }
+        for chunk in c["groundingMetadata"]["groundingChunks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(url) = chunk["web"]["uri"].as_str() {
+                out.push_back(ModelEvent::Source {
+                    url: url.to_owned(),
+                    title: chunk["web"]["title"].as_str().unwrap_or(url).to_owned(),
+                });
             }
         }
         if let Some(f) = c["finishReason"].as_str() {

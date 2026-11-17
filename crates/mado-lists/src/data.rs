@@ -170,6 +170,9 @@ pub struct ModelInfo {
     pub vision: bool,
     pub tools: bool,
     pub reasoning: bool,
+    /// The provider's own web search tool works with it (13 §5).
+    #[serde(default)]
+    pub web_search: bool,
     pub price_per_m_tok: Price,
     /// Role to rank, 1 the best.
     #[serde(default)]

@@ -67,12 +67,16 @@ pub(crate) fn body(req: &ModelRequest) -> Value {
         "store": false,
         "max_output_tokens": req.max_output_tokens,
     });
-    if !req.tools.is_empty() {
-        body["tools"] = req
-            .tools
-            .iter()
-            .map(|t| json!({ "type": "function", "name": t.name, "description": t.description, "parameters": t.parameters }))
-            .collect();
+    let mut tools: Vec<Value> = req
+        .tools
+        .iter()
+        .map(|t| json!({ "type": "function", "name": t.name, "description": t.description, "parameters": t.parameters }))
+        .collect();
+    if req.web_search {
+        tools.push(json!({ "type": "web_search" }));
+    }
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
     }
     if let Some(effort) = req.effort.openai() {
         body["reasoning"] = json!({ "effort": effort });
@@ -96,6 +100,17 @@ impl State {
             "response.output_text.delta" => out.push_back(ModelEvent::TextDelta {
                 text: v["delta"].as_str().unwrap_or_default().to_owned(),
             }),
+            "response.output_text.annotation.added" => {
+                let a = &v["annotation"];
+                if a["type"] == "url_citation"
+                    && let Some(url) = a["url"].as_str()
+                {
+                    out.push_back(ModelEvent::Source {
+                        url: url.to_owned(),
+                        title: a["title"].as_str().unwrap_or(url).to_owned(),
+                    });
+                }
+            }
             "response.output_item.done" => {
                 let item = &v["item"];
                 match item["type"].as_str().unwrap_or_default() {
