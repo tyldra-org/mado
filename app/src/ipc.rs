@@ -198,6 +198,10 @@ impl UiSink for TauriUi {
         });
     }
 
+    fn ai_menu(&mut self, on: bool) {
+        mado_engine_webkit::set_ai_menu(on);
+    }
+
     fn ai(&mut self, payload: &serde_json::Value) {
         if let Err(e) = self.app.emit("mado://ai", payload) {
             tracing::warn!(error = %e, "an AI event was not delivered");

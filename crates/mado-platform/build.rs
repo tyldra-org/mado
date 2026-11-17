@@ -6,6 +6,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=swift/enclave.swift");
+    println!("cargo:rerun-if-changed=swift/ondevice.swift");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
@@ -35,6 +36,24 @@ fn main() {
     println!("cargo:rustc-link-lib=static=mado_enclave");
     for f in ["CryptoKit", "LocalAuthentication", "Security", "Foundation"] {
         println!("cargo:rustc-link-lib=framework={f}");
+    }
+    // The on-device helper (spec 13 §2.1): its own executable, for macOS 26
+    // and later. Development builds find it here; the release script builds
+    // it into the app bundle.
+    let helper = out.join("mado-ondevice");
+    let built = Command::new("xcrun")
+        .args(["swiftc", "-parse-as-library", "-O"])
+        .args(["-target", &format!("{arch}-apple-macos26.0")])
+        .arg("-o")
+        .arg(&helper)
+        .arg("swift/ondevice.swift")
+        .status()
+        .is_ok_and(|s| s.success());
+    if built {
+        println!("cargo:rustc-env=MADO_ONDEVICE_DEV={}", helper.display());
+    } else {
+        println!("cargo:warning=the on-device helper did not build (needs the macOS 26 SDK)");
+        println!("cargo:rustc-env=MADO_ONDEVICE_DEV=");
     }
     // The Swift runtime ships with macOS; the toolchain's folder holds the
     // compatibility shims a static Swift library may name.

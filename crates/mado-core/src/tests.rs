@@ -5787,6 +5787,180 @@ fn a_chat_about_the_page_answers_with_its_content() {
     );
 }
 
+/// Spec 13 §6: "Ask AI" › Improve writing on a selection in a text field
+/// runs the `commands` role's model, streams into the result card, and
+/// Replace posts the answer to the `context` script; Retry with another
+/// model runs again; reading commands offer no Replace.
+#[test]
+fn page_commands_run_from_the_menu_and_replace_the_selection() {
+    use mado_engine::event::{ContextAction, ContextData};
+    use mado_types::state::PromptState;
+    let sse = |text: &str| -> mado_ai::mock::Answer {
+        let chunk = json!({ "choices": [{ "index": 0, "delta": { "content": text } }] });
+        let end = json!({ "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }] });
+        (
+            200,
+            format!("data: {chunk}\n\ndata: {end}\n\ndata: [DONE]\n\n"),
+        )
+            .into()
+    };
+    let mock = mado_ai::mock::Mock::start_thread(move |req| match req.path.as_str() {
+        "/v1/models" => mado_ai::mock::Answer::from((
+            200,
+            r#"{"data":[{"id":"llama"},{"id":"qwen"}]}"#.to_owned(),
+        )),
+        "/v1/chat/completions" if req.body.contains("Improve the writing") => {
+            if req.body.contains("\"model\":\"qwen\"") {
+                sse("The cat sat down.")
+            } else {
+                sse("The cat sat.")
+            }
+        }
+        "/v1/chat/completions" => sse("A summary."),
+        _ => mado_ai::mock::Answer::from((404, String::new())),
+    });
+    let core = TestCore::start();
+    startup(&core);
+    ai_on(&core);
+    let user = Origin::Settings;
+    let conn = ask(
+        &core,
+        user,
+        Command::AiConnectionAdd {
+            kind: "local".into(),
+            provider: "ollama".into(),
+            label: None,
+            base_url: Some(format!("{}/v1", mock.base())),
+            secret: None,
+        },
+    )
+    .expect("added")["id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    eventually("a commands model", || {
+        state_of(&core)
+            .ai
+            .roles
+            .get("commands")
+            .is_some_and(|r| r.resolved.is_some())
+    });
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://write.example/");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url == "https://write.example/"
+    });
+    let choose = |text: &str, editable: bool, id: &str| {
+        core.page.send(mado_engine::EngineEvent::ContextMenuChosen {
+            tab,
+            context: ContextData {
+                selection: Some(text.into()),
+                editable,
+                ..ContextData::default()
+            },
+            action: ContextAction::AskAi(id.into()),
+        });
+    };
+    // Off until features.textCommands is on.
+    choose("teh cat sat", true, "improveWriting");
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    let card = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            PromptState::AiResult {
+                id,
+                text,
+                done,
+                editable,
+                ..
+            } => Some((*id, text.clone(), *done, *editable)),
+            _ => None,
+        })
+    };
+    assert!(card().is_none());
+    assert!(
+        core.sent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .notices
+            .iter()
+            .any(|n| n.message_key == "error.ai.off")
+    );
+    ask(
+        &core,
+        user,
+        Command::SettingsSet {
+            key: "features.textCommands".into(),
+            value: json!(true),
+            token: None,
+        },
+    )
+    .expect("on");
+    choose("teh cat sat", true, "improveWriting");
+    eventually("the answer", || card().is_some_and(|c| c.2));
+    let (id, text, _, editable) = card().expect("a card");
+    assert_eq!((text.as_str(), editable), ("The cat sat.", true));
+    // Retry with another model.
+    let next = ask(
+        &core,
+        user,
+        Command::AiCommandRespond {
+            prompt_id: id,
+            action: "retry".into(),
+            model: Some(format!("{conn}:qwen")),
+        },
+    )
+    .expect("retried")["promptId"]
+        .clone();
+    eventually("the second answer", || {
+        card().is_some_and(|c| c.2 && c.1 == "The cat sat down.")
+    });
+    let (id, _, _, _) = card().expect("a card");
+    assert_eq!(json!(id), next);
+    ask(
+        &core,
+        user,
+        Command::AiCommandRespond {
+            prompt_id: id,
+            action: "replace".into(),
+            model: None,
+        },
+    )
+    .expect("replaced");
+    assert!(card().is_none(), "the card closes");
+    eventually("posted to the page", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .any(|(t, m)| {
+                *t == tab
+                    && *m == json!({ "type": "aiReplace", "text": "The cat sat down.", "mode": "replace" })
+            })
+    });
+    // A selection outside a field: no Replace.
+    choose("Long article text.", false, "summarize");
+    eventually("the summary", || card().is_some_and(|c| c.2));
+    let (id, text, _, editable) = card().expect("a card");
+    assert_eq!((text.as_str(), editable), ("A summary.", false));
+    assert_eq!(
+        ask(
+            &core,
+            user,
+            Command::AiCommandRespond {
+                prompt_id: id,
+                action: "replace".into(),
+                model: None,
+            },
+        )
+        .expect_err("not editable")
+        .message_key,
+        "error.ai.notEditable"
+    );
+    let list = ask(&core, user, Command::AiCommandList).expect("listed");
+    assert_eq!(list.as_array().map(Vec::len), Some(10));
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

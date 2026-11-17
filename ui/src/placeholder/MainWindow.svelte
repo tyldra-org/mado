@@ -22,6 +22,7 @@
   import SafariPrompt from "./SafariPrompt.svelte";
   import SavePrompt from "./SavePrompt.svelte";
   import SideChat from "./SideChat.svelte";
+  import AiResultCard from "./AiResultCard.svelte";
   import PasskeySheet from "./PasskeySheet.svelte";
   import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
@@ -100,6 +101,7 @@
     <OverlapPrompt {store} />
     <DialogSheet {store} {windowId} />
     <SideChat {store} {windowId} />
+    <AiResultCard {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}>
     {#if locked}

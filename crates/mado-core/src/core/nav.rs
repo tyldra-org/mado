@@ -696,6 +696,16 @@ impl Core {
             }
         };
         match action {
+            A::AskAi(command) => {
+                let _ = self.inputs.send(super::Input::Internal(super::Internal::Ai(
+                    super::ai::AiEvent::Command(super::page_ai::CommandEvent::FromMenu {
+                        tab,
+                        command,
+                        text: c.selection.clone().unwrap_or_default(),
+                        editable: c.editable,
+                    }),
+                )));
+            }
             A::OpenLinkInNewTab if !link.is_empty() => open_tab(self, link, false),
             A::OpenImageInNewTab => {
                 if let Some(image) = c.image_url {

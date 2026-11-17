@@ -20,6 +20,43 @@ pub enum MenuEntry {
 pub struct MenuEnv {
     /// A default search engine is chosen.
     pub can_search: bool,
+    /// AI page commands are on (`features.ai` and `features.textCommands`,
+    /// spec 13 §6).
+    pub ai: bool,
+}
+
+/// The page commands of the "Ask AI" section, for an editable field or
+/// other selected text (spec 13 §6; the prompts live in mado-agent).
+pub const AI_WRITING: [&str; 6] = [
+    "improveWriting",
+    "fixSpelling",
+    "makeShorter",
+    "makeFriendlier",
+    "makeMoreDirect",
+    "translate",
+];
+pub const AI_READING: [&str; 5] = [
+    "summarize",
+    "explain",
+    "explainCode",
+    "findBugs",
+    "translate",
+];
+
+/// The menu label key of a page command.
+pub fn ai_label(id: &str) -> &'static str {
+    match id {
+        "improveWriting" => "contextMenu.ai.improveWriting",
+        "fixSpelling" => "contextMenu.ai.fixSpelling",
+        "makeShorter" => "contextMenu.ai.makeShorter",
+        "makeFriendlier" => "contextMenu.ai.makeFriendlier",
+        "makeMoreDirect" => "contextMenu.ai.makeMoreDirect",
+        "translate" => "contextMenu.ai.translate",
+        "summarize" => "contextMenu.ai.summarize",
+        "explain" => "contextMenu.ai.explain",
+        "explainCode" => "contextMenu.ai.explainCode",
+        _ => "contextMenu.ai.findBugs",
+    }
 }
 
 /// Who runs an action: the engine (edit commands, media, saving through
@@ -124,6 +161,14 @@ pub fn build(c: &ContextData, env: &MenuEnv) -> Vec<MenuEntry> {
         sel.push((A::CopyLinkToHighlight, "contextMenu.copyLinkToHighlight"));
         sections.push(sel);
     }
+    if env.ai && selected {
+        let ids: &[&str] = if c.editable { &AI_WRITING } else { &AI_READING };
+        sections.push(
+            ids.iter()
+                .map(|id| (A::AskAi((*id).to_owned()), ai_label(id)))
+                .collect(),
+        );
+    }
     if sections.is_empty() {
         sections.push(vec![
             (A::Back, "contextMenu.back"),
@@ -180,8 +225,31 @@ mod tests {
             selection: Some("rust".into()),
             ..ContextData::default()
         };
-        let with_engine = labels(&build(&sel, &MenuEnv { can_search: true }));
+        let with_engine = labels(&build(
+            &sel,
+            &MenuEnv {
+                can_search: true,
+                ai: false,
+            },
+        ));
         assert!(with_engine.contains(&"searchSelection"));
         assert!(!labels(&build(&sel, &MenuEnv::default())).contains(&"searchSelection"));
+        let ai = MenuEnv {
+            can_search: false,
+            ai: true,
+        };
+        assert!(labels(&build(&sel, &ai)).contains(&"ai.summarize"));
+        let field = ContextData {
+            selection: Some("teh".into()),
+            editable: true,
+            ..ContextData::default()
+        };
+        let m = labels(&build(&field, &ai));
+        assert!(m.contains(&"ai.improveWriting") && !m.contains(&"ai.summarize"));
+        assert!(
+            !labels(&build(&ContextData::default(), &ai))
+                .iter()
+                .any(|l| l.starts_with("ai."))
+        );
     }
 }
