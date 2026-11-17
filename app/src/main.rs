@@ -542,6 +542,11 @@ fn start_owner(
             .unwrap_or_default(),
         vault: vault_config(paths, id, info.is_private || info.is_guest),
         password_clis: mado_core::PasswordClis::system(),
+        ai: if info.is_private || info.is_guest {
+            mado_core::AiConfig::in_memory()
+        } else {
+            mado_core::AiConfig::system(id)
+        },
         profiles: Arc::new(profile_service::AppProfiles {
             app_db: Arc::clone(&owner.app_db),
             paths: owner.paths.clone(),

@@ -30,8 +30,8 @@ pub use core::PasswordClis;
 pub use core::TestHook;
 pub use core::vault::VaultConfig;
 pub use core::{
-    BlockerConfig, CoreConfig, CoreHandle, ExtensionsConfig, Input, Internal, ListsConfig,
-    OsPermissions, Power, Reply, start, system_clock,
+    AiConfig, BlockerConfig, CoreConfig, CoreHandle, ExtensionsConfig, Input, Internal,
+    ListsConfig, OsPermissions, Power, Reply, start, system_clock,
 };
 pub use timers::Timer;
 pub use ui::{NoProfiles, NoUpdates, Profiles, UiSink, Updates};

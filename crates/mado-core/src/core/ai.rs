@@ -1,0 +1,618 @@
+//! AI connections in the core (spec 13 §2): adding, testing, OAuth,
+//! local servers. Secrets go to the Keychain at once and never into the
+//! state, the database or logs; the state keeps their last four characters.
+
+use std::sync::Arc;
+
+use mado_ai::connection::{self, Api, Kind, Provider};
+use mado_ai::models::RemoteModel;
+use mado_ai::secrets::{self, Secrets};
+use mado_types::command::{Command, Origin};
+use mado_types::patch::PatchRecorder;
+use mado_types::state::{AiConnection, AiConnectionStatus};
+use mado_types::{ErrorCode, MadoError};
+use rusqlite::params;
+use serde_json::{Value, json};
+
+use super::{Core, Internal, Reply};
+
+/// What the core needs for AI (spec 13); tests pass fakes and mocks.
+#[derive(Debug, Clone)]
+pub struct AiConfig {
+    pub secrets: Arc<dyn Secrets>,
+    /// OpenRouter's site, for its sign-in page (13 §2.2).
+    pub openrouter_site: String,
+    /// OpenRouter's API, for trading the sign-in code for a key.
+    pub openrouter_api: String,
+    /// The local servers `ai.connection.detectLocal` probes.
+    pub local: Vec<(Provider, String)>,
+}
+
+impl AiConfig {
+    /// The Keychain under the profile's service (12 §1.4) and the real
+    /// addresses.
+    pub fn system(profile: mado_types::ProfileId) -> Self {
+        Self {
+            secrets: Arc::new(Keychain {
+                service: mado_platform::keychain::profile_service(profile),
+            }),
+            openrouter_site: "https://openrouter.ai".into(),
+            openrouter_api: "https://openrouter.ai/api/v1".into(),
+            local: mado_ai::local::defaults(),
+        }
+    }
+
+    /// Secrets kept in memory, for private and guest profiles.
+    pub fn in_memory() -> Self {
+        Self {
+            secrets: Arc::new(secrets::Memory::default()),
+            ..Self::system(mado_types::ProfileId::new())
+        }
+    }
+}
+
+/// The profile's Keychain service, account `ai.<connectionId>`.
+#[derive(Debug)]
+struct Keychain {
+    service: String,
+}
+
+impl Secrets for Keychain {
+    fn get(&self, connection: &str) -> Result<Option<String>, String> {
+        mado_platform::keychain::get(&self.service, &secrets::account(connection))
+            .map(|b| b.map(|b| String::from_utf8_lossy(&b).into_owned()))
+            .map_err(|e| e.to_string())
+    }
+
+    fn set(&self, connection: &str, secret: &str) -> Result<(), String> {
+        mado_platform::keychain::set(
+            &self.service,
+            &secrets::account(connection),
+            secret.as_bytes(),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    fn delete(&self, connection: &str) -> Result<(), String> {
+        mado_platform::keychain::delete(&self.service, &secrets::account(connection))
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Work the core spawned for AI, coming back.
+#[derive(Debug)]
+pub enum AiEvent {
+    /// A connection test finished: its models, or the failure's key.
+    Tested {
+        id: String,
+        result: Result<Vec<RemoteModel>, String>,
+        reply: Option<Reply>,
+    },
+    /// OpenRouter's sign-in gave a key, or failed (`refused`,
+    /// `timedOut`, `network`).
+    Signed {
+        id: String,
+        result: Result<String, String>,
+    },
+}
+
+/// One row of `ai_connections`' `config`: what the state shows besides
+/// the columns. Never the secret.
+fn config_json(c: &AiConnection) -> String {
+    json!({ "baseUrl": c.base_url, "hint": c.secret_hint, "error": c.error }).to_string()
+}
+
+fn status_key(s: AiConnectionStatus) -> &'static str {
+    match s {
+        AiConnectionStatus::Ready => "ready",
+        AiConnectionStatus::Error => "error",
+        _ => "untested",
+    }
+}
+
+/// The saved connections, with how many models each listed.
+pub(super) fn load(c: &rusqlite::Connection) -> rusqlite::Result<Vec<AiConnection>> {
+    let mut stmt = c.prepare(
+        "SELECT id, kind, provider, label, priority, config, status,
+                (SELECT COUNT(*) FROM ai_models m WHERE m.connection_id = ai_connections.id)
+         FROM ai_connections ORDER BY priority, id",
+    )?;
+    stmt.query_map([], |r| {
+        let config: Value = serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or(Value::Null);
+        let text = |k: &str| config[k].as_str().map(str::to_owned);
+        Ok(AiConnection {
+            id: r.get(0)?,
+            kind: r.get(1)?,
+            provider: r.get(2)?,
+            label: r.get(3)?,
+            priority: r.get(4)?,
+            status: match r.get::<_, String>(6)?.as_str() {
+                "ready" => AiConnectionStatus::Ready,
+                "error" => AiConnectionStatus::Error,
+                _ => AiConnectionStatus::Untested,
+            },
+            error: text("error"),
+            secret_hint: text("hint"),
+            base_url: text("baseUrl"),
+            models: r.get(7)?,
+        })
+    })?
+    .collect()
+}
+
+fn not_allowed() -> MadoError {
+    MadoError::new(ErrorCode::Protected, "error.ai.notAllowed")
+}
+
+fn not_found() -> MadoError {
+    MadoError::new(ErrorCode::NotFound, "error.ai.noConnection")
+}
+
+/// A failure key as the error a command answers.
+fn failure_error(key: &str) -> MadoError {
+    let code = match key {
+        "network" | "timedOut" => ErrorCode::NetworkFailed,
+        "unauthorized" | "refused" => ErrorCode::PermissionDenied,
+        "notFound" => ErrorCode::NotFound,
+        _ => ErrorCode::Unsupported,
+    };
+    MadoError::new(code, format!("error.ai.{key}"))
+}
+
+impl Core {
+    /// Before the first revision: the saved connections.
+    pub(super) fn load_ai(&mut self) {
+        if self.state.profile.is_private {
+            return;
+        }
+        let rows = self.profile_db.readers().read(load).unwrap_or_else(|e| {
+            tracing::error!(error = %e, "the AI connections could not be read");
+            Vec::new()
+        });
+        self.state.ai.connections = rows.into_iter().map(|c| (c.id.clone(), c)).collect();
+    }
+
+    fn connection(&self, id: &str) -> Result<AiConnection, MadoError> {
+        self.state
+            .ai
+            .connections
+            .get(id)
+            .cloned()
+            .ok_or_else(not_found)
+    }
+
+    /// Writes a connection's row; `None` deletes it with its models.
+    fn persist_connection(&self, id: String, row: Option<AiConnection>, now: i64) {
+        if self.state.profile.is_private {
+            return;
+        }
+        let pending = self.profile_db.writer().write(move |c| {
+            match row {
+                Some(r) => c.execute(
+                    "INSERT INTO ai_connections (id, kind, provider, label, priority, config, secret_ref, status, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     ON CONFLICT (id) DO UPDATE SET label = excluded.label, priority = excluded.priority,
+                       config = excluded.config, secret_ref = excluded.secret_ref, status = excluded.status",
+                    params![
+                        r.id,
+                        r.kind,
+                        r.provider,
+                        r.label,
+                        r.priority,
+                        config_json(&r),
+                        r.secret_hint.as_ref().map(|_| secrets::account(&r.id)),
+                        status_key(r.status),
+                        now
+                    ],
+                )?,
+                None => {
+                    c.execute("DELETE FROM ai_models WHERE connection_id = ?1", [&id])?;
+                    c.execute("DELETE FROM ai_connections WHERE id = ?1", [&id])?
+                }
+            };
+            Ok(())
+        });
+        tokio::task::spawn_local(async move {
+            if let Err(e) = pending.await {
+                tracing::error!(error = %e, "an AI connection was not saved");
+            }
+        });
+    }
+
+    fn put_connection(&mut self, conn: AiConnection, rec: &mut PatchRecorder) {
+        let now = self.now();
+        self.persist_connection(conn.id.clone(), Some(conn.clone()), now);
+        self.state
+            .tx(rec)
+            .ai()
+            .connections()
+            .insert(conn.id.clone(), conn);
+    }
+
+    pub(super) fn ai_command(
+        &mut self,
+        origin: &Origin,
+        cmd: Command,
+        reply_to: &mut Option<Reply>,
+        rec: &mut PatchRecorder,
+    ) -> Result<Value, MadoError> {
+        // 13: with `features.ai` off none of this runs.
+        if self.setting("features.ai") != true {
+            return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off"));
+        }
+        match cmd {
+            Command::AiConnectionAdd {
+                kind,
+                provider,
+                label,
+                base_url,
+                secret,
+            } => {
+                // Connections decide where page text goes: Mado's windows
+                // only (and the CLI with full control, 14 §2.1).
+                if !origin.is_user() {
+                    return Err(not_allowed());
+                }
+                self.add_connection(&kind, &provider, label, base_url, secret, rec)
+            }
+            Command::AiConnectionUpdate {
+                id,
+                label,
+                priority,
+                secret,
+            } => {
+                if !origin.is_user() {
+                    return Err(not_allowed());
+                }
+                let mut conn = self.connection(&id)?;
+                if let Some(label) = label.map(|l| l.trim().to_owned()).filter(|l| !l.is_empty()) {
+                    conn.label = label;
+                }
+                if let Some(priority) = priority {
+                    conn.priority = priority;
+                }
+                let secret = secret
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty());
+                if let Some(s) = &secret {
+                    conn.secret_hint = Some(secrets::hint(s));
+                    conn.status = AiConnectionStatus::Testing;
+                    conn.error = None;
+                }
+                self.put_connection(conn, rec);
+                if secret.is_some() {
+                    self.test_connection(&id, secret, None);
+                }
+                Ok(Value::Null)
+            }
+            Command::AiConnectionRemove { id } => {
+                if !origin.is_user() {
+                    return Err(not_allowed());
+                }
+                self.connection(&id)?;
+                self.state.tx(rec).ai().connections().remove(&id);
+                self.persist_connection(id.clone(), None, self.now());
+                let store = Arc::clone(&self.ai.secrets);
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = store.delete(&id) {
+                        tracing::warn!(error = %e, "an AI secret was not deleted");
+                    }
+                });
+                Ok(Value::Null)
+            }
+            Command::AiConnectionTest { id } => {
+                let mut conn = self.connection(&id)?;
+                conn.status = AiConnectionStatus::Testing;
+                self.state
+                    .tx(rec)
+                    .ai()
+                    .connections()
+                    .insert(id.clone(), conn);
+                self.test_connection(&id, None, reply_to.take());
+                Ok(Value::Null)
+            }
+            Command::AiConnectionDetectLocal => {
+                let Some(reply) = reply_to.take() else {
+                    return Ok(Value::Null);
+                };
+                let taken: Vec<String> = self
+                    .state
+                    .ai
+                    .connections
+                    .values()
+                    .filter_map(|c| {
+                        c.base_url.clone().or_else(|| {
+                            Provider::from_key(&c.provider)
+                                .and_then(Provider::default_base)
+                                .map(str::to_owned)
+                        })
+                    })
+                    .collect();
+                let candidates = self.ai.local.clone();
+                tokio::task::spawn_local(async move {
+                    let Ok(client) = mado_ai::http::client() else {
+                        let _ = reply.send(Ok(json!([])));
+                        return;
+                    };
+                    let found = mado_ai::local::detect(&client, &candidates).await;
+                    let list: Vec<Value> = found
+                        .into_iter()
+                        .filter(|f| !taken.contains(&f.base_url))
+                        .map(|f| json!({ "provider": f.provider.key(), "baseUrl": f.base_url, "models": f.models }))
+                        .collect();
+                    let _ = reply.send(Ok(Value::Array(list)));
+                });
+                Ok(Value::Null)
+            }
+            _ => Err(MadoError::new(
+                ErrorCode::Unsupported,
+                "error.unknownCommand",
+            )),
+        }
+    }
+
+    fn add_connection(
+        &mut self,
+        kind: &str,
+        provider: &str,
+        label: Option<String>,
+        base_url: Option<String>,
+        secret: Option<String>,
+        rec: &mut PatchRecorder,
+    ) -> Result<Value, MadoError> {
+        let invalid = |key: &str| MadoError::new(ErrorCode::InvalidInput, key.to_owned());
+        let kind = Kind::from_key(kind).ok_or_else(|| invalid("error.ai.unknownKind"))?;
+        let provider =
+            Provider::from_key(provider).ok_or_else(|| invalid("error.ai.unknownProvider"))?;
+        // Subscription CLIs (M5-T13) and Apple's on-device model (M5-T05)
+        // connect with their own tasks.
+        if matches!(kind, Kind::SubscriptionCli | Kind::OnDevice) {
+            return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.notYet"));
+        }
+        let secret = secret
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        let mut base_url = base_url
+            .map(|b| b.trim().to_owned())
+            .filter(|b| !b.is_empty());
+        // The key OpenRouter's sign-in gives works on the API it came from.
+        if kind == Kind::Oauth && provider.default_base() != Some(self.ai.openrouter_api.as_str()) {
+            base_url = Some(self.ai.openrouter_api.clone());
+        }
+        connection::validate(provider, kind, base_url.as_deref(), secret.is_some())
+            .map_err(|e| invalid(e.message_key()))?;
+        let id = uuid::Uuid::now_v7().simple().to_string();
+        let same = self
+            .state
+            .ai
+            .connections
+            .values()
+            .filter(|c| c.provider == provider.key())
+            .count();
+        let label = label
+            .map(|l| l.trim().to_owned())
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| match same {
+                0 => provider.name().to_owned(),
+                n => format!("{} {}", provider.name(), n + 1),
+            });
+        let priority = self
+            .state
+            .ai
+            .connections
+            .values()
+            .map(|c| c.priority + 1)
+            .max()
+            .unwrap_or(0);
+        let conn = AiConnection {
+            id: id.clone(),
+            kind: kind.key().into(),
+            provider: provider.key().into(),
+            label,
+            priority,
+            status: if kind == Kind::Oauth {
+                AiConnectionStatus::Connecting
+            } else {
+                AiConnectionStatus::Testing
+            },
+            error: None,
+            secret_hint: secret.as_deref().map(secrets::hint),
+            base_url,
+            models: 0,
+        };
+        self.put_connection(conn, rec);
+        if kind == Kind::Oauth {
+            self.start_oauth(&id)?;
+        } else {
+            self.test_connection(&id, secret, None);
+        }
+        Ok(json!({ "id": id }))
+    }
+
+    /// 13 §2.2: a loopback server on a random port, the sign-in page in a
+    /// new tab, and the key from the code.
+    fn start_oauth(&mut self, id: &str) -> Result<(), MadoError> {
+        let pkce = mado_ai::oauth::Pkce::new().map_err(|_| MadoError::internal())?;
+        let listener =
+            std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|_| MadoError::internal())?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|_| MadoError::internal())?;
+        let port = listener
+            .local_addr()
+            .map_err(|_| MadoError::internal())?
+            .port();
+        let url = mado_ai::oauth::auth_url(&self.ai.openrouter_site, port, &pkce.challenge);
+        match self.current_window() {
+            Some(window) => {
+                let (now, prefs) = (self.now(), self.prefs());
+                self.model
+                    .open_tab(window, url, None, true, None, now, prefs)?;
+            }
+            None => {
+                self.open_window(mado_types::state::Bounds::default(), &[url])?;
+            }
+        }
+        let (inputs, id, api) = (
+            self.inputs.clone(),
+            id.to_owned(),
+            self.ai.openrouter_api.clone(),
+        );
+        tokio::task::spawn_local(async move {
+            use mado_ai::oauth::{OauthError, callback, exchange};
+            let result = async {
+                let listener = tokio::net::TcpListener::from_std(listener)?;
+                let code = callback(listener, mado_ai::oauth::WAIT).await?;
+                let client = mado_ai::http::client()?;
+                exchange(&client, &api, &code, &pkce.verifier).await
+            }
+            .await
+            .map_err(|e: OauthError| {
+                tracing::info!(error = %e, "the OpenRouter sign-in did not finish");
+                match e {
+                    OauthError::TimedOut => "timedOut",
+                    OauthError::Refused | OauthError::Status(_) => "refused",
+                    OauthError::Io(_) | OauthError::Http(_) => "network",
+                }
+                .to_owned()
+            });
+            let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::Signed {
+                id,
+                result,
+            })));
+        });
+        Ok(())
+    }
+
+    /// Lists the connection's models; `store` is a new secret to save
+    /// first. The answer comes back as `AiEvent::Tested`.
+    fn test_connection(&self, id: &str, store: Option<String>, reply: Option<Reply>) {
+        let Some(conn) = self.state.ai.connections.get(id) else {
+            return;
+        };
+        let provider = Provider::from_key(&conn.provider);
+        let api = provider.map_or(Api::None, Provider::api);
+        let base = provider
+            .ok_or(connection::ConnectionError::BadUrl)
+            .and_then(|p| connection::base_url(p, conn.base_url.as_deref()));
+        let (inputs, id, secrets) = (
+            self.inputs.clone(),
+            id.to_owned(),
+            Arc::clone(&self.ai.secrets),
+        );
+        tokio::task::spawn_local(async move {
+            let result = async {
+                let base = base.map_err(|_| "invalid".to_owned())?;
+                let key = id.clone();
+                let secret = tokio::task::spawn_blocking(move || {
+                    if let Some(s) = &store {
+                        secrets.set(&key, s)?;
+                    }
+                    secrets.get(&key)
+                })
+                .await
+                .map_err(|_| "keychain".to_owned())?
+                .map_err(|e| {
+                    tracing::warn!(error = %e, "an AI secret could not be read or saved");
+                    "keychain".to_owned()
+                })?;
+                let client = mado_ai::http::client().map_err(|_| "network".to_owned())?;
+                mado_ai::models::list(&client, api, &base, secret.as_deref())
+                    .await
+                    .map_err(|f| f.key().to_owned())
+            }
+            .await;
+            let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::Tested {
+                id,
+                result,
+                reply,
+            })));
+        });
+    }
+
+    pub(super) fn ai_event(&mut self, event: AiEvent, rec: &mut PatchRecorder) {
+        match event {
+            AiEvent::Tested { id, result, reply } => {
+                let Some(mut conn) = self.state.ai.connections.get(&id).cloned() else {
+                    if let Some(r) = reply {
+                        let _ = r.send(Err(not_found()));
+                    }
+                    return;
+                };
+                let answer = match &result {
+                    Ok(models) => {
+                        conn.status = AiConnectionStatus::Ready;
+                        conn.error = None;
+                        conn.models = u32::try_from(models.len()).unwrap_or(u32::MAX);
+                        Ok(json!({ "models": models.len() }))
+                    }
+                    Err(key) => {
+                        conn.status = AiConnectionStatus::Error;
+                        conn.error = Some(key.clone());
+                        Err(failure_error(key))
+                    }
+                };
+                if let Ok(models) = result {
+                    self.save_models(&id, models);
+                }
+                self.put_connection(conn, rec);
+                if let Some(r) = reply {
+                    let _ = r.send(answer);
+                }
+            }
+            AiEvent::Signed { id, result } => {
+                let Some(mut conn) = self.state.ai.connections.get(&id).cloned() else {
+                    return;
+                };
+                match result {
+                    Ok(key) => {
+                        conn.secret_hint = Some(secrets::hint(&key));
+                        conn.status = AiConnectionStatus::Testing;
+                        conn.error = None;
+                        self.put_connection(conn, rec);
+                        self.test_connection(&id, Some(key), None);
+                    }
+                    Err(e) => {
+                        conn.status = AiConnectionStatus::Error;
+                        conn.error = Some(e);
+                        self.put_connection(conn, rec);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Keeps the listed models in `ai_models` (13 §4), with their show and
+    /// star choices; models no longer listed go.
+    fn save_models(&self, id: &str, models: Vec<RemoteModel>) {
+        if self.state.profile.is_private {
+            return;
+        }
+        let id = id.to_owned();
+        let pending = self.profile_db.writer().write(move |c| {
+            {
+                let mut put = c.prepare(
+                    "INSERT INTO ai_models (connection_id, model_id, info) VALUES (?1, ?2, ?3)
+                     ON CONFLICT (connection_id, model_id) DO UPDATE SET info = excluded.info",
+                )?;
+                for m in &models {
+                    let info = serde_json::to_string(m).unwrap_or_default();
+                    put.execute(params![id, m.id, info])?;
+                }
+            }
+            let listed: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+            let listed = serde_json::to_string(&listed).unwrap_or_else(|_| "[]".into());
+            c.execute(
+                "DELETE FROM ai_models WHERE connection_id = ?1
+                   AND model_id NOT IN (SELECT value FROM json_each(?2))",
+                params![id, listed],
+            )?;
+            Ok(())
+        });
+        tokio::task::spawn_local(async move {
+            if let Err(e) = pending.await {
+                tracing::error!(error = %e, "the AI models were not saved");
+            }
+        });
+    }
+}

@@ -5166,6 +5166,272 @@ fn an_agent_fills_without_seeing_the_values() {
     );
 }
 
+/// Turns `features.ai` on, as from the settings window.
+fn ai_on(core: &TestCore) {
+    ask(
+        core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "features.ai".into(),
+            value: json!(true),
+            token: None,
+        },
+    )
+    .expect("AI on");
+}
+
+/// A mock provider: each API lists one model for its own key; Ollama needs
+/// none; OpenRouter trades code `abc` for a key.
+fn ai_mock() -> mado_ai::mock::Mock {
+    mado_ai::mock::Mock::start_thread(|req| {
+        let h = |k: &str| req.headers.get(k).cloned().unwrap_or_default();
+        let one = |id: &str| (200, format!(r#"{{"data":[{{"id":"{id}"}}]}}"#));
+        match req.path.as_str() {
+            "/v1/models?limit=1000" if h("x-api-key") == "sk-ant-good1234" => one("claude-x"),
+            "/v1beta/models?pageSize=1000" if h("x-goog-api-key") == "g-good" => (
+                200,
+                r#"{"models":[{"name":"models/gemini-x","supportedGenerationMethods":["generateContent"]}]}"#.into(),
+            ),
+            "/openai/v1/models" if h("authorization") == "Bearer o-good" => one("gpt-x"),
+            "/ollama/v1/models" => one("llama"),
+            "/or/api/v1/auth/keys" if req.body.contains(r#""code":"abc""#) => {
+                (200, r#"{"key":"sk-or-key9876"}"#.into())
+            }
+            "/or/api/v1/models" if h("authorization") == "Bearer sk-or-key9876" => one("or/x"),
+            p if p.ends_with("models") || p.contains("models?") => (401, r#"{"error":"bad key"}"#.into()),
+            _ => (404, String::new()),
+        }
+    })
+}
+
+/// Spec 13 §2: each kind of connection connects and tests against a mock
+/// server; the secret goes to the Keychain only, failures keep their
+/// reason, and only Mado's windows may add one.
+#[test]
+fn ai_connections_connect_test_and_keep_secrets_out_of_the_state() {
+    use mado_ai::secrets::Secrets as _;
+    use mado_types::state::AiConnectionStatus as S;
+    let mock = ai_mock();
+    let secrets = std::sync::Arc::new(mado_ai::secrets::Memory::default());
+    crate::testing::AI.with_borrow_mut(|a| {
+        a.secrets = secrets.clone();
+        a.openrouter_site = format!("{}/or", mock.base());
+        a.openrouter_api = format!("{}/or/api/v1", mock.base());
+        a.local = vec![
+            (
+                mado_ai::Provider::Ollama,
+                format!("{}/ollama/v1", mock.base()),
+            ),
+            (mado_ai::Provider::LmStudio, "http://127.0.0.1:9/v1".into()),
+        ];
+    });
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    let add = |kind: &str, provider: &str, base: Option<String>, secret: Option<&str>| {
+        ask(
+            &core,
+            user,
+            Command::AiConnectionAdd {
+                kind: kind.into(),
+                provider: provider.into(),
+                label: None,
+                base_url: base,
+                secret: secret.map(str::to_owned),
+            },
+        )
+    };
+    let off = add("apiKey", "anthropic", None, Some("k")).expect_err("AI is off");
+    assert_eq!(off.message_key, "error.ai.off");
+    ai_on(&core);
+    let conn = |id: &str| state_of(&core).ai.connections.get(id).cloned();
+    let ready = |id: &str| {
+        eventually("tested", || {
+            conn(id).is_some_and(|c| matches!(c.status, S::Ready | S::Error))
+        });
+        conn(id).expect("a connection")
+    };
+    let id = |v: Value| v["id"].as_str().expect("id").to_owned();
+    // API keys, one per wire format.
+    let anthropic = id(add(
+        "apiKey",
+        "anthropic",
+        Some(mock.base()),
+        Some(" sk-ant-good1234 "),
+    )
+    .expect("added"));
+    let a = ready(&anthropic);
+    assert_eq!(
+        (
+            a.status,
+            a.models,
+            a.secret_hint.as_deref(),
+            a.label.as_str()
+        ),
+        (S::Ready, 1, Some("1234"), "Anthropic")
+    );
+    assert_eq!(
+        secrets.get(&anthropic).expect("read").as_deref(),
+        Some("sk-ant-good1234")
+    );
+    let google = id(add("apiKey", "google", Some(mock.base()), Some("g-good")).expect("added"));
+    assert_eq!(ready(&google).models, 1);
+    let openai = id(add(
+        "apiKey",
+        "openai",
+        Some(format!("{}/openai/v1", mock.base())),
+        Some("o-good"),
+    )
+    .expect("added"));
+    assert_eq!(ready(&openai).models, 1);
+    let bad = id(add(
+        "apiKey",
+        "openai",
+        Some(format!("{}/openai/v1", mock.base())),
+        Some("wrong"),
+    )
+    .expect("added"));
+    let b = ready(&bad);
+    assert_eq!(
+        (b.error.as_deref(), b.label.as_str()),
+        (Some("unauthorized"), "OpenAI 2")
+    );
+    let err = ask(&core, user, Command::AiConnectionTest { id: bad.clone() }).expect_err("fails");
+    assert_eq!(err.message_key, "error.ai.unauthorized");
+    // A new key is tested at once.
+    ask(
+        &core,
+        user,
+        Command::AiConnectionUpdate {
+            id: bad.clone(),
+            label: Some("Work".into()),
+            priority: None,
+            secret: Some("o-good".into()),
+        },
+    )
+    .expect("updated");
+    eventually("the new key works", || {
+        conn(&bad).is_some_and(|c| c.status == S::Ready && c.label == "Work")
+    });
+    // Remote servers must use https; keys are required.
+    let http = add(
+        "apiKey",
+        "openaiCompatible",
+        Some("http://example.com/v1".into()),
+        Some("k"),
+    )
+    .expect_err("http");
+    assert_eq!(http.message_key, "error.ai.notHttps");
+    assert_eq!(
+        add("apiKey", "anthropic", None, None)
+            .expect_err("no key")
+            .message_key,
+        "error.ai.noSecret"
+    );
+    // Local servers: only those that answer and are not connected yet.
+    let found = ask(&core, user, Command::AiConnectionDetectLocal).expect("probed");
+    assert_eq!(
+        found,
+        json!([{ "provider": "ollama", "baseUrl": format!("{}/ollama/v1", mock.base()), "models": 1 }])
+    );
+    let ollama = id(add(
+        "local",
+        "ollama",
+        Some(format!("{}/ollama/v1", mock.base())),
+        None,
+    )
+    .expect("added"));
+    assert_eq!(ready(&ollama).models, 1);
+    assert_eq!(
+        ask(&core, user, Command::AiConnectionDetectLocal).expect("probed"),
+        json!([])
+    );
+    // OpenRouter's sign-in: the page opens in a tab, the callback's code
+    // becomes a key.
+    let router = id(add("oauth", "openrouter", None, None).expect("added"));
+    assert_eq!(conn(&router).expect("conn").status, S::Connecting);
+    let site = "/or/auth?callback_url=".to_owned();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    eventually("the sign-in page opens", || {
+        state_of(&core).tabs.values().any(|t| t.url.contains(&site))
+    });
+    let page = state_of(&core)
+        .tabs
+        .values()
+        .map(|t| t.url.clone())
+        .find(|u| u.contains(&site))
+        .expect("the sign-in page");
+    assert!(page.contains("code_challenge_method=S256"));
+    let callback = url::Url::parse(&page)
+        .expect("url")
+        .query_pairs()
+        .find(|(k, _)| k == "callback_url")
+        .map(|(_, v)| v.into_owned())
+        .expect("a callback");
+    let port = url::Url::parse(&callback)
+        .expect("url")
+        .port()
+        .expect("port");
+    let mut stream =
+        std::net::TcpStream::connect(("127.0.0.1", port)).expect("the loopback server");
+    use std::io::{Read as _, Write as _};
+    stream
+        .write_all(b"GET /callback?code=abc HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        .expect("sent");
+    let mut answer = String::new();
+    let _ = stream.read_to_string(&mut answer);
+    assert!(answer.contains("Signed in"));
+    let r = ready(&router);
+    assert_eq!(
+        (r.status, r.secret_hint.as_deref()),
+        (S::Ready, Some("9876"))
+    );
+    // No secret anywhere in the state.
+    let doc = serde_json::to_string(&state_of(&core)).expect("json");
+    for secret in ["sk-ant-good1234", "g-good", "o-good", "sk-or-key9876"] {
+        assert!(!doc.contains(secret), "{secret} leaked into the state");
+    }
+    // Only Mado's windows add, change or remove connections.
+    let control = Origin::Control {
+        client: ClientId::new(),
+    };
+    let refused = ask(
+        &core,
+        control,
+        Command::AiConnectionRemove {
+            id: anthropic.clone(),
+        },
+    )
+    .expect_err("protected");
+    assert_eq!(refused.code, ErrorCode::Protected);
+    // Saved: a restart keeps them, without their secrets.
+    let dir = core.stop();
+    let core = TestCore::start_in(dir, true);
+    startup(&core);
+    let again = state_of(&core).ai.connections;
+    assert_eq!(again.len(), 6);
+    assert_eq!(
+        (
+            again[&anthropic].secret_hint.as_deref(),
+            again[&anthropic].models
+        ),
+        (Some("1234"), 1)
+    );
+    ai_on(&core);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiConnectionRemove {
+            id: anthropic.clone(),
+        },
+    )
+    .expect("removed");
+    assert!(!state_of(&core).ai.connections.contains_key(&anthropic));
+    eventually("the secret goes", || {
+        secrets.get(&anthropic).expect("read").is_none()
+    });
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

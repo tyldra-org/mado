@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Mado Passwords imports password exports from Chrome, Edge, Brave, Safari, Firefox, 1Password and Bitwarden, merging logins that appear more than once, and exports to CSV or to an encrypted .madovault file; profile exports carry their passwords.
 - Settings › Passwords manages Mado Passwords: search, details, copying and showing passwords after Touch ID, editing, Recently deleted, codes, health, import and export; mado://passwords opens it, and the welcome sheet asks where you keep passwords.
 - When a 1Password or Bitwarden extension is added, Mado can connect that password manager instead, so its own fill menu fills from it; letting the extension fill turns off Mado's fill menu, save prompts and passkeys.
+- With AI turned on, Settings › AI connects models: an API key for Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek, Groq, Cloudflare or any OpenAI-compatible server, signing in with OpenRouter, or Ollama and LM Studio on this Mac. Keys stay in the Keychain, and each connection is tested and shows why it doesn't work.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.
