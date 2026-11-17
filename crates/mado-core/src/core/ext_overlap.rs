@@ -96,9 +96,27 @@ fn category_of(id: &ExtensionId, dnr_rules: usize) -> Option<&'static str> {
     }
 }
 
-fn choices(category: &str) -> Vec<OverlapChoice> {
+/// The password manager setting a known manager's extension connects
+/// (`madoConnect`, 09 §8): `passwords.bitwarden` or `passwords.onePassword`.
+fn manager_setting(id: &ExtensionId) -> Option<&'static str> {
+    match mado_lists::compat()
+        .extensions
+        .get(id.as_str())?
+        .manager
+        .as_deref()?
+    {
+        "bitwarden" => Some("passwords.bitwarden"),
+        "1password" => Some("passwords.onePassword"),
+        _ => None,
+    }
+}
+
+fn choices(category: &str, id: &ExtensionId) -> Vec<OverlapChoice> {
     use OverlapChoice::*;
     match category {
+        "passwordManager" if manager_setting(id).is_some() => {
+            vec![ExtensionOnly, Both, MadoOnly, MadoConnect]
+        }
         "adBlocker" | "passwordManager" => vec![ExtensionOnly, Both, MadoOnly],
         _ => vec![ExtensionOnly, MadoOnly],
     }
@@ -106,8 +124,17 @@ fn choices(category: &str) -> Vec<OverlapChoice> {
 
 /// The settings a choice changes (09 §8 table). Dark pages and translation
 /// have no setting before v1.1, so those choices change nothing.
-fn effects(category: &str, choice: OverlapChoice) -> Vec<(&'static str, Value)> {
+fn effects(category: &str, choice: OverlapChoice, id: &ExtensionId) -> Vec<(&'static str, Value)> {
     match (category, choice) {
+        ("passwordManager", OverlapChoice::MadoConnect) => {
+            // Mado fills through the manager's CLI; the extension stays on
+            // for its own window.
+            let mut v = vec![("passwords.whoFills", json!("mado"))];
+            if let Some(key) = manager_setting(id) {
+                v.push((key, json!(true)));
+            }
+            v
+        }
         ("adBlocker", OverlapChoice::ExtensionOnly) => vec![("blocker.enabled", json!(false))],
         ("passwordManager", OverlapChoice::ExtensionOnly) => {
             vec![("passwords.whoFills", json!("extension"))]
@@ -185,7 +212,7 @@ impl Core {
                 .get(category)
                 .is_some_and(|r| r.extension_id.as_ref() == Some(id))
         {
-            let choices = choices(category);
+            let choices = choices(category, id);
             self.add_ext_prompt(
                 PromptState::Overlap {
                     id: PromptId::new(),
@@ -480,7 +507,7 @@ impl Core {
                 }
                 self.take_prompt(prompt_id, rec)?;
                 let mut previous = BTreeMap::new();
-                for (key, value) in effects(&category, choice) {
+                for (key, value) in effects(&category, choice, &extension_id) {
                     if let Some(before) = self.system_set(key, value, rec) {
                         previous.insert(key.to_owned(), before);
                     }
@@ -557,5 +584,31 @@ impl Core {
             }
             _ => Err(MadoError::new(ErrorCode::InvalidInput, "error.command.unknown")),
         }
+    }
+}
+
+#[cfg(test)]
+mod password_manager_tests {
+    use super::*;
+
+    /// 09 §8: a known password manager's extension can be connected to
+    /// Mado instead (`madoConnect`): Mado fills through its CLI.
+    #[test]
+    fn a_known_manager_offers_mado_connect() {
+        let bitwarden: ExtensionId = "nngceckbapebfimnlniiiahkandclblb".parse().expect("id");
+        let other: ExtensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".parse().expect("id");
+        assert!(choices("passwordManager", &bitwarden).contains(&OverlapChoice::MadoConnect));
+        assert!(!choices("passwordManager", &other).contains(&OverlapChoice::MadoConnect));
+        assert_eq!(
+            effects("passwordManager", OverlapChoice::MadoConnect, &bitwarden),
+            vec![
+                ("passwords.whoFills", json!("mado")),
+                ("passwords.bitwarden", json!(true))
+            ]
+        );
+        assert_eq!(
+            effects("passwordManager", OverlapChoice::ExtensionOnly, &bitwarden),
+            vec![("passwords.whoFills", json!("extension"))]
+        );
     }
 }

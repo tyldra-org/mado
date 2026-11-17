@@ -87,6 +87,9 @@ pub enum Internal {
         result: Box<Result<vault::VaultOutcome, mado_vault::VaultError>>,
         reply: Option<Reply>,
     },
+    /// The agent tool `sign_in(tab)` (spec 11 §11): answers `{ filled,
+    /// username }`. M5's agent runtime sends it; until then only tests do.
+    AgentSignIn { tab: TabId, reply: Reply },
     /// A snapshot for `vault.scanQr` (spec 11 §7).
     QrSnapshot {
         url: String,
@@ -1560,6 +1563,7 @@ impl Core {
             Internal::VaultDone { result, reply } => self.vault_done(*result, reply, rec),
             Internal::ScreenLocked => self.lock_vault(rec),
             Internal::QrSnapshot { url, image, reply } => self.qr_snapshot(url, image, reply),
+            Internal::AgentSignIn { tab, reply } => self.agent_sign_in(tab, reply),
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);

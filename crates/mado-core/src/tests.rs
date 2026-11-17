@@ -5030,6 +5030,75 @@ fn password_files_import_and_export() {
     );
 }
 
+/// Spec 11 §11: an agent's `sign_in` fills the tab's login and learns only
+/// `{ filled, username }`.
+#[test]
+fn an_agent_signs_in_without_seeing_the_password() {
+    use mado_engine::page::{
+        DetectedField, DetectedForm, FieldClass, FieldRect, FormKind, Forms, PageMessage,
+    };
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    ask(
+        &core,
+        user,
+        Command::VaultSave {
+            id: None,
+            item: serde_json::json!({ "kind": "login", "title": "", "urls": ["https://example.com/"],
+                "username": "me", "password": "hunter2", "passwordHistory": [] }),
+        },
+    )
+    .expect("saved");
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let field = |key: &str, class: FieldClass| DetectedField {
+        field_key: key.into(),
+        class,
+        rect: FieldRect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        visible: true,
+        in_viewport: true,
+    };
+    core.page.send(mado_engine::EngineEvent::PageMessage {
+        tab,
+        world: mado_engine::tab::World::Mado,
+        frame: frame(true, "https://www.example.com"),
+        message: PageMessage::Forms(Forms {
+            forms: vec![DetectedForm {
+                form_key: "f1".into(),
+                kind: FormKind::Login,
+                action: None,
+                fields: vec![
+                    field("a1", FieldClass::Username),
+                    field("a2", FieldClass::Password),
+                ],
+            }],
+        }),
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    core.handle
+        .send(Input::Internal(Internal::AgentSignIn { tab, reply: tx }));
+    let answer = rx.blocking_recv().expect("answered").expect("signed in");
+    assert_eq!(
+        (answer["filled"].as_bool(), answer["username"].as_str()),
+        (Some(true), Some("me"))
+    );
+    assert!(
+        !answer.to_string().contains("hunter2"),
+        "the agent never sees the password"
+    );
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {
