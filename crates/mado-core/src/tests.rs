@@ -479,6 +479,20 @@ fn values_written_by_the_core_reach_the_database() {
 }
 
 /// Waits until `check` holds, polling the fake engine.
+/// A one-time token from `app.authenticate`, as after Touch ID.
+fn auth(core: &TestCore) -> Option<String> {
+    core.handle.send(Input::Internal(Internal::Hook(
+        crate::TestHook::FakeAuthSuccess,
+    )));
+    ask(
+        core,
+        Origin::Settings,
+        Command::AppAuthenticate { reason: "t".into() },
+    )
+    .ok()
+    .and_then(|v| v["token"].as_str().map(str::to_owned))
+}
+
 fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     // Generous: CI runners are slower than a developer's Mac, and the
     // workspace's heavy tests (the blocker's list conversion) share the CPU.
@@ -3177,7 +3191,28 @@ fn the_vault_locks_and_opens_only_with_its_keys() {
         found[0].get("password").is_none(),
         "no secrets in summaries"
     );
-    let got = ask(&core, user, Command::VaultGet { id: id.clone() }).expect("get");
+    let hidden = ask(
+        &core,
+        user,
+        Command::VaultGet {
+            id: id.clone(),
+            token: None,
+        },
+    )
+    .expect("get");
+    assert_eq!(
+        hidden["item"]["password"], "",
+        "secrets only after Touch ID"
+    );
+    let got = ask(
+        &core,
+        user,
+        Command::VaultGet {
+            id: id.clone(),
+            token: auth(&core),
+        },
+    )
+    .expect("get");
     assert_eq!(got["item"]["password"], "hunter2");
 
     // Check 4: the screen locks, so the vault locks, and the next use asks.
@@ -3186,9 +3221,16 @@ fn the_vault_locks_and_opens_only_with_its_keys() {
         status() == mado_types::state::VaultStatus::Locked
     });
     assert_eq!(
-        ask(&core, user, Command::VaultGet { id: id.clone() })
-            .expect_err("locked")
-            .code,
+        ask(
+            &core,
+            user,
+            Command::VaultGet {
+                id: id.clone(),
+                token: None
+            }
+        )
+        .expect_err("locked")
+        .code,
         ErrorCode::Locked
     );
     let asked = enclave.asked.load(Ordering::SeqCst);
@@ -3262,7 +3304,12 @@ fn the_vault_locks_and_opens_only_with_its_keys() {
         "error.vault.badRecoverySecret"
     );
     ask(&core, Origin::Settings, Command::VaultRecover { secret }).expect("recovered");
-    let got = ask(&core, Origin::Settings, Command::VaultGet { id }).expect("get");
+    let got = ask(
+        &core,
+        Origin::Settings,
+        Command::VaultGet { id, token: None },
+    )
+    .expect("get");
     assert_eq!(got["item"]["username"], "me");
 }
 
@@ -3670,6 +3717,7 @@ fn logins_that_work_are_offered_for_saving() {
             user,
             Command::VaultGet {
                 id: item_id.clone(),
+                token: auth(&core),
             },
         )
         .expect("get")["item"]["password"]
@@ -4420,7 +4468,15 @@ fn a_qr_code_on_the_page_adds_a_code() {
         },
     )
     .expect("attached");
-    let got = ask(&core, user, Command::VaultGet { id: login }).expect("get");
+    let got = ask(
+        &core,
+        user,
+        Command::VaultGet {
+            id: login,
+            token: auth(&core),
+        },
+    )
+    .expect("get");
     assert_eq!(got["item"]["totp"], uri);
     // A second scan without a login becomes a code of its own.
     let scan = ask(&core, user, Command::VaultScanQr { tab_id: tab }).expect("scanned");
@@ -4872,6 +4928,7 @@ fn password_files_import_and_export() {
         user,
         Command::VaultGet {
             id: mine[0]["id"].as_str().expect("id").into(),
+            token: auth(&core),
         },
     )
     .expect("get");
@@ -4898,7 +4955,15 @@ fn password_files_import_and_export() {
         .and_then(|i| i["id"].as_str().map(str::to_owned))
         .expect("shop");
     assert_eq!(
-        ask(&core, user, Command::VaultGet { id: shop_id }).expect("get")["item"]["password"],
+        ask(
+            &core,
+            user,
+            Command::VaultGet {
+                id: shop_id,
+                token: auth(&core)
+            }
+        )
+        .expect("get")["item"]["password"],
         "pa,ss\"word"
     );
 

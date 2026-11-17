@@ -3,4 +3,4 @@
 /**
  * A `mado://` page that runs in a tab and may send commands (spec 01 §4.4).
  */
-export type InternalPage = "newTab" | "history" | "downloads" | "bookmarks" | "about" | "credits" | "extensions";
+export type InternalPage = "newTab" | "history" | "downloads" | "bookmarks" | "about" | "credits" | "extensions" | "passwords";

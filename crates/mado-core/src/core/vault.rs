@@ -145,6 +145,47 @@ pub(super) fn summary(s: &Stored) -> Value {
     })
 }
 
+/// An item for the Passwords page: its current one-time code, and its
+/// secrets only when `reveal`. A passkey's private key never leaves.
+pub(super) fn shown(mut s: Stored, reveal: bool, now: i64) -> Value {
+    let secs = u64::try_from(now / 1000).unwrap_or(0);
+    let totp = match &s.item {
+        Item::Login(l) => l.totp.as_deref().and_then(mado_autofill::totp::Totp::parse),
+        Item::Totp(t) => mado_autofill::totp::Totp::parse(&t.uri),
+        _ => None,
+    };
+    match &mut s.item {
+        Item::Passkey(p) => p.private_key.clear(),
+        Item::Login(l) if !reveal => {
+            l.password.clear();
+            l.totp = l.totp.as_ref().map(|_| String::new());
+            l.password_history.clear();
+        }
+        Item::Totp(t) if !reveal => t.uri.clear(),
+        Item::Card(c) if !reveal => {
+            let last: String = c
+                .number
+                .chars()
+                .rev()
+                .take(4)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            c.number = format!("•••• {last}");
+            c.cvc = c.cvc.as_ref().map(|_| String::new());
+        }
+        _ => {}
+    }
+    let mut v = full(&s);
+    v["revealed"] = json!(reveal);
+    if let Some(t) = totp {
+        v["code"] = json!(t.code(secs));
+        v["codeRemaining"] = json!(t.remaining(secs));
+    }
+    v
+}
+
 /// The whole item, secrets included, with its times.
 pub(super) fn full(s: &Stored) -> Value {
     json!({
@@ -527,10 +568,14 @@ impl Core {
                 })?;
                 Ok(Value::Null)
             }
-            Command::VaultGet { id } => {
+            Command::VaultGet { id, token } => {
                 let keys = self.vault_keys()?;
+                // Secrets only after Touch ID (11 §2.3 "copy with auth").
+                let reveal = token
+                    .is_some_and(|t| mado_settings::AuthTokens::consume(self.tokens.at(now), &t));
                 self.vault_job(reply_to.take(), move |c, _| {
-                    Ok(VaultOutcome::Value(full(&Vault::get(c, &keys, &id)?)))
+                    let stored = Vault::get(c, &keys, &id)?;
+                    Ok(VaultOutcome::Value(shown(stored, reveal, now)))
                 })?;
                 Ok(Value::Null)
             }
