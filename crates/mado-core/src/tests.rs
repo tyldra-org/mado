@@ -2554,7 +2554,7 @@ impl crate::Profiles for RoutingProfiles {
     fn route(&self, url: &str) -> Option<mado_types::ProfileId> {
         url.contains("acme.com").then_some(self.0)
     }
-    fn export(&self, _: mado_types::ProfileId, _: &str) -> Result<(), MadoError> {
+    fn export(&self, _: mado_types::ProfileId, _: &str, _: Option<&[u8]>) -> Result<(), MadoError> {
         Ok(())
     }
     fn import(&self, _: &str) -> Result<Value, MadoError> {
@@ -4789,6 +4789,180 @@ fn health_flags_reused_weak_and_leaked_logins() {
     let sent = requests.lock().unwrap_or_else(|e| e.into_inner()).clone();
     assert!(sent.iter().all(|r| !r.contains("hunter2")), "{sent:?}");
     assert!(sent.iter().any(|r| r.contains(&prefix)), "{sent:?}");
+}
+
+/// Spec 11 §12 check 5: each password CSV format imports its fixture, the
+/// same login from several merges with the older passwords in its history,
+/// and CSV and `.madovault` exports read back.
+#[test]
+fn password_files_import_and_export() {
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    let fixture = |name: &str| {
+        format!(
+            "{}/../../tests/import/passwords/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        )
+    };
+    let import = |name: &str| {
+        ask(
+            &core,
+            user,
+            Command::VaultImportCsv {
+                path: fixture(name),
+            },
+        )
+        .expect(name)
+    };
+    assert_eq!(
+        ask(
+            &core,
+            user,
+            Command::VaultImportCsv {
+                path: "relative.csv".into()
+            }
+        )
+        .expect_err("relative")
+        .message_key,
+        "error.vault.badPath"
+    );
+    let expect = [
+        ("chrome.csv", "chrome", 2, 0),
+        ("safari.csv", "safari", 1, 1),
+        ("firefox.csv", "firefox", 1, 1),
+        ("1password.csv", "onePassword", 1, 1),
+        ("bitwarden.csv", "bitwarden", 1, 1),
+    ];
+    for (file, format, added, updated) in expect {
+        let r = import(file);
+        assert_eq!(
+            (
+                r["format"].as_str(),
+                r["added"].as_i64(),
+                r["updated"].as_i64()
+            ),
+            (Some(format), Some(added), Some(updated)),
+            "{file}: {r}"
+        );
+    }
+    let query = |site: Option<&str>| {
+        ask(
+            &core,
+            user,
+            Command::VaultQuery {
+                deleted: false,
+                site: site.map(str::to_owned),
+            },
+        )
+        .expect("query")
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    };
+    assert_eq!(query(None).len(), 6);
+    let mine: Vec<serde_json::Value> = query(Some("example.com"))
+        .into_iter()
+        .filter(|i| i["username"] == "me@example.com")
+        .collect();
+    assert_eq!(mine.len(), 1, "merged into one");
+    let got = ask(
+        &core,
+        user,
+        Command::VaultGet {
+            id: mine[0]["id"].as_str().expect("id").into(),
+        },
+    )
+    .expect("get");
+    // Firefox's password is older than the vault's; the last import wins.
+    assert_eq!(got["item"]["password"], "bitwarden-pw");
+    let history: Vec<&str> = got["item"]["passwordHistory"]
+        .as_array()
+        .expect("history")
+        .iter()
+        .filter_map(|h| h["password"].as_str())
+        .collect();
+    for old in ["chrome-pw", "safari-pw", "firefox-pw", "onepassword-pw"] {
+        assert!(history.contains(&old), "{old} in {history:?}");
+    }
+    assert!(
+        got["item"]["totp"]
+            .as_str()
+            .is_some_and(|t| t.starts_with("otpauth://")),
+        "Safari's code joined"
+    );
+    let shop_id = query(Some("example.org"))
+        .iter()
+        .find(|i| i["username"] == "shopper")
+        .and_then(|i| i["id"].as_str().map(str::to_owned))
+        .expect("shop");
+    assert_eq!(
+        ask(&core, user, Command::VaultGet { id: shop_id }).expect("get")["item"]["password"],
+        "pa,ss\"word"
+    );
+
+    // Exports read back.
+    let dir = tempfile::tempdir().expect("dir");
+    let csv = dir.path().join("out.csv");
+    let r = ask(
+        &core,
+        user,
+        Command::VaultExportCsv {
+            path: csv.to_string_lossy().into(),
+        },
+    )
+    .expect("csv");
+    assert_eq!(r["logins"], 6);
+    let (format, rows) =
+        mado_autofill::csvio::import(&std::fs::read_to_string(&csv).expect("read"))
+            .expect("parses");
+    assert_eq!((format.name(), rows.len()), ("chrome", 6));
+    let vault = dir
+        .path()
+        .join("all.madovault")
+        .to_string_lossy()
+        .into_owned();
+    let export = |passphrase: &str| {
+        ask(
+            &core,
+            user,
+            Command::VaultExport {
+                path: vault.clone(),
+                passphrase: passphrase.into(),
+            },
+        )
+    };
+    assert_eq!(
+        export("short").expect_err("short").message_key,
+        "error.vault.shortPassphrase"
+    );
+    export("a long passphrase").expect("export");
+    drop(core.stop());
+    crate::testing::ENCLAVE.with_borrow_mut(|e| *e = std::sync::Arc::default());
+    let other = TestCore::start();
+    startup(&other);
+    ask(&other, user, Command::VaultSetup).expect("set up");
+    let import_vault = |passphrase: &str| {
+        ask(
+            &other,
+            user,
+            Command::VaultImport {
+                path: vault.clone(),
+                passphrase: passphrase.into(),
+            },
+        )
+    };
+    assert_eq!(
+        import_vault("wrong passphrase")
+            .expect_err("wrong")
+            .message_key,
+        "error.vault.badRecoverySecret"
+    );
+    assert_eq!(
+        import_vault("a long passphrase").expect("import")["added"],
+        6
+    );
 }
 
 /// Safari without Full Disk Access gets an error the sheet explains.

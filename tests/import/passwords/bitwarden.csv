@@ -1,0 +1,4 @@
+folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+,,login,Example,,,0,https://example.com/,me@example.com,bitwarden-pw,
+Work,1,login,Intranet,vpn first,,0,"https://intranet.example.com/,https://sso.example.com/",staff,work-pw,
+,,note,A secure note,secret text,,0,,,,

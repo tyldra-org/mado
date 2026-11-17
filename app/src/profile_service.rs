@@ -308,12 +308,13 @@ impl Profiles for AppProfiles {
         profiles::route(&self.app_db, url)
     }
 
-    fn export(&self, id: ProfileId, path: &str) -> Result<(), MadoError> {
+    fn export(&self, id: ProfileId, path: &str, vault: Option<&[u8]>) -> Result<(), MadoError> {
         let profile = self.find(id)?;
         export(
             &self.paths,
             &profile,
             std::path::Path::new(path),
+            vault,
             (self.now)(),
         )
         .map_err(failed)
@@ -350,16 +351,17 @@ const NOT_EXPORTED: &[&str] = &["page_text", "page_text_meta", "session_journal"
 
 /// Writes `profile`'s `.madoprofile` to `dest` (spec 12 §1.5): the
 /// manifest, a copy of the database without page text, the session journal
-/// and the AI audit, and the extension list. The vault joins with M4.
+/// and the AI audit, the extension list, and the `.madovault` when given.
 pub fn export(
     paths: &Paths,
     profile: &Profile,
     dest: &std::path::Path,
+    vault: Option<&[u8]>,
     now: i64,
 ) -> Result<(), String> {
     let copy = std::env::temp_dir().join(format!("mado-export-{}-{now}.sqlite", profile.id));
     let _ = std::fs::remove_file(&copy);
-    let result = write_export(paths, profile, &copy, dest, now);
+    let result = write_export(paths, profile, &copy, dest, vault, now);
     let _ = std::fs::remove_file(&copy);
     result
 }
@@ -369,6 +371,7 @@ fn write_export(
     profile: &Profile,
     copy: &std::path::Path,
     dest: &std::path::Path,
+    vault: Option<&[u8]>,
     now: i64,
 ) -> Result<(), String> {
     use std::io::Write;
@@ -419,6 +422,9 @@ fn write_export(
         &std::fs::read(copy).map_err(|e| e.to_string())?,
     )?;
     put("extensions.json", json!(extensions).to_string().as_bytes())?;
+    if let Some(v) = vault {
+        put("vault.madovault", v)?;
+    }
     zip.finish().map_err(|e| e.to_string())?;
     std::fs::rename(&partial, dest).map_err(|e| e.to_string())
 }
@@ -461,6 +467,11 @@ pub fn import(
     let folder = paths.profile(id);
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     std::fs::write(paths.profile_db(id), db).map_err(|e| e.to_string())?;
+    // The passwords wait in the new profile until Mado Passwords imports
+    // them with the file's passphrase (`vault.import`, 12 §1.5).
+    if let Ok(vault) = read("vault.madovault") {
+        std::fs::write(folder.join("imported.madovault"), vault).map_err(|e| e.to_string())?;
+    }
     let name: String = manifest["name"]
         .as_str()
         .unwrap_or("Imported")
@@ -582,7 +593,14 @@ mod tests {
                 .expect("page text");
         }
         let file = dir.path().join("Home.madoprofile");
-        export(&s.paths, &home, &file, 5).expect("export");
+        export(
+            &s.paths,
+            &home,
+            &file,
+            Some(b"{\"format\":\"madovault\"}"),
+            5,
+        )
+        .expect("export");
         let imported: ProfileId = serde_json::from_value(
             Profiles::import(&s, file.to_str().expect("path")).expect("import")["id"].clone(),
         )
@@ -596,6 +614,13 @@ mod tests {
             )
             .expect("count");
         assert_eq!(text, 0, "page text stays behind");
+        assert!(
+            s.paths
+                .profile(imported)
+                .join("imported.madovault")
+                .exists(),
+            "the passwords wait in the new profile"
+        );
         let kept: String = c
             .query_row("SELECT title FROM bookmarks WHERE id = 'b1'", [], |r| {
                 r.get(0)

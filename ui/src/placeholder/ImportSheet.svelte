@@ -25,6 +25,20 @@
   let allHistory = $state(false);
   let status = $state<"idle" | "running" | "done" | "fullDiskAccess" | "failed">("idle");
   let counts = $state<Counts | null>(null);
+  // Passwords come from a CSV the other browser exports (11 §10, 12 §5).
+  let csvPath = $state("");
+  let csvMessage = $state("");
+  async function importCsv() {
+    try {
+      const r = (await client.call({ type: "vault.importCsv", path: csvPath })) as {
+        added: number;
+        updated: number;
+      };
+      csvMessage = t("import.passwords.done", { added: r.added, updated: r.updated });
+    } catch (e) {
+      csvMessage = t(e instanceof CoreError ? e.error.messageKey : "import.failed");
+    }
+  }
 
   async function detect() {
     found = (await client.call({ type: "import.detect" }).catch(() => [])) as Found[];
@@ -112,4 +126,16 @@
     </div>
   {/if}
   {#if status === "failed"}<p role="alert">{t("import.failed")}</p>{/if}
+  <h3>{t("import.passwords")}</h3>
+  {#if found?.[chosen]}
+    <p>{t(`import.passwords.how.${found[chosen]?.browser}`)}</p>
+  {/if}
+  <p>{t("import.passwords.how.managers")}</p>
+  <label
+    >{t("import.passwords.file")}
+    <input bind:value={csvPath} placeholder="/Users/me/Downloads/passwords.csv" /></label
+  >
+  <button type="button" disabled={!csvPath} onclick={importCsv}>{t("import.passwords.run")}</button>
+  {#if csvMessage}<p role="status">{csvMessage}</p>{/if}
+  <p>{t("import.passwords.delete")}</p>
 </section>

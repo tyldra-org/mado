@@ -100,9 +100,39 @@ impl Core {
                 Box::new(move |p| p.delete(id).map(|()| Value::Null))
             }
             Command::ProfileOpen { id } => Box::new(move |p| p.open(id).map(|()| Value::Null)),
-            Command::ProfileExport { id, path, .. } => {
+            Command::ProfileExport {
+                id,
+                path,
+                passphrase,
+            } => {
                 check_path(&path)?;
-                Box::new(move |p| p.export(id, &path).map(|()| Value::Null))
+                // This profile's passwords join the file, sealed with the
+                // export's passphrase (12 §1.5); another profile's process
+                // holds its own keys.
+                let vault = match (&passphrase, &self.vault) {
+                    (Some(pass), Some(cfg))
+                        if id == own
+                            && self.state.vault.status != mado_types::state::VaultStatus::None =>
+                    {
+                        Some((cfg.db.clone(), self.vault_keys()?, pass.clone()))
+                    }
+                    _ => None,
+                };
+                Box::new(move |p| {
+                    let file = vault
+                        .map(|(db, keys, pass)| {
+                            let c = rusqlite::Connection::open(db)?;
+                            let items: Vec<mado_vault::Item> =
+                                mado_vault::Vault::list(&c, &keys, false)?
+                                    .into_iter()
+                                    .map(|s| s.item)
+                                    .collect();
+                            mado_vault::backup::seal(&items, &pass)
+                        })
+                        .transpose()
+                        .map_err(|e| super::vault::error(&e))?;
+                    p.export(id, &path, file.as_deref()).map(|()| Value::Null)
+                })
             }
             Command::ProfileImport { path, .. } => {
                 check_path(&path)?;

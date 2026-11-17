@@ -1019,5 +1019,20 @@
   "passkey.otherDevice": "Use another device",
   "passkey.otherDevice.note": "Mado can't use iCloud Keychain passkeys without Apple's browser entitlement, so another device may not work on every site.",
   "passkey.cancel": "Cancel",
-  "error.vault.leakCheckFailed": "The leak check couldn't reach Have I Been Pwned."
+  "error.vault.leakCheckFailed": "The leak check couldn't reach Have I Been Pwned.",
+  "import.passwords": "Passwords",
+  "import.passwords.how.chrome": "In Chrome, open Settings › Autofill and passwords › Google Password Manager › Settings › Export passwords, and save the file.",
+  "import.passwords.how.edge": "In Edge, open Settings › Profiles › Passwords, choose More actions › Export passwords, and save the file.",
+  "import.passwords.how.brave": "In Brave, open Settings › Autofill and passwords › Password Manager › Settings › Export passwords, and save the file.",
+  "import.passwords.how.arc": "In Arc, open Settings › Passwords (it uses Chrome's password manager) and export passwords, and save the file.",
+  "import.passwords.how.firefox": "In Firefox, open Passwords (about:logins), choose the menu › Export passwords, and save the file.",
+  "import.passwords.how.safari": "In Safari, choose File › Export › Passwords, or in the Passwords app File › Export All Passwords, and save the file.",
+  "import.passwords.how.managers": "1Password and Bitwarden CSV exports work too.",
+  "import.passwords.file": "Password file (CSV)",
+  "import.passwords.run": "Import passwords",
+  "import.passwords.done": "Passwords: {added} added, {updated} updated.",
+  "import.passwords.delete": "The exported file holds your passwords unencrypted. Delete it once the import is done.",
+  "error.vault.badPath": "Choose a file by its full path.",
+  "error.vault.badCsv": "Mado can't read that file: {reason}",
+  "error.vault.shortPassphrase": "Use a passphrase of at least 8 characters."
 }
