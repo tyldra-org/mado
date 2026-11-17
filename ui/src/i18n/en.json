@@ -989,5 +989,18 @@
   "notice.passwordSaved": "Password saved for {site}",
   "fill.source.mado": "Mado",
   "fill.source.onePassword": "1Password",
-  "fill.source.bitwarden": "Bitwarden"
+  "fill.source.bitwarden": "Bitwarden",
+  "settings.passwords.onePassword.label": "Use 1Password",
+  "settings.passwords.onePassword.help": "Fill and save with 1Password through its command-line tool. Turn on 1Password › Settings › Developer › Integrate with 1Password CLI.",
+  "settings.passwords.onePassword.keywords": "1password op cli fill",
+  "settings.passwords.bitwarden.label": "Use Bitwarden",
+  "settings.passwords.bitwarden.help": "Fill and save with Bitwarden through its command-line tool, after bw login.",
+  "settings.passwords.bitwarden.keywords": "bitwarden bw cli fill",
+  "passwords.sources": "Where passwords come from",
+  "passwords.sources.refresh": "Check again",
+  "passwords.source.status.ready": "Ready",
+  "passwords.source.status.locked": "Locked: sign in to the app",
+  "passwords.source.status.notInstalled": "Not set up",
+  "passwords.source.error.onePassword.integrationOff": "Turn on Integrate with 1Password CLI in 1Password",
+  "passwords.onePassword.setup": "Install the 1Password CLI (brew install 1password-cli) and turn on 1Password › Settings › Developer › Integrate with 1Password CLI. 1Password may refuse an app without a Developer ID; then it says so here."
 }

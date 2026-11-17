@@ -25,6 +25,7 @@ mod testing;
 #[cfg(test)]
 mod tests;
 
+pub use core::PasswordClis;
 #[cfg(any(test, feature = "test-hooks"))]
 pub use core::TestHook;
 pub use core::vault::VaultConfig;

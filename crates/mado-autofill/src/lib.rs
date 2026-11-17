@@ -3,5 +3,7 @@
 //! Specification: `mado-docs/spec/11-passwords-autofill.md`. Roadmap: M4.
 
 pub mod generator;
+pub mod onepassword;
+pub mod runner;
 pub mod source;
 pub mod totp;

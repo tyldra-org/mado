@@ -322,6 +322,25 @@ impl Core {
                 item_ref,
             } => self.vault_fill(origin, tab_id, &form_key, &item_ref, reply_to, rec),
             cmd @ Command::VaultSaveRespond { .. } => self.save_respond(origin, cmd, reply_to, rec),
+            Command::VaultSources => {
+                let mado = self.state.vault.status;
+                let op = (
+                    self.setting("passwords.onePassword") == true,
+                    std::sync::Arc::clone(&self.onepassword),
+                );
+                self.vault_job(reply_to.take(), move |_, _| {
+                    use mado_autofill::source::FillSource as _;
+                    Ok(VaultOutcome::Value(json!([
+                        { "id": "mado", "enabled": true, "status": match mado {
+                            VaultStatus::None => json!("notInstalled"),
+                            VaultStatus::Locked => json!("locked"),
+                            VaultStatus::Unlocked => json!("ready"),
+                        } },
+                        { "id": "onePassword", "enabled": op.0, "status": op.1.status() },
+                    ])))
+                })?;
+                Ok(Value::Null)
+            }
             Command::VaultLock => {
                 self.lock_vault(rec);
                 Ok(Value::Null)

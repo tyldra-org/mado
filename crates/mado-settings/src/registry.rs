@@ -516,6 +516,22 @@ settings! {
         section: Passwords,
         protected: true,
     }
+    PasswordsOnePassword: bool {
+        key: "passwords.onePassword",
+        ty: SettingType::Bool,
+        default: r#"false"#,
+        scope: Profile,
+        section: Passwords,
+        protected: true,
+    }
+    PasswordsBitwarden: bool {
+        key: "passwords.bitwarden",
+        ty: SettingType::Bool,
+        default: r#"false"#,
+        scope: Profile,
+        section: Passwords,
+        protected: true,
+    }
     ExtensionsDeveloperMode: bool {
         key: "extensions.developerMode",
         ty: SettingType::Bool,

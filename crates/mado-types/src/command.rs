@@ -1056,6 +1056,11 @@ pub enum Command {
     VaultRestore { id: String },
     #[serde(rename = "vault.deleteForever", rename_all = "camelCase")]
     VaultDeleteForever { id: String },
+    /// The fill sources and their status (spec 11 §6):
+    /// `[{ id, enabled, status }]`, `status` one of `notInstalled`,
+    /// `locked`, `ready` or `{ error }`.
+    #[serde(rename = "vault.sources")]
+    VaultSources,
     /// Answers the save or update prompt (spec 11 §5); `username` and
     /// `password` are the prompt's edits.
     #[serde(rename = "vault.saveRespond", rename_all = "camelCase")]
@@ -1302,7 +1307,8 @@ impl Command {
             | Self::VaultRestore { .. }
             | Self::VaultDeleteForever { .. }
             | Self::VaultFill { .. }
-            | Self::VaultSaveRespond { .. } => CommandFamily::Vault,
+            | Self::VaultSaveRespond { .. }
+            | Self::VaultSources => CommandFamily::Vault,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1486,6 +1492,7 @@ impl Command {
             Self::VaultDeleteForever { .. } => "vault.deleteForever",
             Self::VaultFill { .. } => "vault.fill",
             Self::VaultSaveRespond { .. } => "vault.saveRespond",
+            Self::VaultSources => "vault.sources",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

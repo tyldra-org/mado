@@ -13,6 +13,7 @@
   import DefaultBrowser from "./DefaultBrowser.svelte";
   import ExtensionsSection from "./ExtensionsSection.svelte";
   import BlockerSection from "./BlockerSection.svelte";
+  import PasswordSources from "./PasswordSources.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -105,6 +106,9 @@
     {/each}
     {#if hits === null && section === "privacy"}
       <BlockerSection {store} />
+    {/if}
+    {#if hits === null && section === "passwords"}
+      <PasswordSources {store} />
     {/if}
     {#if hits === null && section === "extensions"}
       <ExtensionsSection {store} />

@@ -94,11 +94,13 @@ pub(super) fn values_for(
         let v: Option<String> = match (item, f.class) {
             (Item::Login(l), FieldClass::Username | FieldClass::Email) => Some(l.username.clone()),
             (Item::Login(l), FieldClass::Password) => Some(l.password.clone()),
-            (Item::Login(l), FieldClass::Otp) => l
-                .totp
-                .as_deref()
-                .and_then(mado_autofill::totp::Totp::parse)
-                .map(|t| t.code(now_secs)),
+            (Item::Login(l), FieldClass::Otp) => l.totp.as_deref().and_then(|t| {
+                // A code a source computed (1Password, Bitwarden), or the
+                // login's own `otpauth` secret.
+                t.strip_prefix(SOURCE_CODE)
+                    .map(str::to_owned)
+                    .or_else(|| mado_autofill::totp::Totp::parse(t).map(|t| t.code(now_secs)))
+            }),
             (Item::Totp(t), FieldClass::Otp) => {
                 mado_autofill::totp::Totp::parse(&t.uri).map(|t| t.code(now_secs))
             }
@@ -151,6 +153,9 @@ pub(super) fn values_for(
     }
     out
 }
+
+/// Marks a one-time code a source computed, in a revealed login's `totp`.
+const SOURCE_CODE: &str = "code:";
 
 /// The fill menu's "Use a strong password" entry (11 §5).
 pub(super) const GENERATE: &str = "generate:";
@@ -213,6 +218,9 @@ impl Core {
                 now: self.now(),
             }));
         }
+        if self.vault.is_some() && self.setting("passwords.onePassword") == true {
+            out.push(Arc::clone(&self.onepassword) as Arc<dyn FillSource>);
+        }
         out
     }
 
@@ -244,7 +252,9 @@ impl Core {
         f: FieldFocused,
         rec: &mut PatchRecorder,
     ) {
-        if self.vault.is_none() || self.state.vault.status == VaultStatus::None {
+        let managers = self.setting("passwords.onePassword") == true
+            || self.setting("passwords.bitwarden") == true;
+        if self.vault.is_none() || (self.state.vault.status == VaultStatus::None && !managers) {
             return;
         }
         if !self.gesture_recent() {
@@ -698,7 +708,17 @@ impl Core {
             if let Some(source) = source {
                 let _ = self.vault_job(None, move |_, _| {
                     let id = item_ref.split_once(':').map_or("", |(_, id)| id);
-                    let item = source.reveal(id).map_err(source_error)?;
+                    let mut item = source.reveal(id).map_err(source_error)?;
+                    if let Item::Login(l) = &mut item
+                        && l.totp.is_none()
+                    {
+                        let secs = u64::try_from(now / 1000).unwrap_or(0);
+                        l.totp = source
+                            .totp(id, secs)
+                            .ok()
+                            .flatten()
+                            .map(|c| format!("{SOURCE_CODE}{c}"));
+                    }
                     Ok(VaultOutcome::Fill {
                         target: Box::new(target),
                         item: Box::new(Stored {

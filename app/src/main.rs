@@ -541,6 +541,7 @@ fn start_owner(
             .map(std::path::PathBuf::from)
             .unwrap_or_default(),
         vault: vault_config(paths, id, info.is_private || info.is_guest),
+        password_clis: mado_core::PasswordClis::system(),
         profiles: Arc::new(profile_service::AppProfiles {
             app_db: Arc::clone(&owner.app_db),
             paths: owner.paths.clone(),
