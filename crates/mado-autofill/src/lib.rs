@@ -4,6 +4,7 @@
 
 pub mod bitwarden;
 pub mod generator;
+pub mod health;
 pub mod onepassword;
 pub mod passkey;
 pub mod qr;

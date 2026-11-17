@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 1Password and Bitwarden join Mado Passwords as places passwords come from and go to: turn each on in Settings › Passwords (1Password through its CLI integration, Bitwarden unlocked with its master password once), and the fill menu shows items from all of them, a login saved in several places once.
 - Mado Passwords reads a two-factor QR code shown on a page and adds the code to that site's login, or as a code of its own.
 - Mado Passwords creates and uses passkeys: sites that offer passkeys get a Mado sheet to save one (Touch ID), sign in by choosing an account or from the fill menu, and "Use another device" hands the request back to macOS.
+- Mado Passwords checks password health: passwords reused across sites, weak ones, and, only when you ask, ones found in breaches (Have I Been Pwned, sending just five characters of each password's hash).
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.
