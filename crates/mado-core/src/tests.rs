@@ -5432,6 +5432,155 @@ fn ai_connections_connect_test_and_keep_secrets_out_of_the_state() {
     });
 }
 
+/// Spec 13 §4: with one connection every role resolves; a chosen model
+/// and its effort hold while the model is there; showing and starring
+/// order the picker; everything survives a restart.
+#[test]
+fn ai_roles_resolve_with_one_connection_and_keep_choices() {
+    let mock = ai_mock();
+    crate::testing::AI.with_borrow_mut(|a| a.local = Vec::new());
+    let core = TestCore::start();
+    startup(&core);
+    ai_on(&core);
+    let user = Origin::Settings;
+    let roles = || state_of(&core).ai.roles;
+    assert!(
+        roles().values().all(|r| r.resolved.is_none()),
+        "no connection, no model"
+    );
+    let ollama = ask(
+        &core,
+        user,
+        Command::AiConnectionAdd {
+            kind: "local".into(),
+            provider: "ollama".into(),
+            label: None,
+            base_url: Some(format!("{}/ollama/v1", mock.base())),
+            secret: None,
+        },
+    )
+    .expect("added")["id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    let llama = format!("{ollama}:llama");
+    eventually("every role resolves", || {
+        let r = roles();
+        r.len() == 7
+            && r.values()
+                .all(|x| x.resolved.as_deref() == Some(llama.as_str()))
+    });
+    let list = ask(&core, user, Command::AiModelList).expect("listed");
+    assert_eq!(list[0]["modelId"], "llama");
+    assert!(list[0]["info"].is_null(), "an unknown model has no price");
+    ask(
+        &core,
+        user,
+        Command::AiRoleSet {
+            role: "chat".into(),
+            model: llama.clone(),
+            effort: "high".into(),
+            fallback: None,
+        },
+    )
+    .expect("set");
+    let bad = ask(
+        &core,
+        user,
+        Command::AiRoleSet {
+            role: "chat".into(),
+            model: "x:gone".into(),
+            effort: "high".into(),
+            fallback: None,
+        },
+    )
+    .expect_err("no such model");
+    assert_eq!(bad.message_key, "error.ai.noModel");
+    let control = Origin::Control {
+        client: ClientId::new(),
+    };
+    assert_eq!(
+        ask(
+            &core,
+            control,
+            Command::AiRoleSet {
+                role: "chat".into(),
+                model: "auto".into(),
+                effort: "auto".into(),
+                fallback: None
+            }
+        )
+        .expect_err("protected")
+        .code,
+        ErrorCode::Protected
+    );
+    ask(
+        &core,
+        user,
+        Command::AiModelSet {
+            connection_id: ollama.clone(),
+            model_id: "llama".into(),
+            show: None,
+            starred: Some(true),
+        },
+    )
+    .expect("starred");
+    assert_eq!(
+        ask(&core, user, Command::AiModelList).expect("listed")[0]["starred"],
+        true
+    );
+    // A hidden model is never picked by auto, but a chosen one stays.
+    ask(
+        &core,
+        user,
+        Command::AiModelSet {
+            connection_id: ollama.clone(),
+            model_id: "llama".into(),
+            show: Some(false),
+            starred: None,
+        },
+    )
+    .expect("hidden");
+    let r = roles();
+    assert_eq!(r["chat"].resolved.as_deref(), Some(llama.as_str()));
+    assert_eq!(r["fast"].resolved, None);
+    ask(
+        &core,
+        user,
+        Command::AiModelSet {
+            connection_id: ollama.clone(),
+            model_id: "llama".into(),
+            show: Some(true),
+            starred: None,
+        },
+    )
+    .expect("shown");
+    eventually("saved", || roles()["fast"].resolved.is_some());
+    let dir = core.stop();
+    let core = TestCore::start_in(dir, true);
+    startup(&core);
+    let r = state_of(&core).ai.roles;
+    assert_eq!(
+        (r["chat"].model.as_str(), r["chat"].effort.as_str()),
+        (llama.as_str(), "high")
+    );
+    assert_eq!(r["fast"].resolved.as_deref(), Some(llama.as_str()));
+    ai_on(&core);
+    assert_eq!(
+        ask(&core, user, Command::AiModelList).expect("listed")[0]["starred"],
+        true
+    );
+    // Removing the connection leaves every role without a model.
+    ask(&core, user, Command::AiConnectionRemove { id: ollama }).expect("removed");
+    assert!(
+        state_of(&core)
+            .ai
+            .roles
+            .values()
+            .all(|r| r.resolved.is_none())
+    );
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

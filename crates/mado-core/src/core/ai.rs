@@ -4,12 +4,15 @@
 
 use std::sync::Arc;
 
+use std::collections::BTreeMap;
+
+use mado_ai::catalog::{Available, RoleChoice};
 use mado_ai::connection::{self, Api, Kind, Provider};
 use mado_ai::models::RemoteModel;
 use mado_ai::secrets::{self, Secrets};
 use mado_types::command::{Command, Origin};
 use mado_types::patch::PatchRecorder;
-use mado_types::state::{AiConnection, AiConnectionStatus};
+use mado_types::state::{AiConnection, AiConnectionStatus, AiRole};
 use mado_types::{ErrorCode, MadoError};
 use rusqlite::params;
 use serde_json::{Value, json};
@@ -140,6 +143,57 @@ pub(super) fn load(c: &rusqlite::Connection) -> rusqlite::Result<Vec<AiConnectio
     .collect()
 }
 
+/// One row of `ai_models`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ModelRow {
+    pub connection: String,
+    pub model: String,
+    pub name: Option<String>,
+    pub show: bool,
+    pub starred: bool,
+}
+
+/// The listed models and the role choices.
+pub(super) fn load_models(
+    c: &rusqlite::Connection,
+) -> rusqlite::Result<(Vec<ModelRow>, BTreeMap<String, RoleChoice>)> {
+    let mut stmt = c.prepare(
+        "SELECT connection_id, model_id, info, show, starred FROM ai_models ORDER BY connection_id, model_id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            let info: Value = serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or(Value::Null);
+            Ok(ModelRow {
+                connection: r.get(0)?,
+                model: r.get(1)?,
+                name: info["name"].as_str().map(str::to_owned),
+                show: r.get(3)?,
+                starred: r.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut stmt = c.prepare("SELECT role, model, effort, fallback FROM ai_roles")?;
+    let roles = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                RoleChoice {
+                    model: r
+                        .get::<_, Option<String>>(1)?
+                        .unwrap_or_else(|| "auto".into()),
+                    effort: r
+                        .get::<_, Option<String>>(2)?
+                        .unwrap_or_else(|| "auto".into()),
+                    fallback: r.get(3)?,
+                },
+            ))
+        })?
+        .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
+    Ok((rows, roles))
+}
+
+const EFFORTS: [&str; 6] = ["auto", "low", "medium", "high", "xhigh", "max"];
+
 fn not_allowed() -> MadoError {
     MadoError::new(ErrorCode::Protected, "error.ai.notAllowed")
 }
@@ -170,6 +224,73 @@ impl Core {
             Vec::new()
         });
         self.state.ai.connections = rows.into_iter().map(|c| (c.id.clone(), c)).collect();
+        let (models, roles) = self
+            .profile_db
+            .readers()
+            .read(load_models)
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "the AI models could not be read");
+                Default::default()
+            });
+        self.ai_models = models;
+        self.ai_roles = roles;
+        self.state.ai.roles = self.resolved_roles();
+    }
+
+    /// Every model of a connection that exists, with its connection's
+    /// readiness and priority.
+    pub(super) fn ai_available(&self) -> Vec<Available> {
+        self.ai_models
+            .iter()
+            .filter_map(|m| {
+                let c = self.state.ai.connections.get(&m.connection)?;
+                Some(Available {
+                    connection: m.connection.clone(),
+                    provider: c.provider.clone(),
+                    model: m.model.clone(),
+                    name: m.name.clone(),
+                    show: m.show,
+                    starred: m.starred,
+                    ready: c.status == AiConnectionStatus::Ready,
+                    priority: c.priority,
+                })
+            })
+            .collect()
+    }
+
+    fn resolved_roles(&self) -> BTreeMap<String, AiRole> {
+        let catalog = mado_lists::models();
+        let available = self.ai_available();
+        mado_ai::catalog::resolve_all(&catalog, &available, &self.ai_roles)
+            .into_iter()
+            .map(|(role, resolved)| {
+                let c = self
+                    .ai_roles
+                    .get(&role)
+                    .cloned()
+                    .unwrap_or_else(RoleChoice::auto);
+                (
+                    role,
+                    AiRole {
+                        model: c.model,
+                        effort: c.effort,
+                        fallback: c.fallback,
+                        resolved,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// Puts each role's current model in the state (13 §4) after a
+    /// connection, model or role changed.
+    pub(super) fn refresh_roles(&mut self, rec: &mut PatchRecorder) {
+        let next = self.resolved_roles();
+        for (role, value) in next {
+            if self.state.ai.roles.get(&role) != Some(&value) {
+                self.state.tx(rec).ai().roles().insert(role, value);
+            }
+        }
     }
 
     fn connection(&self, id: &str) -> Result<AiConnection, MadoError> {
@@ -280,6 +401,7 @@ impl Core {
                     conn.error = None;
                 }
                 self.put_connection(conn, rec);
+                self.refresh_roles(rec);
                 if secret.is_some() {
                     self.test_connection(&id, secret, None);
                 }
@@ -292,6 +414,8 @@ impl Core {
                 self.connection(&id)?;
                 self.state.tx(rec).ai().connections().remove(&id);
                 self.persist_connection(id.clone(), None, self.now());
+                self.ai_models.retain(|m| m.connection != id);
+                self.refresh_roles(rec);
                 let store = Arc::clone(&self.ai.secrets);
                 tokio::task::spawn_blocking(move || {
                     if let Err(e) = store.delete(&id) {
@@ -342,6 +466,104 @@ impl Core {
                         .collect();
                     let _ = reply.send(Ok(Value::Array(list)));
                 });
+                Ok(Value::Null)
+            }
+            Command::AiModelList => Ok(serde_json::to_value(mado_ai::catalog::picker(
+                &mado_lists::models(),
+                &self.ai_available(),
+            ))
+            .unwrap_or_default()),
+            Command::AiModelSet {
+                connection_id,
+                model_id,
+                show,
+                starred,
+            } => {
+                if !origin.is_user() {
+                    return Err(not_allowed());
+                }
+                let row = self
+                    .ai_models
+                    .iter_mut()
+                    .find(|m| m.connection == connection_id && m.model == model_id)
+                    .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.ai.noModel"))?;
+                if let Some(v) = show {
+                    row.show = v;
+                }
+                if let Some(v) = starred {
+                    row.starred = v;
+                }
+                let (show, starred) = (row.show, row.starred);
+                if !self.state.profile.is_private {
+                    let pending = self.profile_db.writer().write(move |c| {
+                        c.execute(
+                            "UPDATE ai_models SET show = ?3, starred = ?4 WHERE connection_id = ?1 AND model_id = ?2",
+                            params![connection_id, model_id, show, starred],
+                        )
+                        .map(drop)
+                    });
+                    tokio::task::spawn_local(async move {
+                        if let Err(e) = pending.await {
+                            tracing::error!(error = %e, "a model choice was not saved");
+                        }
+                    });
+                }
+                self.refresh_roles(rec);
+                Ok(Value::Null)
+            }
+            Command::AiRoleSet {
+                role,
+                model,
+                effort,
+                fallback,
+            } => {
+                if !origin.is_user() {
+                    return Err(not_allowed());
+                }
+                let invalid = |k: &str| MadoError::new(ErrorCode::InvalidInput, k.to_owned());
+                if !mado_lists::ROLES.contains(&role.as_str()) {
+                    return Err(invalid("error.ai.unknownRole"));
+                }
+                if !EFFORTS.contains(&effort.as_str()) {
+                    return Err(invalid("error.ai.unknownEffort"));
+                }
+                let exists = |r: &str| {
+                    r.split_once(':').is_some_and(|(c, m)| {
+                        self.ai_models
+                            .iter()
+                            .any(|x| x.connection == c && x.model == m)
+                    })
+                };
+                if model != "auto" && !exists(&model) {
+                    return Err(invalid("error.ai.noModel"));
+                }
+                let fallback = fallback.filter(|f| !f.is_empty() && f != "auto");
+                if fallback.as_deref().is_some_and(|f| !exists(f)) {
+                    return Err(invalid("error.ai.noModel"));
+                }
+                let choice = RoleChoice {
+                    model,
+                    effort,
+                    fallback,
+                };
+                if !self.state.profile.is_private {
+                    let (r, c) = (role.clone(), choice.clone());
+                    let pending = self.profile_db.writer().write(move |db| {
+                        db.execute(
+                            "INSERT INTO ai_roles (role, model, effort, fallback) VALUES (?1, ?2, ?3, ?4)
+                             ON CONFLICT (role) DO UPDATE SET model = excluded.model, effort = excluded.effort, fallback = excluded.fallback",
+                            params![r, c.model, c.effort, c.fallback],
+                        )
+                        .map(drop)
+                    });
+                    tokio::task::spawn_local(async move {
+                        if let Err(e) = pending.await {
+                            tracing::error!(error = %e, "a role was not saved");
+                        }
+                    });
+                }
+                self.ai_roles.insert(role, choice);
+                self.refresh_roles(rec);
                 Ok(Value::Null)
             }
             _ => Err(MadoError::new(
@@ -553,9 +775,28 @@ impl Core {
                     }
                 };
                 if let Ok(models) = result {
+                    let mut rows: Vec<ModelRow> = models
+                        .iter()
+                        .map(|m| {
+                            let old = self
+                                .ai_models
+                                .iter()
+                                .find(|x| x.connection == id && x.model == m.id);
+                            ModelRow {
+                                connection: id.clone(),
+                                model: m.id.clone(),
+                                name: m.name.clone(),
+                                show: old.is_none_or(|o| o.show),
+                                starred: old.is_some_and(|o| o.starred),
+                            }
+                        })
+                        .collect();
+                    self.ai_models.retain(|x| x.connection != id);
+                    self.ai_models.append(&mut rows);
                     self.save_models(&id, models);
                 }
                 self.put_connection(conn, rec);
+                self.refresh_roles(rec);
                 if let Some(r) = reply {
                     let _ = r.send(answer);
                 }
@@ -576,6 +817,7 @@ impl Core {
                         conn.status = AiConnectionStatus::Error;
                         conn.error = Some(e);
                         self.put_connection(conn, rec);
+                        self.refresh_roles(rec);
                     }
                 }
             }

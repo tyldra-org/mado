@@ -3,6 +3,7 @@
 //! Specification: `mado-docs/spec/13-ai.md` sections 2 to 4. Roadmap: M5.
 
 mod anthropic;
+pub mod catalog;
 pub mod client;
 #[cfg(test)]
 mod client_tests;

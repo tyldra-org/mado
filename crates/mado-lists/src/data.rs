@@ -151,6 +151,73 @@ pub struct SensitiveHosts {
     pub banking: Vec<String>,
 }
 
+/// `models.json` (13 §4): known models by `provider/model`, and the
+/// subscription CLIs' commands (13 §2.3, M5-T13).
+#[derive(Debug, Clone, Deserialize)]
+pub struct Models {
+    pub models: BTreeMap<String, ModelInfo>,
+    #[serde(default)]
+    pub cli: BTreeMap<String, serde_json::Value>,
+}
+
+/// What Mado knows about one model.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub name: String,
+    pub context_tokens: u64,
+    pub max_output: u64,
+    pub vision: bool,
+    pub tools: bool,
+    pub reasoning: bool,
+    pub price_per_m_tok: Price,
+    /// Role to rank, 1 the best.
+    #[serde(default)]
+    pub roles: BTreeMap<String, u32>,
+}
+
+/// US dollars per million tokens.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Price {
+    pub input: f64,
+    pub output: f64,
+    pub cached_input: f64,
+}
+
+/// The roles of 13 §4.
+pub const ROLES: [&str; 7] = [
+    "chat", "tasks", "fast", "deep", "vision", "commands", "image",
+];
+
+impl Models {
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, String> {
+        let list: Self = json(bytes)?;
+        if list.models.is_empty() {
+            return Err("models is empty".into());
+        }
+        for (key, m) in &list.models {
+            if key
+                .split_once('/')
+                .is_none_or(|(p, id)| p.is_empty() || id.is_empty())
+            {
+                return Err(format!("{key} is not provider/model"));
+            }
+            if let Some(role) = m.roles.keys().find(|r| !ROLES.contains(&r.as_str())) {
+                return Err(format!("{key}: unknown role {role}"));
+            }
+            let p = m.price_per_m_tok;
+            if [p.input, p.output, p.cached_input]
+                .iter()
+                .any(|x| !x.is_finite() || *x < 0.0)
+            {
+                return Err(format!("{key}: a price is not a positive number"));
+            }
+        }
+        Ok(list)
+    }
+}
+
 /// `payment-frames.json` (11 §4.1): hosts whose frames may get card
 /// fills; a host matches itself only.
 #[derive(Debug, Clone, Deserialize)]

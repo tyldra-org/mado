@@ -1155,6 +1155,31 @@ pub enum Command {
     /// §2.2): `[{ provider, baseUrl, models }]`.
     #[serde(rename = "ai.connection.detectLocal")]
     AiConnectionDetectLocal,
+    /// Every model of every connection for pickers (spec 13 §4): starred
+    /// first, then shown ones by connection; `[{ connectionId, modelId,
+    /// name, show, starred, info }]`, `info` null for unknown models.
+    #[serde(rename = "ai.model.list")]
+    AiModelList,
+    /// Shows, hides, stars or unstars a model in pickers.
+    #[serde(rename = "ai.model.set", rename_all = "camelCase")]
+    AiModelSet {
+        connection_id: String,
+        model_id: String,
+        #[serde(default)]
+        show: Option<bool>,
+        #[serde(default)]
+        starred: Option<bool>,
+    },
+    /// Sets a role's model (`auto` or `<connectionId>:<modelId>`), effort
+    /// and fallback model (spec 13 §4).
+    #[serde(rename = "ai.role.set", rename_all = "camelCase")]
+    AiRoleSet {
+        role: String,
+        model: String,
+        effort: String,
+        #[serde(default)]
+        fallback: Option<String>,
+    },
     /// Answers the save or update prompt (spec 11 §5); `username` and
     /// `password` are the prompt's edits.
     #[serde(rename = "vault.saveRespond", rename_all = "camelCase")]
@@ -1417,7 +1442,10 @@ impl Command {
             | Self::AiConnectionUpdate { .. }
             | Self::AiConnectionRemove { .. }
             | Self::AiConnectionTest { .. }
-            | Self::AiConnectionDetectLocal => CommandFamily::Ai,
+            | Self::AiConnectionDetectLocal
+            | Self::AiModelList
+            | Self::AiModelSet { .. }
+            | Self::AiRoleSet { .. } => CommandFamily::Ai,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1617,6 +1645,9 @@ impl Command {
             Self::AiConnectionRemove { .. } => "ai.connection.remove",
             Self::AiConnectionTest { .. } => "ai.connection.test",
             Self::AiConnectionDetectLocal => "ai.connection.detectLocal",
+            Self::AiModelList => "ai.model.list",
+            Self::AiModelSet { .. } => "ai.model.set",
+            Self::AiRoleSet { .. } => "ai.role.set",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

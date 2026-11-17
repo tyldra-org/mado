@@ -1,0 +1,239 @@
+{
+  "_comment": "Known models (spec 13 §4). Ranks: 1 is the best choice for the role; a role a model is not listed for is still allowed, after ranked models. Prices are US dollars per million tokens. Check against each provider's pricing page when editing.",
+  "models": {
+    "anthropic/claude-opus-4-1": {
+      "name": "Claude Opus 4.1",
+      "contextTokens": 200000,
+      "maxOutput": 32000,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 15,
+        "output": 75,
+        "cachedInput": 1.5
+      },
+      "roles": {
+        "deep": 1,
+        "tasks": 3,
+        "chat": 4
+      }
+    },
+    "anthropic/claude-sonnet-4-5": {
+      "name": "Claude Sonnet 4.5",
+      "contextTokens": 200000,
+      "maxOutput": 64000,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 3,
+        "output": 15,
+        "cachedInput": 0.3
+      },
+      "roles": {
+        "tasks": 1,
+        "chat": 1,
+        "deep": 2,
+        "vision": 1,
+        "commands": 3
+      }
+    },
+    "anthropic/claude-haiku-4-5": {
+      "name": "Claude Haiku 4.5",
+      "contextTokens": 200000,
+      "maxOutput": 64000,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 1,
+        "output": 5,
+        "cachedInput": 0.1
+      },
+      "roles": {
+        "fast": 1,
+        "commands": 1,
+        "chat": 5,
+        "vision": 4
+      }
+    },
+    "openai/gpt-5": {
+      "name": "GPT-5",
+      "contextTokens": 400000,
+      "maxOutput": 128000,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 1.25,
+        "output": 10,
+        "cachedInput": 0.125
+      },
+      "roles": {
+        "tasks": 2,
+        "chat": 2,
+        "deep": 2,
+        "vision": 2
+      }
+    },
+    "openai/gpt-5-mini": {
+      "name": "GPT-5 mini",
+      "contextTokens": 400000,
+      "maxOutput": 128000,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 0.25,
+        "output": 2,
+        "cachedInput": 0.025
+      },
+      "roles": {
+        "fast": 2,
+        "commands": 2,
+        "chat": 6
+      }
+    },
+    "openai/gpt-image-1": {
+      "name": "GPT Image 1",
+      "contextTokens": 32000,
+      "maxOutput": 0,
+      "vision": true,
+      "tools": false,
+      "reasoning": false,
+      "pricePerMTok": {
+        "input": 5,
+        "output": 40,
+        "cachedInput": 1.25
+      },
+      "roles": {
+        "image": 1
+      }
+    },
+    "google/gemini-2.5-pro": {
+      "name": "Gemini 2.5 Pro",
+      "contextTokens": 1048576,
+      "maxOutput": 65536,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 1.25,
+        "output": 10,
+        "cachedInput": 0.31
+      },
+      "roles": {
+        "deep": 3,
+        "tasks": 4,
+        "chat": 3,
+        "vision": 3
+      }
+    },
+    "google/gemini-2.5-flash": {
+      "name": "Gemini 2.5 Flash",
+      "contextTokens": 1048576,
+      "maxOutput": 65536,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 0.3,
+        "output": 2.5,
+        "cachedInput": 0.075
+      },
+      "roles": {
+        "fast": 3,
+        "commands": 4,
+        "chat": 7
+      }
+    },
+    "xai/grok-4": {
+      "name": "Grok 4",
+      "contextTokens": 256000,
+      "maxOutput": 64000,
+      "vision": true,
+      "tools": true,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 3,
+        "output": 15,
+        "cachedInput": 0.75
+      },
+      "roles": {
+        "tasks": 5,
+        "chat": 8,
+        "deep": 4
+      }
+    },
+    "mistral/mistral-large-latest": {
+      "name": "Mistral Large",
+      "contextTokens": 128000,
+      "maxOutput": 8192,
+      "vision": false,
+      "tools": true,
+      "reasoning": false,
+      "pricePerMTok": {
+        "input": 2,
+        "output": 6,
+        "cachedInput": 2
+      },
+      "roles": {
+        "chat": 9,
+        "tasks": 7
+      }
+    },
+    "deepseek/deepseek-chat": {
+      "name": "DeepSeek V3",
+      "contextTokens": 128000,
+      "maxOutput": 8192,
+      "vision": false,
+      "tools": true,
+      "reasoning": false,
+      "pricePerMTok": {
+        "input": 0.27,
+        "output": 1.1,
+        "cachedInput": 0.07
+      },
+      "roles": {
+        "chat": 10,
+        "fast": 5,
+        "tasks": 8
+      }
+    },
+    "deepseek/deepseek-reasoner": {
+      "name": "DeepSeek R1",
+      "contextTokens": 128000,
+      "maxOutput": 32768,
+      "vision": false,
+      "tools": false,
+      "reasoning": true,
+      "pricePerMTok": {
+        "input": 0.55,
+        "output": 2.19,
+        "cachedInput": 0.14
+      },
+      "roles": {
+        "deep": 6
+      }
+    },
+    "groq/llama-3.3-70b-versatile": {
+      "name": "Llama 3.3 70B (Groq)",
+      "contextTokens": 131072,
+      "maxOutput": 32768,
+      "vision": false,
+      "tools": true,
+      "reasoning": false,
+      "pricePerMTok": {
+        "input": 0.59,
+        "output": 0.79,
+        "cachedInput": 0.59
+      },
+      "roles": {
+        "fast": 4,
+        "commands": 5
+      }
+    }
+  },
+  "cli": {}
+}
