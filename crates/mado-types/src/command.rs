@@ -1193,6 +1193,31 @@ pub enum Command {
     /// Stops the answer being written.
     #[serde(rename = "ai.chat.cancel", rename_all = "camelCase")]
     AiChatCancel { chat_id: String },
+    /// The page commands (spec 13 §6): `[{ id, name, output, builtin,
+    /// onDevice, forEditable }]`.
+    #[serde(rename = "ai.command.list")]
+    AiCommandList,
+    /// Runs a page command on `text` from `tabId`; answers `{ promptId }`
+    /// and shows the result card. `model` overrides the command's.
+    #[serde(rename = "ai.command.run", rename_all = "camelCase")]
+    AiCommandRun {
+        tab_id: TabId,
+        command_id: String,
+        text: String,
+        #[serde(default)]
+        editable: bool,
+        #[serde(default)]
+        model: Option<String>,
+    },
+    /// Answers a result card: `copy`, `replace`, `insert`, `retry`
+    /// (with `model` for "Retry with another model") or `close`.
+    #[serde(rename = "ai.command.respond", rename_all = "camelCase")]
+    AiCommandRespond {
+        prompt_id: crate::PromptId,
+        action: String,
+        #[serde(default)]
+        model: Option<String>,
+    },
     /// Sets a role's model (`auto` or `<connectionId>:<modelId>`), effort
     /// and fallback model (spec 13 §4).
     #[serde(rename = "ai.role.set", rename_all = "camelCase")]
@@ -1473,7 +1498,10 @@ impl Command {
             | Self::AiChatList
             | Self::AiChatGet { .. }
             | Self::AiChatDelete { .. }
-            | Self::AiChatCancel { .. } => CommandFamily::Ai,
+            | Self::AiChatCancel { .. }
+            | Self::AiCommandList
+            | Self::AiCommandRun { .. }
+            | Self::AiCommandRespond { .. } => CommandFamily::Ai,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1681,6 +1709,9 @@ impl Command {
             Self::AiChatGet { .. } => "ai.chat.get",
             Self::AiChatDelete { .. } => "ai.chat.delete",
             Self::AiChatCancel { .. } => "ai.chat.cancel",
+            Self::AiCommandList => "ai.command.list",
+            Self::AiCommandRun { .. } => "ai.command.run",
+            Self::AiCommandRespond { .. } => "ai.command.respond",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

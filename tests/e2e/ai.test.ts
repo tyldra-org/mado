@@ -52,6 +52,7 @@ run("ai", () => {
           const body = await req.text();
           bodies.push(body);
           if (body.includes("Write a title")) return sse("Fixture story");
+          if (body.includes("Improve the writing")) return sse("the cat sat on the mat.");
           return sse(
             body.includes("Paragraph 2 of the fixture article")
               ? "The story is by Ada Example."
@@ -135,4 +136,56 @@ run("ai", () => {
     expect(sent).toContain('untrusted source=\\"http://pages.mado.test\\"');
     expect(sent).not.toContain("<nav>");
   });
+
+  test("Improve writing replaces the selection in a textarea (M5-T05)", async () => {
+    await asUser({ type: "settings.set", key: "features.textCommands", value: true, token: null });
+    const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+      private: false,
+      urls: ["http://pages.mado.test/ai/textarea.html"],
+    });
+    const tabId = await until("the page", async () => {
+      const s = await state();
+      const t = s.windows[windowId]?.tabOrder[0];
+      return t && s.tabs[t]?.title === "Write" ? t : undefined;
+    });
+    // Select "teh cat sat on teh mat." and open the context menu on it.
+    const selected = await mado.control.call<string>("test.eval", {
+      tabId,
+      source: `const n = document.getElementById("note");
+        n.focus();
+        n.setSelectionRange(10, 33);
+        n.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+        return n.value.slice(10, 33);`,
+    });
+    expect(selected).toBe("teh cat sat on teh mat.");
+    // The test model, not Apple's on-device one this Mac may have.
+    const model = (await state()).ai.roles.commands?.resolved ?? null;
+    const { promptId } = await asUser<{ promptId: string }>({
+      type: "ai.command.run",
+      tabId,
+      commandId: "improveWriting",
+      text: "teh cat sat on teh mat.",
+      editable: true,
+      model,
+    });
+    await until("the answer", async () => {
+      const p = (
+        await mado.control.call<{
+          state: { prompts: Record<string, { done?: boolean; text?: string }> };
+        }>("state.get")
+      ).state.prompts[promptId];
+      return p?.done ? p : undefined;
+    });
+    await asUser({ type: "ai.command.respond", promptId, action: "replace", model: null });
+    const value = await until("the new text", async () => {
+      const v = await mado.control.call<string>("test.eval", {
+        tabId,
+        source: `return JSON.stringify([document.getElementById("note").value, document.getElementById("events").textContent]);`,
+      });
+      const [text, events] = JSON.parse(v) as [string, string];
+      return text.includes("the cat sat on the mat.") ? [text, events] : undefined;
+    });
+    expect(value[0]).toBe("Dear Sam, the cat sat on the mat. Best, Ada");
+    expect(value[1]).toBe("1");
+  }, 60_000);
 });

@@ -274,6 +274,8 @@ pub enum ContextAction {
     Reader,
     ViewSource,
     Inspect,
+    /// Runs a page command on the selection (spec 13 §6): a built-in's id.
+    AskAi(String),
 }
 
 /// Why a tab's web content process went away.

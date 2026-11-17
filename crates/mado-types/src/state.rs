@@ -429,6 +429,25 @@ pub enum PromptState {
     /// The fill menu at a form field (spec 11 §4.1), answered with
     /// `vault.fill` or dismissed with `prompt.dismiss`.
     FillMenu(FillMenuPrompt),
+    /// A page command's result card (spec 13 §6), answered with
+    /// `ai.command.respond`. `text` grows while `done` is false.
+    #[serde(rename_all = "camelCase")]
+    AiResult {
+        id: PromptId,
+        window_id: WindowId,
+        tab_id: TabId,
+        command_id: String,
+        /// An `en.json` key for built-ins, the user's name for custom ones.
+        name: String,
+        text: String,
+        done: bool,
+        error: Option<String>,
+        /// The selection came from an editable field: Replace and Insert
+        /// below are offered.
+        editable: bool,
+        /// `<connectionId>:<modelId>`, or `onDevice`.
+        model: Option<String>,
+    },
     /// "Create a passkey for <rpId>?" or "Sign in to <rpId> with a passkey"
     /// (spec 11 §8), answered with `vault.passkeyRespond`.
     #[serde(rename_all = "camelCase")]

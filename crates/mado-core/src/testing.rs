@@ -178,6 +178,7 @@ thread_local! {
         openrouter_site: "http://127.0.0.1:9".into(),
         openrouter_api: "http://127.0.0.1:9/api/v1".into(),
         local: Vec::new(),
+        skip_on_device: true,
         ..crate::AiConfig::in_memory()
     });
     /// Where leak checks go: nowhere by default.

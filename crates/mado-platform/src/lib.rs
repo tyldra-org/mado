@@ -15,6 +15,8 @@ pub mod login;
 pub mod native_messaging;
 pub mod notify;
 mod objc;
+#[cfg(target_os = "macos")]
+pub mod ondevice;
 pub mod paths;
 pub mod permissions;
 pub mod power;

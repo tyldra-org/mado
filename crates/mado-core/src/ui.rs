@@ -14,6 +14,8 @@ pub trait UiSink: Send {
     /// AI progress for every window, as the `mado://ai` event (spec 13
     /// §5): chat deltas, notes, answers and titles.
     fn ai(&mut self, _payload: &serde_json::Value) {}
+    /// Whether the page menu shows "Ask AI" (spec 13 §6).
+    fn ai_menu(&mut self, _on: bool) {}
     /// Shows a page's notification through macOS (spec 07 §1.1).
     fn show_notification(&mut self, _id: &str, _title: &str, _body: &str) {}
     /// Opens a macOS privacy pane (spec 07 §4).

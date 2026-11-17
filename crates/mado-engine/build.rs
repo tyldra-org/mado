@@ -7,10 +7,20 @@ use std::process::Command;
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    println!(
-        "cargo:rerun-if-changed={}",
-        root.join("inject/src").display()
-    );
+    // Every file, not only the folder: a folder changes only when files
+    // come or go, so an edited script would be left unbundled.
+    let mut dirs = vec![root.join("inject/src"), root.join("inject/vendor")];
+    while let Some(dir) = dirs.pop() {
+        println!("cargo:rerun-if-changed={}", dir.display());
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else {
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+        }
+    }
     println!(
         "cargo:rerun-if-changed={}",
         root.join("inject/build.ts").display()

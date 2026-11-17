@@ -707,6 +707,9 @@ pub(super) async fn answer(
     req: &mado_ai::ModelRequest,
     on_text: impl FnMut(&str),
 ) -> Result<mado_ai::Turn, ClientError> {
+    if at.provider == Provider::Apple {
+        return on_device(req, on_text).await;
+    }
     let (store, id) = (Arc::clone(secrets), at.connection.clone());
     let secret = tokio::task::spawn_blocking(move || store.get(&id).ok().flatten())
         .await
@@ -716,4 +719,49 @@ pub(super) async fn answer(
         ModelClient::new(at.provider, at.base.as_deref(), secret).map_err(ClientError::Failed)?;
     let mut stream = client.stream(req).await?;
     mado_ai::collect(&mut stream, on_text).await
+}
+
+/// Apple's on-device model (13 §2.1): the whole conversation as one prompt,
+/// one answer.
+async fn on_device(
+    req: &mado_ai::ModelRequest,
+    mut on_text: impl FnMut(&str),
+) -> Result<mado_ai::Turn, ClientError> {
+    let prompt = req
+        .messages
+        .iter()
+        .map(|m| {
+            let text: String = m
+                .parts
+                .iter()
+                .filter_map(|p| match p {
+                    mado_ai::Part::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            match m.role {
+                mado_ai::Role::User if req.messages.len() == 1 => text,
+                mado_ai::Role::User => format!("User: {text}"),
+                mado_ai::Role::Assistant => format!("Assistant: {text}"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let system = req.system.clone();
+    let text =
+        tokio::task::spawn_blocking(move || mado_platform::ondevice::respond(&system, &prompt))
+            .await
+            .map_err(|_| ClientError::Failed(mado_ai::connection::Failure::Invalid))?
+            .map_err(|_| ClientError::Failed(mado_ai::connection::Failure::Invalid))?;
+    on_text(&text);
+    Ok(mado_ai::Turn {
+        message: mado_ai::Message {
+            role: mado_ai::Role::Assistant,
+            parts: vec![mado_ai::Part::text(text.clone())],
+        },
+        text,
+        usage: (0, 0, 0),
+        stop: mado_ai::StopReason::EndTurn,
+        sources: Vec::new(),
+    })
 }
