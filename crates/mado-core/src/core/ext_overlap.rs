@@ -127,9 +127,9 @@ fn choices(category: &str, id: &ExtensionId) -> Vec<OverlapChoice> {
 fn effects(category: &str, choice: OverlapChoice, id: &ExtensionId) -> Vec<(&'static str, Value)> {
     match (category, choice) {
         ("passwordManager", OverlapChoice::MadoConnect) => {
-            // Mado fills through the manager's CLI; the extension stays on
-            // for its own window.
-            let mut v = vec![("passwords.whoFills", json!("mado"))];
+            // Mado fills from every source, the manager's CLI among them;
+            // the extension stays on for its own window.
+            let mut v = vec![("passwords.whoFills", json!("automatic"))];
             if let Some(key) = manager_setting(id) {
                 v.push((key, json!(true)));
             }
@@ -602,7 +602,7 @@ mod password_manager_tests {
         assert_eq!(
             effects("passwordManager", OverlapChoice::MadoConnect, &bitwarden),
             vec![
-                ("passwords.whoFills", json!("mado")),
+                ("passwords.whoFills", json!("automatic")),
                 ("passwords.bitwarden", json!(true))
             ]
         );

@@ -478,7 +478,6 @@ fn values_written_by_the_core_reach_the_database() {
     assert_eq!(value, "\"off\"");
 }
 
-/// Waits until `check` holds, polling the fake engine.
 /// A one-time token from `app.authenticate`, as after Touch ID.
 fn auth(core: &TestCore) -> Option<String> {
     core.handle.send(Input::Internal(Internal::Hook(
@@ -493,6 +492,7 @@ fn auth(core: &TestCore) -> Option<String> {
     .and_then(|v| v["token"].as_str().map(str::to_owned))
 }
 
+/// Waits until `check` holds, polling the fake engine.
 fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     // Generous: CI runners are slower than a developer's Mac, and the
     // workspace's heavy tests (the blocker's list conversion) share the CPU.
@@ -2745,6 +2745,10 @@ fn a_lookalike_domain_asks_did_you_mean() {
         .last()
         .map(|p| p.2.clone())
         .expect("a page");
+    // As above: Continue only after the error page has committed.
+    eventually("the second error page committed", || {
+        state_of(&core).tabs[&third].url == "https://paypal-login.com/"
+    });
     core.page.page_navigates(
         third,
         &action_link(&html, "continue").expect("continue"),
@@ -5030,29 +5034,33 @@ fn password_files_import_and_export() {
     );
 }
 
-/// Spec 11 §11: an agent's `sign_in` fills the tab's login and learns only
-/// `{ filled, username }`.
+/// Spec 11 §11, 13 §8: an agent's `sign_in` and `autofill` fill the tab's
+/// forms and learn only the username and the field classes filled and left;
+/// a card asks for Touch ID every time.
 #[test]
-fn an_agent_signs_in_without_seeing_the_password() {
+fn an_agent_fills_without_seeing_the_values() {
+    use crate::core::fill::AgentFill;
     use mado_engine::page::{
         DetectedField, DetectedForm, FieldClass, FieldRect, FormKind, Forms, PageMessage,
     };
+    use std::sync::atomic::Ordering;
+    let enclave = crate::testing::ENCLAVE.with_borrow(Clone::clone);
     let core = TestCore::start();
     startup(&core);
     let user = Origin::Settings;
     ask(&core, user, Command::VaultSetup).expect("set up");
-    ask(
-        &core,
-        user,
-        Command::VaultSave {
-            id: None,
-            item: serde_json::json!({ "kind": "login", "title": "", "urls": ["https://example.com/"],
-                "username": "me", "password": "hunter2", "passwordHistory": [] }),
-        },
-    )
-    .expect("saved");
+    for item in [
+        json!({ "kind": "login", "title": "", "urls": ["https://example.com/"],
+            "username": "me", "password": "hunter2", "passwordHistory": [] }),
+        json!({ "kind": "address", "name": "Ada Lovelace", "lines": ["1 Main St"],
+            "city": "London", "postalCode": "N1 9GU", "country": "GB" }),
+        json!({ "kind": "card", "nameOnCard": "Ada", "number": "4111111111111111",
+            "expMonth": 4, "expYear": 2031, "cvc": "123" }),
+    ] {
+        ask(&core, user, Command::VaultSave { id: None, item }).expect("saved");
+    }
     let w = *state_of(&core).windows.keys().next().expect("window");
-    let tab = new_tab(&core, w, "https://www.example.com/login");
+    let tab = new_tab(&core, w, "https://www.example.com/checkout");
     eventually("loaded", || {
         state_of(&core).tabs[&tab].url.contains("example.com")
     });
@@ -5068,34 +5076,93 @@ fn an_agent_signs_in_without_seeing_the_password() {
         visible: true,
         in_viewport: true,
     };
+    let form = |key: &str, kind: FormKind, fields: Vec<DetectedField>| DetectedForm {
+        form_key: key.into(),
+        kind,
+        action: None,
+        fields,
+    };
     core.page.send(mado_engine::EngineEvent::PageMessage {
         tab,
         world: mado_engine::tab::World::Mado,
         frame: frame(true, "https://www.example.com"),
         message: PageMessage::Forms(Forms {
-            forms: vec![DetectedForm {
-                form_key: "f1".into(),
-                kind: FormKind::Login,
-                action: None,
-                fields: vec![
-                    field("a1", FieldClass::Username),
-                    field("a2", FieldClass::Password),
-                ],
-            }],
+            forms: vec![
+                form(
+                    "f1",
+                    FormKind::Login,
+                    vec![
+                        field("a1", FieldClass::Username),
+                        field("a2", FieldClass::Password),
+                    ],
+                ),
+                form(
+                    "f2",
+                    FormKind::Address,
+                    vec![
+                        field("b1", FieldClass::Name),
+                        field("b2", FieldClass::AddressLine1),
+                        field("b3", FieldClass::City),
+                        field("b4", FieldClass::Tel),
+                    ],
+                ),
+                form(
+                    "f3",
+                    FormKind::Card,
+                    vec![
+                        field("c1", FieldClass::CcNumber),
+                        field("c2", FieldClass::CcExp),
+                    ],
+                ),
+            ],
         }),
     });
     std::thread::sleep(std::time::Duration::from_millis(100));
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    core.handle
-        .send(Input::Internal(Internal::AgentSignIn { tab, reply: tx }));
-    let answer = rx.blocking_recv().expect("answered").expect("signed in");
+    let agent = |what: AgentFill| {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        core.handle.send(Input::Internal(Internal::AgentFill {
+            tab,
+            what,
+            reply: tx,
+        }));
+        rx.blocking_recv().expect("answered")
+    };
+    let signed_in = agent(AgentFill::SignIn).expect("signed in");
     assert_eq!(
-        (answer["filled"].as_bool(), answer["username"].as_str()),
+        (
+            signed_in["filled"].as_bool(),
+            signed_in["username"].as_str()
+        ),
         (Some(true), Some("me"))
     );
     assert!(
-        !answer.to_string().contains("hunter2"),
+        !signed_in.to_string().contains("hunter2"),
         "the agent never sees the password"
+    );
+    let address = agent(AgentFill::Address).expect("filled");
+    assert_eq!(
+        (&address["fields"], &address["left"]),
+        (&json!(["name", "addressLine1", "city"]), &json!(["tel"]))
+    );
+    assert!(!address.to_string().contains("London"));
+    enclave.cancel.store(true, Ordering::SeqCst);
+    agent(AgentFill::Card).expect_err("Touch ID cancelled, no card");
+    enclave.cancel.store(false, Ordering::SeqCst);
+    let card = agent(AgentFill::Card).expect("filled");
+    assert_eq!(card["fields"], json!(["ccNumber", "ccExp"]));
+    assert!(!card.to_string().contains("4111"));
+    eventually("the card reaches the page script", || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .posted
+            .iter()
+            .any(|(t, m)| *t == tab && m.to_string().contains("4111111111111111"))
+    });
+    assert_eq!(
+        agent(AgentFill::Form).expect("filled")["fields"],
+        json!(["name", "addressLine1", "city"]),
+        "a contact form takes the address when there is no identity"
     );
 }
 
@@ -5596,6 +5663,119 @@ fn the_first_run_shows_once_and_offers_the_default_browser() {
     let private = TestCore::start();
     crate::testing::PRIVATE.set(false);
     assert!(!state_of(&private).first_run);
+}
+
+/// 09 §8, 11 §6.4: with `passwords.whoFills` on "extension", Mado shows no
+/// fill menu and its `webauthn` script leaves pages; "mado" brings both back.
+#[test]
+fn an_extension_that_fills_turns_off_mados_menu_and_passkeys() {
+    use mado_engine::page::{
+        DetectedField, DetectedForm, FieldClass, FieldFocused, FieldRect, FormKind, Forms,
+        PageMessage,
+    };
+    use mado_types::state::PromptState;
+    use std::sync::atomic::Ordering;
+    crate::testing::GESTURE.store(1_800_000_000_000, Ordering::SeqCst);
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    ask(
+        &core,
+        user,
+        Command::VaultSave {
+            id: None,
+            item: json!({ "kind": "login", "title": "", "urls": ["https://example.com/"],
+                "username": "me", "password": "hunter2", "passwordHistory": [] }),
+        },
+    )
+    .expect("saved");
+    let has_webauthn = || {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .page_scripts
+            .scripts
+            .iter()
+            .any(|s| s.name == "webauthn")
+    };
+    eventually("the webauthn script joins", has_webauthn);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/login");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let field = |key: &str, class: FieldClass| DetectedField {
+        field_key: key.into(),
+        class,
+        rect: FieldRect {
+            x: 10.0,
+            y: 20.0,
+            width: 200.0,
+            height: 30.0,
+        },
+        visible: true,
+        in_viewport: true,
+    };
+    let send = |message: PageMessage| {
+        core.page.send(mado_engine::EngineEvent::PageMessage {
+            tab,
+            world: mado_engine::tab::World::Mado,
+            frame: frame(true, "https://www.example.com"),
+            message,
+        });
+    };
+    send(PageMessage::Forms(Forms {
+        forms: vec![DetectedForm {
+            form_key: "f1".into(),
+            kind: FormKind::Login,
+            action: None,
+            fields: vec![
+                field("a1", FieldClass::Username),
+                field("a2", FieldClass::Password),
+            ],
+        }],
+    }));
+    let focus = || {
+        send(PageMessage::FieldFocused(FieldFocused {
+            form_key: "f1".into(),
+            field_key: "a1".into(),
+            rect: FieldRect {
+                x: 10.0,
+                y: 20.0,
+                width: 200.0,
+                height: 30.0,
+            },
+            password_rules: None,
+        }))
+    };
+    let menu = || {
+        state_of(&core)
+            .prompts
+            .values()
+            .any(|p| matches!(p, PromptState::FillMenu(_)))
+    };
+    let who = |value: &str| {
+        ask(
+            &core,
+            user,
+            Command::SettingsSet {
+                key: "passwords.whoFills".into(),
+                value: json!(value),
+                token: None,
+            },
+        )
+        .expect("set");
+    };
+    who("extension");
+    eventually("the webauthn script leaves", || !has_webauthn());
+    focus();
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(!menu(), "the extension fills, so Mado shows no menu");
+    who("mado");
+    eventually("the webauthn script is back", has_webauthn);
+    focus();
+    eventually("Mado's menu is back", menu);
 }
 
 /// 08 §1, §8: the dangerous-site warning, strict tracking prevention and
