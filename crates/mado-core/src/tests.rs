@@ -4714,6 +4714,83 @@ fn passkeys_are_created_and_sign_in() {
     });
 }
 
+/// Spec 11 §9: health flags reused, weak and leaked logins; leaks are
+/// checked only when asked, sending five hex characters per password.
+#[test]
+fn health_flags_reused_weak_and_leaked_logins() {
+    let files = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let (port, requests) = serve_files(std::sync::Arc::clone(&files));
+    let (prefix, suffix) = mado_autofill::health::hash("hunter2");
+    // The range API answers every prefix; only hunter2's lists a match.
+    for pw in [
+        "Tr0ub4dor&3-horse-staple",
+        "password1",
+        "kT7#vQ9!mZ2@pL5x-unique",
+    ] {
+        let (p, _) = mado_autofill::health::hash(pw);
+        files.lock().unwrap_or_else(|e| e.into_inner()).insert(
+            format!("/range/{p}"),
+            b"0000000000000000000000000000000000B:0".to_vec(),
+        );
+    }
+    files.lock().unwrap_or_else(|e| e.into_inner()).insert(
+        format!("/range/{prefix}"),
+        format!("{suffix}:17\r\n0000000000000000000000000000000000A:0").into_bytes(),
+    );
+    crate::testing::HIBP.with_borrow_mut(|h| *h = format!("http://127.0.0.1:{port}"));
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    let save = |site: &str, pw: &str| {
+        ask(
+            &core,
+            user,
+            Command::VaultSave {
+                id: None,
+                item: serde_json::json!({ "kind": "login", "title": "", "urls": [format!("https://{site}/")],
+                    "username": "me", "password": pw, "passwordHistory": [] }),
+            },
+        )
+        .expect("saved")["id"]
+            .as_str()
+            .expect("id")
+            .to_owned()
+    };
+    let shared_a = save("example.com", "Tr0ub4dor&3-horse-staple");
+    let shared_b = save("other.org", "Tr0ub4dor&3-horse-staple");
+    let weak = save("weak.example", "password1");
+    let leaked = save("leaky.example", "hunter2");
+    save("fine.example", "kT7#vQ9!mZ2@pL5x-unique");
+    let ids = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|i| i["id"].as_str().map(str::to_owned))
+            .collect()
+    };
+    let local = ask(&core, user, Command::VaultHealth { check_leaks: false }).expect("health");
+    assert!(local["leaked"].is_null(), "no leak check unless asked");
+    assert!(
+        requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty(),
+        "nothing sent"
+    );
+    let mut reused = ids(&local["reused"][0]);
+    reused.sort();
+    let mut want = vec![shared_a, shared_b];
+    want.sort();
+    assert_eq!(reused, want);
+    assert!(ids(&local["weak"]).contains(&weak));
+    let full = ask(&core, user, Command::VaultHealth { check_leaks: true }).expect("health");
+    assert_eq!(ids(&full["leaked"]), [leaked]);
+    let sent = requests.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    assert!(sent.iter().all(|r| !r.contains("hunter2")), "{sent:?}");
+    assert!(sent.iter().any(|r| r.contains(&prefix)), "{sent:?}");
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

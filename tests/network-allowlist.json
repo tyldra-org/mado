@@ -44,6 +44,10 @@
     {
       "pattern": "captive.apple.com",
       "why": "Captive portal probe after a failed load (05 §8)"
+    },
+    {
+      "pattern": "api.pwnedpasswords.com",
+      "why": "Password health's leak check, only when the person asks (11 §9)"
     }
   ]
 }

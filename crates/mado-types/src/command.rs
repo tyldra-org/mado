@@ -1061,6 +1061,14 @@ pub enum Command {
     /// `locked`, `ready` or `{ error }`.
     #[serde(rename = "vault.sources")]
     VaultSources,
+    /// Password health (spec 11 §9): `{ reused: [[item]], weak: [item],
+    /// leaked: [item] | null }`, items `{ id, title, username }`. Leaks are
+    /// checked only with `checkLeaks`.
+    #[serde(rename = "vault.health", rename_all = "camelCase")]
+    VaultHealth {
+        #[serde(default)]
+        check_leaks: bool,
+    },
     /// Answers a passkey sheet (spec 11 §8): `save` (create), `use` with
     /// `itemId` (get), `otherDevice` (the system's own WebAuthn), or
     /// `cancel`.
@@ -1339,6 +1347,7 @@ impl Command {
             | Self::VaultFill { .. }
             | Self::VaultSaveRespond { .. }
             | Self::VaultSources
+            | Self::VaultHealth { .. }
             | Self::VaultPasskeyRespond { .. }
             | Self::VaultScanQr { .. }
             | Self::VaultAttachTotp { .. }
@@ -1528,6 +1537,7 @@ impl Command {
             Self::VaultFill { .. } => "vault.fill",
             Self::VaultSaveRespond { .. } => "vault.saveRespond",
             Self::VaultSources => "vault.sources",
+            Self::VaultHealth { .. } => "vault.health",
             Self::VaultPasskeyRespond { .. } => "vault.passkeyRespond",
             Self::VaultScanQr { .. } => "vault.scanQr",
             Self::VaultAttachTotp { .. } => "vault.attachTotp",

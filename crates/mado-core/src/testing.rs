@@ -163,6 +163,8 @@ thread_local! {
         bw: None,
         runner: std::sync::Arc::new(mado_autofill::runner::System),
     });
+    /// Where leak checks go: nowhere by default.
+    pub static HIBP: std::cell::RefCell<String> = std::cell::RefCell::new("http://127.0.0.1:9".into());
     /// Extensions for the next `start`; the real store by default.
     pub static EXTENSIONS: std::cell::RefCell<Option<crate::ExtensionsConfig>> = const { std::cell::RefCell::new(None) };
     /// The blocker for the next `start`; off by default.
@@ -257,6 +259,7 @@ impl TestCore {
                         db: root.join("vault.sqlite"),
                         dir: root.to_owned(),
                         enclave: ENCLAVE.with_borrow(Clone::clone),
+                        hibp: HIBP.with_borrow(Clone::clone),
                     }
                 }),
                 // Camera denied at the OS, everything else answered yes.

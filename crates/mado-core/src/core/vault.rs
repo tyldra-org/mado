@@ -32,6 +32,8 @@ pub struct VaultConfig {
     /// The profile folder, which holds the wrapped key files.
     pub dir: PathBuf,
     pub enclave: Arc<dyn mado_vault::wrap::Enclave>,
+    /// Have I Been Pwned's range API, without `/range/` (spec 11 §9).
+    pub hibp: String,
 }
 
 impl VaultConfig {
@@ -41,6 +43,7 @@ impl VaultConfig {
             db,
             dir,
             enclave: Arc::new(mado_vault::wrap::SecureEnclave),
+            hibp: "https://api.pwnedpasswords.com".into(),
         }
     }
 }
@@ -437,6 +440,7 @@ impl Core {
             Command::VaultAttachTotp { scan_id, item_id } => {
                 self.attach_totp(origin, &scan_id, item_id, reply_to)
             }
+            Command::VaultHealth { check_leaks } => self.vault_health(check_leaks, reply_to),
             Command::VaultLock => {
                 self.lock_vault(rec);
                 Ok(Value::Null)

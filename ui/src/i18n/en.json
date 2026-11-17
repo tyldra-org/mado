@@ -1018,5 +1018,6 @@
   "passkey.save": "Save in Mado",
   "passkey.otherDevice": "Use another device",
   "passkey.otherDevice.note": "Mado can't use iCloud Keychain passkeys without Apple's browser entitlement, so another device may not work on every site.",
-  "passkey.cancel": "Cancel"
+  "passkey.cancel": "Cancel",
+  "error.vault.leakCheckFailed": "The leak check couldn't reach Have I Been Pwned."
 }
