@@ -141,6 +141,11 @@ pub fn set_page_scripts(scripts: PageScriptSet) {
     with(|a| a.set_page_scripts(scripts));
 }
 
+/// The cookies WebKit would send to `url` (spec 13 §8 `fetch`).
+pub fn cookies(url: String, done: Callback<Vec<(String, String)>>) {
+    view::cookies(url, done);
+}
+
 pub fn clear_data(req: ClearDataRequest, done: Callback<Result<(), EngineError>>) {
     match MainThreadMarker::new() {
         Some(_) => view::clear_data(req, done),

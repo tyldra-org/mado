@@ -1255,5 +1255,22 @@
   "error.control.unknownMethod": "Mado doesn't know that method.",
   "error.control.scope": "This app wasn't allowed to do that.",
   "error.control.notAllowed": "Only Mado's own windows can manage paired apps.",
-  "error.control.noClient": "That app isn't paired."
+  "error.control.noClient": "That app isn't paired.",
+  "error.ai.toolLater": "This tool isn't available yet.",
+  "error.ai.pageFailed": "The page didn't answer.",
+  "error.ai.inputFailed": "Mado couldn't click or type there.",
+  "error.ai.needsTab": "Say which tab.",
+  "error.ai.needsUrl": "Say which address.",
+  "error.ai.needsRef": "Say which element (a ref from snapshot).",
+  "error.ai.needsText": "Say what to type.",
+  "error.ai.needsKeys": "Say which keys.",
+  "error.ai.needsAction": "Say which action.",
+  "error.ai.needsCode": "Give the script to run.",
+  "error.ai.badUndo": "That undo token isn't valid.",
+  "error.ai.badFiles": "Files must be absolute paths to existing files.",
+  "error.ai.waitTimedOut": "It didn't appear in time.",
+  "error.ai.fetchFailed": "The address couldn't be fetched.",
+  "error.ai.notText": "That address isn't text.",
+  "error.ai.runFailed": "The script failed.",
+  "error.ai.tooManySteps": "The script made more than 200 tool calls."
 }

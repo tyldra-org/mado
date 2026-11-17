@@ -68,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Ask AI in the page menu, with Text commands turned on: improve, fix, shorten, soften or sharpen what you selected in a text field and put it back in place, or summarize, explain, translate and check code you selected on a page. On macOS 26 and later with Apple Intelligence, the common ones run on your Mac. Apple Intelligence can also be added as a connection.
 - Apps on this Mac can control Mado once you turn it on in Settings › Developers and allow each one on a card that says what it may do; you see and revoke them there. The mado command can be given full control, protected settings included, with a notice and an audit entry for every action; passwords and macOS's own prompts still need you.
 - The mado command line: open pages, list tabs, read and change settings, run any command by name or by group (mado tab, mado bookmark, mado password…), and see what Mado offers with mado commands and mado guide. It starts Mado hidden when it isn't running and asks you on the Mac the first time.
+- Agent tools: AI agents and paired apps can open pages, read them as an accessibility tree, click, type, choose, press keys, hover, scroll and drag with real input, wait for pages to settle, fetch with your cookies, upload and download files, run small scripts of tool calls, sign in without seeing passwords, and change Mado's own tabs and settings with undo. Sensitive pages are never read.
+
+### Fixed
+
+- File inputs on web pages open the file panel again.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

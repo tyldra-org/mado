@@ -674,6 +674,21 @@ pub fn ai_text() -> String {
     format!("// ai-text\n{AI_READER}\nreturn globalThis[Symbol.for(\"mado.ai\")].text();")
 }
 
+/// The body for `EvaluateInWorld` that calls `ai-reader`'s `call` with
+/// JSON `args` (spec 13 §8): `snapshot`, `locate`, `focus`, `choose`,
+/// `scroll` or `quiet`. Starts with `// ai-<call>`, which tests match.
+pub fn ai_call(call: &str, args: &serde_json::Value) -> String {
+    let args: Vec<String> = match args {
+        serde_json::Value::Array(a) => a.iter().map(serde_json::Value::to_string).collect(),
+        other => vec![other.to_string()],
+    };
+    format!(
+        "// ai-{call}\n{AI_READER}\nreturn globalThis[Symbol.for(\"mado.ai\")][{}]({});",
+        serde_json::Value::String(call.to_owned()),
+        args.join(", ")
+    )
+}
+
 const READER_PROBE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../app/resources/inject/reader-probe.js"

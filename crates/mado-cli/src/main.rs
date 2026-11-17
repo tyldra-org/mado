@@ -3,7 +3,8 @@
 //! Talks to a running Mado profile only through its control endpoint.
 //! Specification: `mado-docs/spec/14-control-cli-mcp.md`. Roadmap: M5-T07.
 
-mod catalog;
+use mado_types::catalog;
+
 mod guide;
 mod profiles;
 mod rpc;

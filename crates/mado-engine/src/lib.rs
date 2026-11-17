@@ -160,6 +160,12 @@ pub trait Engine {
     fn apply_window(&mut self, window: WindowId, cmd: WindowCommand);
     fn set_page_scripts(&mut self, scripts: PageScriptSet);
     fn clear_data(&mut self, req: ClearDataRequest, done: Callback<Result<(), EngineError>>);
+    /// The profile's cookies a request to `url` would carry, as
+    /// `(name, value)` (the agent's `fetch`, spec 13 §8).
+    fn cookies(&mut self, url: String, done: Callback<Vec<(String, String)>>) {
+        let _ = url;
+        done(Vec::new());
+    }
     /// Takes effect for new tab views.
     fn set_proxy(&mut self, proxy: ProxyConfig);
     /// Pauses, cancels or resumes a download (spec 12 §4.2).
@@ -332,6 +338,8 @@ pub enum EngineOp {
     ApplyWindow(WindowId, WindowCommand),
     SetPageScripts(PageScriptSet),
     ClearData(ClearDataRequest, Callback<Result<(), EngineError>>),
+    /// The cookies for a URL (spec 13 §8 `fetch`).
+    Cookies(String, Callback<Vec<(String, String)>>),
     SetProxy(ProxyConfig),
     Download(event::EngineDownloadId, event::DownloadCommand),
     AllowCertificate(String),
@@ -352,6 +360,7 @@ impl std::fmt::Debug for EngineOp {
             Self::ApplyWindow(window, cmd) => write!(f, "ApplyWindow({window}, {cmd:?})"),
             Self::SetPageScripts(s) => write!(f, "SetPageScripts({} scripts)", s.scripts.len()),
             Self::ClearData(req, _) => write!(f, "ClearData({:?})", req.kinds),
+            Self::Cookies(..) => f.write_str("Cookies"),
             Self::SetProxy(_) => f.write_str("SetProxy"),
             Self::AllowCertificate(_) => write!(f, "AllowCertificate"),
             Self::SetPrivacy(p) => write!(f, "SetPrivacy({p:?})"),
@@ -399,6 +408,7 @@ impl EngineOp {
             Self::ApplyWindow(window, cmd) => engine.apply_window(window, cmd),
             Self::SetPageScripts(scripts) => engine.set_page_scripts(scripts),
             Self::ClearData(req, done) => engine.clear_data(req, done),
+            Self::Cookies(url, done) => engine.cookies(url, done),
             Self::SetProxy(proxy) => engine.set_proxy(proxy),
             Self::Download(id, cmd) => engine.download(id, cmd),
             Self::AllowCertificate(host) => engine.allow_certificate(host),

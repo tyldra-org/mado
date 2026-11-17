@@ -96,6 +96,10 @@ impl Engine for TauriWindows {
         mado_engine_webkit::clear_data(req, done);
     }
 
+    fn cookies(&mut self, url: String, done: Callback<Vec<(String, String)>>) {
+        mado_engine_webkit::cookies(url, done);
+    }
+
     fn set_proxy(&mut self, proxy: ProxyConfig) {
         mado_engine_webkit::set_proxy(proxy);
     }

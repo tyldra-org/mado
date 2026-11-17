@@ -622,6 +622,65 @@ pub fn synthesize_click(
     y: f64,
     modifiers: mado_engine::tab::Modifiers,
 ) -> Result<(), EngineError> {
+    // A synthesized click stands for a person's, as test.click means.
+    crate::gesture::record();
+    mouse(tab, &[(x, y)], modifiers, true)
+}
+
+/// The open panel for a file input; blocks until the person answers.
+fn choose_files(
+    mtm: MainThreadMarker,
+    multiple: bool,
+    directories: bool,
+) -> Vec<std::path::PathBuf> {
+    let panel = objc2_app_kit::NSOpenPanel::openPanel(mtm);
+    panel.setAllowsMultipleSelection(multiple);
+    panel.setCanChooseDirectories(directories);
+    panel.setCanChooseFiles(true);
+    if panel.runModal() != objc2_app_kit::NSModalResponseOK {
+        return Vec::new();
+    }
+    panel
+        .URLs()
+        .iter()
+        .filter_map(|u| u.path().map(|p| std::path::PathBuf::from(p.to_string())))
+        .collect()
+}
+
+/// An agent's input (spec 13 §8): trusted AppKit events, never a person's
+/// gesture.
+fn agent_input(tab: TabId, input: mado_engine::tab::AgentInput) -> Result<(), EngineError> {
+    use mado_engine::tab::AgentInput as I;
+    match input {
+        I::Click { x, y, modifiers } => mouse(tab, &[(x, y)], modifiers, true),
+        I::Drag { from, to } => {
+            let steps: Vec<(f64, f64)> = (0..=8)
+                .map(|i| {
+                    let f = f64::from(i) / 8.0;
+                    (from.0 + (to.0 - from.0) * f, from.1 + (to.1 - from.1) * f)
+                })
+                .collect();
+            mouse(tab, &steps, mado_engine::tab::Modifiers::default(), true)
+        }
+        I::Hover { x, y } => mouse(
+            tab,
+            &[(x, y)],
+            mado_engine::tab::Modifiers::default(),
+            false,
+        ),
+        I::Key(k) => crate::keys::synthesize(tab, &k),
+        I::Text(text) => crate::keys::type_text(tab, &text),
+    }
+}
+
+/// Mouse events along `points`: with `press`, down at the first, dragged
+/// through the rest and up at the last; without, a move to the first.
+fn mouse(
+    tab: TabId,
+    points: &[(f64, f64)],
+    modifiers: mado_engine::tab::Modifiers,
+    press: bool,
+) -> Result<(), EngineError> {
     use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
     let view = crate::with(|a| a.tabs.get(&tab).map(|t| t.view.clone()))
         .flatten()
@@ -632,23 +691,30 @@ pub fn synthesize_click(
     let bounds = view.bounds();
     // SAFETY: a property read on the main thread.
     let insets = unsafe { view.obscuredContentInsets() };
-    // `y` is in the page's viewport, which starts below the obscured top
-    // inset (the title bar over a full-size content view).
-    let y = y + insets.top;
-    let local = objc2_foundation::NSPoint::new(
-        x + insets.left,
-        if view.isFlipped() {
-            y
-        } else {
-            bounds.size.height - y
-        },
-    );
-    let in_window = view.convertPoint_toView(local, None);
+    // Points are in the page's viewport, which starts below the obscured
+    // top inset (the title bar over a full-size content view).
+    let local_of = |(x, y): (f64, f64)| {
+        let y = y + insets.top;
+        objc2_foundation::NSPoint::new(
+            x + insets.left,
+            if view.isFlipped() {
+                y
+            } else {
+                bounds.size.height - y
+            },
+        )
+    };
+    let first = *points
+        .first()
+        .ok_or_else(|| EngineError::Failed("no point".into()))?;
+    let local = local_of(first);
     // SAFETY: walking a live view tree on the main thread.
     let superview = unsafe { view.superview() };
-    let target = view
+    // A hidden tab (in the background, or an agent's) answers no hit
+    // test; its web view takes the events itself.
+    let target: Retained<objc2_app_kit::NSView> = view
         .hitTest(view.convertPoint_toView(local, superview.as_deref()))
-        .ok_or_else(|| EngineError::Failed("nothing at that point".into()))?;
+        .unwrap_or_else(|| Retained::into_super(view.clone()));
     let mut flags = NSEventModifierFlags::empty();
     for (on, flag) in [
         (modifiers.command, NSEventModifierFlags::Command),
@@ -661,9 +727,18 @@ pub fn synthesize_click(
         }
     }
     let time = objc2_foundation::NSProcessInfo::processInfo().systemUptime();
-    // A synthesized click stands for a person's, as test.click means.
-    crate::gesture::record();
-    for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
+    let mut events: Vec<(NSEventType, (f64, f64))> = Vec::new();
+    if press {
+        events.push((NSEventType::LeftMouseDown, first));
+        for p in points.iter().skip(1) {
+            events.push((NSEventType::LeftMouseDragged, *p));
+        }
+        events.push((NSEventType::LeftMouseUp, *points.last().unwrap_or(&first)));
+    } else {
+        events.push((NSEventType::MouseMoved, first));
+    }
+    for (kind, point) in events {
+        let in_window = view.convertPoint_toView(local_of(point), None);
         let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
             kind,
             in_window,
@@ -673,13 +748,14 @@ pub fn synthesize_click(
             None,
             0,
             1,
-            1.0,
+            if press { 1.0 } else { 0.0 },
         )
         .ok_or_else(|| EngineError::Failed("AppKit refused the mouse event".into()))?;
-        if kind == NSEventType::LeftMouseDown {
-            target.mouseDown(&event);
-        } else {
-            target.mouseUp(&event);
+        match kind {
+            NSEventType::LeftMouseDown => target.mouseDown(&event),
+            NSEventType::LeftMouseDragged => target.mouseDragged(&event),
+            NSEventType::LeftMouseUp => target.mouseUp(&event),
+            _ => target.mouseMoved(&event),
         }
     }
     Ok(())
@@ -835,6 +911,12 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                     &serde_json::json!({ "type": "findClear" }),
                 );
             }
+            TabCommand::Input { input, reply } => reply(agent_input(tab, input)),
+            TabCommand::ChooseFiles {
+                multiple,
+                directories,
+                reply,
+            } => reply(choose_files(mtm, multiple, directories)),
             TabCommand::Print => {
                 let op = view.printOperationWithPrintInfo(&NSPrintInfo::sharedPrintInfo());
                 op.setShowsPrintPanel(true);
@@ -1110,6 +1192,51 @@ fn show_inspector(view: &WKWebView) -> Result<(), EngineError> {
         let () = msg_send![&*inspector, show];
     }
     Ok(())
+}
+
+/// The profile's cookies that match `url`: domain, path, `Secure` and
+/// expiry, as a request from a page of that site would carry.
+pub fn cookies(url: String, done: Callback<Vec<(String, String)>>) {
+    let Ok(u) = url::Url::parse(&url) else {
+        done(Vec::new());
+        return;
+    };
+    let Some(store) = crate::with(|a| a.store.clone()) else {
+        done(Vec::new());
+        return;
+    };
+    let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+    let (path, secure) = (u.path().to_owned(), u.scheme() == "https");
+    let done = std::cell::Cell::new(Some(done));
+    let block = RcBlock::new(
+        move |list: std::ptr::NonNull<
+            objc2_foundation::NSArray<objc2_foundation::NSHTTPCookie>,
+        >| {
+            let Some(done) = done.take() else { return };
+            // SAFETY: WebKit passes a valid array for the call's duration.
+            let list = unsafe { list.as_ref() };
+            let now = objc2_foundation::NSDate::now();
+            let out = list
+                .iter()
+                .filter(|c| {
+                    let domain = c.domain().to_string().to_ascii_lowercase();
+                    let d = domain.trim_start_matches('.');
+                    let domain_ok =
+                        host == d || (domain.starts_with('.') && host.ends_with(&format!(".{d}")));
+                    let path_ok = path.starts_with(&c.path().to_string());
+                    let secure_ok = secure || !c.isSecure();
+                    let alive = c
+                        .expiresDate()
+                        .is_none_or(|e| e.timeIntervalSinceDate(&now) > 0.0);
+                    domain_ok && path_ok && secure_ok && alive
+                })
+                .map(|c| (c.name().to_string(), c.value().to_string()))
+                .collect();
+            done(out);
+        },
+    );
+    // SAFETY: the profile's cookie store, on the main thread.
+    unsafe { store.httpCookieStore().getAllCookies(&block) };
 }
 
 pub fn clear_data(req: ClearDataRequest, done: Callback<Result<(), EngineError>>) {

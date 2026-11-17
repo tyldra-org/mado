@@ -275,6 +275,20 @@ pub enum TabCommand {
         reply: Callback<Result<SessionBlob, EngineError>>,
     },
     ShowDevTools,
+    /// The open panel for a page's file input, for the person (spec 07):
+    /// the chosen files, or none when cancelled.
+    ChooseFiles {
+        multiple: bool,
+        directories: bool,
+        reply: Callback<Vec<std::path::PathBuf>>,
+    },
+    /// Trusted input from an agent (spec 13 §8): AppKit events sent to the
+    /// tab view, as a person's would be, without counting as the person's
+    /// gesture.
+    Input {
+        input: AgentInput,
+        reply: Callback<Result<(), EngineError>>,
+    },
     /// The certificate of the page, or of the load that failed on it
     /// (spec 08 §3).
     ShowCertificate,
@@ -311,6 +325,8 @@ impl TabCommand {
             Self::Navigate { .. } => "navigate",
             Self::Reload { .. } => "reload",
             Self::Stop => "stop",
+            Self::Input { .. } => "input",
+            Self::ChooseFiles { .. } => "chooseFiles",
             Self::GoBack => "goBack",
             Self::GoForward => "goForward",
             Self::GoToIndex(_) => "goToIndex",
@@ -401,4 +417,28 @@ mod tests {
         );
         assert!(!PopupFeatures::default().wants_window());
     }
+}
+
+/// An agent's input (spec 13 §8). Points are CSS pixels from the page's top
+/// left.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentInput {
+    Click {
+        x: f64,
+        y: f64,
+        modifiers: Modifiers,
+    },
+    /// Pointer down at one point, moves, up at another.
+    Drag {
+        from: (f64, f64),
+        to: (f64, f64),
+    },
+    Hover {
+        x: f64,
+        y: f64,
+    },
+    /// A shortcut or key such as `Enter`, `Tab`, `Cmd+A`.
+    Key(String),
+    /// Text typed into the focused element, one character at a time.
+    Text(String),
 }

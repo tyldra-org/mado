@@ -115,6 +115,8 @@ pub struct FakeState {
     pub snapshot: Option<Image>,
     /// Messages posted to one frame: tab, frame handle, message.
     pub frame_posts: Vec<(TabId, u64, serde_json::Value)>,
+    /// Agent input, in order (spec 13 §8).
+    pub inputs: Vec<(TabId, mado_engine::tab::AgentInput)>,
     /// Answers to `EvaluateInWorld`: the first whose marker starts the
     /// source; null otherwise.
     pub eval_answers: Vec<(String, Value)>,
@@ -727,6 +729,15 @@ impl Engine for FakeEngine {
                 .map_err(|e| EngineError::Failed(e.to_string()));
                 drop(state);
                 reply(blob);
+            }
+            TabCommand::ChooseFiles { reply, .. } => {
+                drop(state);
+                reply(Vec::new());
+            }
+            TabCommand::Input { input, reply } => {
+                state.inputs.push((tab, input));
+                drop(state);
+                reply(Ok(()));
             }
             TabCommand::Stop
             | TabCommand::FindClear

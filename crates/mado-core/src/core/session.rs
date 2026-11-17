@@ -1584,6 +1584,23 @@ impl Core {
                 let decision = self.popup(tab, &request, now);
                 reply.send(decision);
             }
+            EngineEvent::FileChooser {
+                tab,
+                request,
+                reply,
+            } => match self.pending_uploads.remove(&tab) {
+                // An agent's `upload` (spec 13 §8).
+                Some(files) => reply.send(files),
+                // The person chooses in the open panel.
+                None => self.outbox.push(EngineOp::Apply(
+                    tab,
+                    TabCommand::ChooseFiles {
+                        multiple: request.multiple,
+                        directories: request.directories,
+                        reply: Box::new(move |files| reply.send(files)),
+                    },
+                )),
+            },
             other => tracing::trace!(event = other.name(), "engine event not handled here"),
         }
     }
