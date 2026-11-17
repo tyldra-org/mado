@@ -589,6 +589,9 @@ pub struct Core {
     bitwarden: std::sync::Arc<mado_autofill::bitwarden::Bitwarden>,
     /// AI connections' secrets and addresses (spec 13).
     ai: AiConfig,
+    /// Every connection's models, and each role's choice (13 §4).
+    ai_models: Vec<ai::ModelRow>,
+    ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Where each open fill menu's values would go.
     fill_targets: BTreeMap<PromptId, fill::FillTarget>,
     /// A username filled on a two-step sign-in, per tab (11 §4.2 step 5).
@@ -904,6 +907,8 @@ impl Core {
                 std::sync::Arc::clone(&config.password_clis.runner),
             )),
             ai: config.ai,
+            ai_models: Vec::new(),
+            ai_roles: BTreeMap::new(),
             fill_targets: BTreeMap::new(),
             two_step: BTreeMap::new(),
             otp_after: BTreeMap::new(),

@@ -951,6 +951,22 @@ pub struct AiState {
     /// Connections by ID (spec 13 §2); their secrets never appear here.
     #[patch(map)]
     pub connections: BTreeMap<String, AiConnection>,
+    /// Every role of spec 13 §4 with its choice and the model it uses now.
+    #[patch(map)]
+    pub roles: BTreeMap<String, AiRole>,
+}
+
+/// A role's choice and what it resolves to (spec 13 §4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, Patchable)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiRole {
+    /// `auto` or `<connectionId>:<modelId>`.
+    pub model: String,
+    pub effort: String,
+    pub fallback: Option<String>,
+    /// The model the role uses now; `None` without a ready connection.
+    pub resolved: Option<String>,
 }
 
 /// Where a connection stands (spec 13 §2.2).

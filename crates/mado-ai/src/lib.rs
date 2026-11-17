@@ -2,11 +2,15 @@
 //!
 //! Specification: `mado-docs/spec/13-ai.md` sections 2 to 4. Roadmap: M5.
 
+<<<<<<< HEAD
 mod anthropic;
 pub mod client;
 #[cfg(test)]
 mod client_tests;
 mod compat;
+=======
+pub mod catalog;
+>>>>>>> 54fecb1 (feat(ai): choose a model for each role)
 pub mod connection;
 mod gemini;
 pub mod http;

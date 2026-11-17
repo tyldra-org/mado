@@ -14,12 +14,13 @@ mod signature;
 mod store;
 
 pub use current::{
-    Derived, compat, filter_lists, hsts_preload, payment_frames, sensitive_hosts, serial,
+    Derived, compat, filter_lists, hsts_preload, models, payment_frames, sensitive_hosts, serial,
     top_domains, tracking_params,
 };
 pub use data::{
     Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload, ListKind,
-    MinSafeEngine, PaymentFrames, SensitiveHosts, Status, TopDomainList, TrackingParams,
+    MinSafeEngine, ModelInfo, Models, PaymentFrames, Price, ROLES, SensitiveHosts, Status,
+    TopDomainList, TrackingParams,
 };
 pub use signature::{PUBLIC_KEY, file_comment, signed_serial, trusted_comment, verify_file};
 pub use store::{Installed, Store};
@@ -28,7 +29,7 @@ pub use store::{Installed, Store};
 pub const URL: &str = "https://tyldra-org.github.io/mado/lists/";
 
 /// The lists Mado fetches. Payment frames arrive with passwords (M4), the
-/// action lexicon and the model catalogue with AI (M5).
+/// model catalogue with AI (M5), the action lexicon with M5-T11.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum List {
     /// Extension statuses and categories, blocked extensions and the
@@ -46,10 +47,12 @@ pub enum List {
     FilterLists,
     /// Payment providers whose frames may get card fills (11 §4.1).
     PaymentFrames,
+    /// Known AI models, their prices and role ranks (13 §4).
+    Models,
 }
 
 impl List {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Compat,
         Self::SensitiveHosts,
         Self::TopDomains,
@@ -57,6 +60,7 @@ impl List {
         Self::HstsPreload,
         Self::FilterLists,
         Self::PaymentFrames,
+        Self::Models,
     ];
 
     /// The file name, in `lists/` and where it is published.
@@ -69,6 +73,7 @@ impl List {
             Self::HstsPreload => "hsts-preload.txt.gz",
             Self::FilterLists => "filter-lists.json",
             Self::PaymentFrames => "payment-frames.json",
+            Self::Models => "models.json",
         }
     }
 
@@ -86,6 +91,7 @@ impl List {
             Self::HstsPreload => include_bytes!("../../../lists/hsts-preload.txt.gz"),
             Self::FilterLists => include_bytes!("../../../lists/filter-lists.json"),
             Self::PaymentFrames => include_bytes!("../../../lists/payment-frames.json"),
+            Self::Models => include_bytes!("../../../lists/models.json"),
         }
     }
 
