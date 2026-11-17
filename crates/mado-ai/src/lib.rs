@@ -2,6 +2,7 @@
 //!
 //! Specification: `mado-docs/spec/13-ai.md` sections 2 to 4. Roadmap: M5.
 
+pub mod catalog;
 pub mod connection;
 pub mod http;
 pub mod local;
