@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Mado Passwords checks password health: passwords reused across sites, weak ones, and, only when you ask, ones found in breaches (Have I Been Pwned, sending just five characters of each password's hash).
 - Mado Passwords imports password exports from Chrome, Edge, Brave, Safari, Firefox, 1Password and Bitwarden, merging logins that appear more than once, and exports to CSV or to an encrypted .madovault file; profile exports carry their passwords.
 - Settings › Passwords manages Mado Passwords: search, details, copying and showing passwords after Touch ID, editing, Recently deleted, codes, health, import and export; mado://passwords opens it, and the welcome sheet asks where you keep passwords.
+- When a 1Password or Bitwarden extension is added, Mado can connect that password manager instead, so its own fill menu fills from it; letting the extension fill turns off Mado's fill menu, save prompts and passkeys.
 
 <!--
 Section order: Added, Changed, Deprecated, Removed, Fixed, Security.

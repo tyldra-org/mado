@@ -27,6 +27,39 @@ use super::{Core, Reply};
 
 /// A fill needs a native click or key press this recently (11 §4.1 step 3).
 pub(super) const GESTURE_MS: i64 = 1_000;
+/// What an agent asks to fill (13 §8 `sign_in` and `autofill`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentFill {
+    /// `sign_in`: a login or username-only form, with a login.
+    SignIn,
+    /// `autofill { what: "form" }`: a contact form, with an identity or
+    /// an address.
+    Form,
+    /// `autofill { what: "address" }`: an address or contact form, with an
+    /// address.
+    Address,
+    /// `autofill { what: "card" }`: a card form, after Touch ID.
+    Card,
+}
+
+impl AgentFill {
+    fn takes(self, kind: FormKind) -> bool {
+        match self {
+            Self::SignIn => matches!(kind, FormKind::Login | FormKind::UsernameOnly),
+            Self::Form => matches!(kind, FormKind::Identity | FormKind::Address),
+            Self::Address => matches!(kind, FormKind::Address | FormKind::Identity),
+            Self::Card => kind == FormKind::Card,
+        }
+    }
+
+    fn items(self, kind: FormKind) -> Vec<ItemKind> {
+        match self {
+            Self::Address => vec![ItemKind::Address],
+            _ => kinds_for(kind),
+        }
+    }
+}
+
 /// Two-step sign-in and the code after a login wait this long (11 §4.2).
 const FOLLOW_UP_MS: i64 = 60_000;
 
@@ -211,17 +244,29 @@ impl Core {
     /// 1Password and Bitwarden join with M4-T06 and T07.
     pub(super) fn fill_sources(&self) -> Vec<Arc<dyn FillSource>> {
         let mut out: Vec<Arc<dyn FillSource>> = Vec::new();
-        if let (Some(cfg), Some(keys)) = (&self.vault, &self.vault_keys) {
+        // `passwords.whoFills` (11 §6.4): every ready source, one of them,
+        // or none when an extension fills.
+        let who = self.setting_str("passwords.whoFills");
+        let wants = |s: SourceId| who == "automatic" || who == s.key();
+        if wants(SourceId::Mado)
+            && let (Some(cfg), Some(keys)) = (&self.vault, &self.vault_keys)
+        {
             out.push(Arc::new(MadoSource {
                 db: cfg.db.clone(),
                 keys: Arc::clone(keys),
                 now: self.now(),
             }));
         }
-        if self.vault.is_some() && self.setting("passwords.onePassword") == true {
+        if wants(SourceId::OnePassword)
+            && self.vault.is_some()
+            && self.setting("passwords.onePassword") == true
+        {
             out.push(Arc::clone(&self.onepassword) as Arc<dyn FillSource>);
         }
-        if self.vault.is_some() && self.setting("passwords.bitwarden") == true {
+        if wants(SourceId::Bitwarden)
+            && self.vault.is_some()
+            && self.setting("passwords.bitwarden") == true
+        {
             out.push(Arc::clone(&self.bitwarden) as Arc<dyn FillSource>);
         }
         out
@@ -255,6 +300,9 @@ impl Core {
         f: FieldFocused,
         rec: &mut PatchRecorder,
     ) {
+        if self.setting_str("passwords.whoFills") == "extension" {
+            return;
+        }
         let managers = self.setting("passwords.onePassword") == true
             || self.setting("passwords.bitwarden") == true;
         if self.vault.is_none() || (self.state.vault.status == VaultStatus::None && !managers) {
@@ -559,7 +607,19 @@ impl Core {
         };
         let seconds = u64::try_from(now / 1000).unwrap_or(0);
         let values = values_for(&stored.item, &form.fields, seconds);
-        let filled = values.len();
+        // Field classes only, never values: what an agent may learn.
+        let class = |f: &DetectedField| serde_json::to_value(f.class).unwrap_or(Value::Null);
+        let (done, left): (Vec<&DetectedField>, Vec<&DetectedField>) = form
+            .fields
+            .iter()
+            .filter(|f| f.visible)
+            .partition(|f| values.contains_key(&f.field_key));
+        let fields: Vec<Value> = done.into_iter().map(class).collect();
+        let left: Vec<Value> = left.into_iter().map(class).collect();
+        let username = match &stored.item {
+            Item::Login(l) => Some(l.username.clone()),
+            _ => None,
+        };
         self.post_fill(&target, values);
         self.vault_fill_until = now
             + self
@@ -590,8 +650,109 @@ impl Core {
             _ => {}
         }
         if let Some(r) = reply {
-            let _ = r.send(Ok(json!({ "filled": filled })));
+            // Agents get this and nothing else of the item (11 §11).
+            let _ = r.send(Ok(json!({
+                "filled": !fields.is_empty(),
+                "username": username,
+                "fields": fields,
+                "left": left,
+            })));
         }
+    }
+
+    /// The agent tools `sign_in` and `autofill` (11 §11, used by M5): the
+    /// best item for the tab's first matching form goes from its source to
+    /// the page script, and the agent learns only what `fill_resolved`
+    /// answers. No gesture is needed (the agent's own approval rules apply
+    /// in M5); a card always asks for Touch ID.
+    pub(super) fn agent_fill(&mut self, tab: TabId, what: AgentFill, reply: Reply) {
+        let no_form = || MadoError::new(ErrorCode::NotFound, "error.vault.noForm");
+        let top_origin = self
+            .model
+            .tabs
+            .get(&tab)
+            .and_then(|t| url::Url::parse(&t.url).ok())
+            .map(|u| u.origin().ascii_serialization());
+        // The top frame, a frame of its own origin, or a payment provider's
+        // frame for a card (the fill menu's rule, 11 §4.1).
+        let found = self.page_forms.get(&tab).and_then(|frames| {
+            let mut order: Vec<_> = frames.iter().collect();
+            order.sort_by_key(|f| !f.main);
+            order.into_iter().find_map(|f| {
+                let allowed = f.main
+                    || top_origin.as_deref() == Some(f.origin.as_str())
+                    || (what == AgentFill::Card && mado_lists::payment_frames().allows(&f.origin));
+                if !allowed {
+                    return None;
+                }
+                f.forms
+                    .iter()
+                    .find(|x| what.takes(x.kind))
+                    .map(|x| (f.origin.clone(), f.main, f.handle, x.clone()))
+            })
+        });
+        let Some((origin, main, handle, form)) = found else {
+            let _ = reply.send(Err(no_form()));
+            return;
+        };
+        let page = if main {
+            Some(origin.clone())
+        } else {
+            top_origin
+        };
+        let Some(site) = page.as_deref().and_then(site) else {
+            let _ = reply.send(Err(no_form()));
+            return;
+        };
+        let sources = self.fill_sources();
+        if sources.is_empty() {
+            let _ = reply.send(Err(MadoError::new(ErrorCode::Locked, "error.vault.locked")));
+            return;
+        }
+        let preferred = self.preferred_source();
+        let kinds = what.items(form.kind);
+        let target = FillTarget {
+            tab,
+            frame: if main { 0 } else { handle },
+            origin,
+            main,
+            form_key: form.form_key.clone(),
+            kind: form.kind,
+            site: site.clone(),
+            rules: None,
+        };
+        let now = self.now();
+        let _ = self.vault_job(Some(reply), move |c, cfg| {
+            let found = sources
+                .iter()
+                .filter(|s| s.status() == SourceStatus::Ready)
+                .filter_map(|s| s.find(&site, &kinds).ok().map(|i| (s.id(), i)))
+                .collect();
+            let best = merge(found, preferred)
+                .into_iter()
+                .next()
+                .ok_or(VaultError::NotFound)?;
+            let source = sources
+                .iter()
+                .find(|s| s.id() == best.source)
+                .ok_or(VaultError::NotFound)?;
+            let item = source.reveal(&best.summary.id).map_err(source_error)?;
+            if matches!(item, Item::Card(_)) {
+                Vault::unlock(c, &*cfg.enclave, &cfg.dir, "fill a card")?;
+            }
+            Ok(VaultOutcome::Fill {
+                target: Box::new(target),
+                item: Box::new(Stored {
+                    id: format!("{}:{}", best.source.key(), best.summary.id),
+                    item,
+                    created_at: now,
+                    updated_at: now,
+                    last_used_at: Some(now),
+                    deleted_at: None,
+                }),
+                reply: None,
+            })
+        });
     }
 
     /// "Use a strong password": a new password honouring the field's

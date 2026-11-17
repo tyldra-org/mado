@@ -14,7 +14,7 @@ mod ext_manage;
 mod ext_overlap;
 mod ext_update;
 mod extensions;
-mod fill;
+pub(crate) mod fill;
 mod health;
 mod import;
 mod internal;
@@ -86,6 +86,14 @@ pub enum Internal {
     VaultDone {
         result: Box<Result<vault::VaultOutcome, mado_vault::VaultError>>,
         reply: Option<Reply>,
+    },
+    /// The agent tools `sign_in` and `autofill` (spec 11 §11): the values
+    /// go to the page and the answer names only what was filled. M5's agent
+    /// runtime sends it; until then only tests do.
+    AgentFill {
+        tab: TabId,
+        what: fill::AgentFill,
+        reply: Reply,
     },
     /// A snapshot for `vault.scanQr` (spec 11 §7).
     QrSnapshot {
@@ -1560,6 +1568,7 @@ impl Core {
             Internal::VaultDone { result, reply } => self.vault_done(*result, reply, rec),
             Internal::ScreenLocked => self.lock_vault(rec),
             Internal::QrSnapshot { url, image, reply } => self.qr_snapshot(url, image, reply),
+            Internal::AgentFill { tab, what, reply } => self.agent_fill(tab, what, reply),
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);

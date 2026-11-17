@@ -5,8 +5,8 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// The `bridge` bundle, with `__MADO_NONCE__` where the nonce goes.
@@ -231,7 +231,7 @@ pub struct FieldRect {
 }
 
 /// A field's class (spec 11 §3), as `inject/src/lib/formdetect.ts` names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldClass {
     Username,

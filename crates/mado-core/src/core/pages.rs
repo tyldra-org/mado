@@ -52,6 +52,8 @@ pub(super) struct FrameForms {
     /// The frame's origin, from the engine.
     pub origin: String,
     pub main: bool,
+    /// The frame's handle, for posting fills to a subframe.
+    pub handle: u64,
     pub forms: Vec<mado_engine::page::DetectedForm>,
 }
 
@@ -142,6 +144,7 @@ impl Core {
                     frames.push(FrameForms {
                         origin: frame.origin.clone(),
                         main: frame.is_main_frame,
+                        handle: frame.handle,
                         forms: f.forms,
                     });
                 }
