@@ -28,6 +28,7 @@ mod reader;
 mod save;
 mod session;
 mod site;
+pub(crate) mod totp;
 pub(crate) mod vault;
 mod visits;
 
@@ -82,6 +83,12 @@ pub enum Internal {
     VaultDone {
         result: Box<Result<vault::VaultOutcome, mado_vault::VaultError>>,
         reply: Option<Reply>,
+    },
+    /// A snapshot for `vault.scanQr` (spec 11 §7).
+    QrSnapshot {
+        url: String,
+        image: Option<Vec<u8>>,
+        reply: Reply,
     },
     /// The screen locked, the display slept or the session went to the
     /// login window: the vault locks (spec 11 §2.3).
@@ -575,6 +582,8 @@ pub struct Core {
     username_hints: BTreeMap<TabId, (String, String, i64)>,
     /// A generated password per tab: site, password, time.
     generated: BTreeMap<TabId, (String, String, i64)>,
+    /// Scanned codes waiting for `vault.attachTotp`.
+    scans: BTreeMap<String, totp::Scan>,
     /// What each open save prompt would store.
     save_prompts: BTreeMap<PromptId, save::PendingSave>,
     /// Blocked counts not yet written.
@@ -878,6 +887,7 @@ impl Core {
             username_hints: BTreeMap::new(),
             generated: BTreeMap::new(),
             save_prompts: BTreeMap::new(),
+            scans: BTreeMap::new(),
             blocker_stats: blocker_stats::StatsBuffer::default(),
             reloads: BTreeMap::new(),
             extension_installs: BTreeMap::new(),
@@ -1540,6 +1550,7 @@ impl Core {
             }
             Internal::VaultDone { result, reply } => self.vault_done(*result, reply, rec),
             Internal::ScreenLocked => self.lock_vault(rec),
+            Internal::QrSnapshot { url, image, reply } => self.qr_snapshot(url, image, reply),
             Internal::MemoryPressure { critical } => {
                 tracing::info!(critical, "memory pressure");
                 self.sleep_check(true);

@@ -480,8 +480,10 @@ fn values_written_by_the_core_reach_the_database() {
 
 /// Waits until `check` holds, polling the fake engine.
 fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    // Generous: CI runners are slower than a developer's Mac.
-    for _ in 0..3000 {
+    // Generous: CI runners are slower than a developer's Mac, and the
+    // workspace's heavy tests (the blocker's list conversion) share the CPU.
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while std::time::Instant::now() < end {
         if check() {
             return;
         }
@@ -2685,6 +2687,11 @@ fn a_lookalike_domain_asks_did_you_mean() {
         .map(|p| p.2.clone())
         .expect("a page");
     assert!(html.contains("Did you mean paypal.com?"));
+    // The error page commits under the spoof's URL; navigating before that
+    // lands could be overtaken by it on a busy machine.
+    eventually("the error page committed", || {
+        state_of(&core).tabs[&tab].url == spoof
+    });
     core.page
         .page_navigates(tab, &action_link(&html, "goTo").expect("go to"), true);
     eventually("paypal", || {
@@ -4323,6 +4330,124 @@ fn both_password_managers_fill_and_save_to_the_chosen_one() {
     eventually("Bitwarden is back", || {
         ask(&core, user, Command::VaultSources).expect("sources")[2]["status"] == "ready"
     });
+}
+
+/// Spec 11 §7: a QR code on the page adds a two-factor code to the
+/// site's login, which then fills itself on the code step.
+#[test]
+fn a_qr_code_on_the_page_adds_a_code() {
+    let png = |text: &str| {
+        let code = qrcode::QrCode::new(text.as_bytes()).expect("encodes");
+        let img = code
+            .render::<image::Luma<u8>>()
+            .min_dimensions(300, 300)
+            .build();
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png)
+            .expect("png");
+        out.into_inner()
+    };
+    let core = TestCore::start();
+    startup(&core);
+    let user = Origin::Settings;
+    ask(&core, user, Command::VaultSetup).expect("set up");
+    let login = ask(
+        &core,
+        user,
+        Command::VaultSave {
+            id: None,
+            item: serde_json::json!({ "kind": "login", "title": "", "urls": ["https://example.com/"],
+                "username": "me", "password": "pw", "passwordHistory": [] }),
+        },
+    )
+    .expect("saved")["id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let tab = new_tab(&core, w, "https://www.example.com/security");
+    eventually("loaded", || {
+        state_of(&core).tabs[&tab].url.contains("example.com")
+    });
+    let set_snapshot = |bytes: Vec<u8>| {
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .snapshot = Some(mado_engine::tab::Image {
+            width: 300,
+            height: 300,
+            format: mado_engine::tab::ImageFormat::Png,
+            bytes,
+        });
+    };
+    set_snapshot(png("https://example.com/not-a-code"));
+    assert_eq!(
+        ask(&core, user, Command::VaultScanQr { tab_id: tab })
+            .expect_err("no code")
+            .message_key,
+        "error.vault.noQr"
+    );
+    let uri = "otpauth://totp/Example:me?secret=JBSWY3DPEHPK3PXP&issuer=Example";
+    set_snapshot(png(uri));
+    let scan = ask(&core, user, Command::VaultScanQr { tab_id: tab }).expect("scanned");
+    assert_eq!(
+        (scan["issuer"].as_str(), scan["account"].as_str()),
+        (Some("Example"), Some("me"))
+    );
+    assert_eq!(scan["logins"][0]["id"], login.as_str());
+    assert!(scan.get("uri").is_none(), "the secret stays in the core");
+    assert_eq!(
+        ask(
+            &core,
+            Origin::Control {
+                client: ClientId::new()
+            },
+            Command::VaultAttachTotp {
+                scan_id: "x".into(),
+                item_id: None
+            }
+        )
+        .expect_err("protected")
+        .code,
+        ErrorCode::Protected
+    );
+    ask(
+        &core,
+        user,
+        Command::VaultAttachTotp {
+            scan_id: scan["scanId"].as_str().expect("scan").into(),
+            item_id: Some(login.clone()),
+        },
+    )
+    .expect("attached");
+    let got = ask(&core, user, Command::VaultGet { id: login }).expect("get");
+    assert_eq!(got["item"]["totp"], uri);
+    // A second scan without a login becomes a code of its own.
+    let scan = ask(&core, user, Command::VaultScanQr { tab_id: tab }).expect("scanned");
+    ask(
+        &core,
+        user,
+        Command::VaultAttachTotp {
+            scan_id: scan["scanId"].as_str().expect("scan").into(),
+            item_id: None,
+        },
+    )
+    .expect("added");
+    let all = ask(
+        &core,
+        user,
+        Command::VaultQuery {
+            deleted: false,
+            site: None,
+        },
+    )
+    .expect("all");
+    assert!(
+        all.as_array()
+            .expect("list")
+            .iter()
+            .any(|i| i["kind"] == "totp" && i["title"] == "Example")
+    );
 }
 
 /// Safari without Full Disk Access gets an error the sheet explains.

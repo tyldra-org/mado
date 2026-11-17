@@ -1061,6 +1061,19 @@ pub enum Command {
     /// `locked`, `ready` or `{ error }`.
     #[serde(rename = "vault.sources")]
     VaultSources,
+    /// Looks for an `otpauth` QR code in the tab's visible area (spec 11
+    /// §7): `{ scanId, issuer, account, site, logins: [{ id, title,
+    /// username }] }`, or `error.vault.noQr`.
+    #[serde(rename = "vault.scanQr", rename_all = "camelCase")]
+    VaultScanQr { tab_id: crate::TabId },
+    /// Adds a scanned code: to Mado login `itemId`, or as a code of its own
+    /// for the scanned site.
+    #[serde(rename = "vault.attachTotp", rename_all = "camelCase")]
+    VaultAttachTotp {
+        scan_id: String,
+        #[serde(default)]
+        item_id: Option<String>,
+    },
     /// Unlocks Bitwarden with its master password (spec 11 §6.3); the
     /// session is kept wrapped by Mado's vault.
     #[serde(rename = "vault.bitwardenUnlock", rename_all = "camelCase")]
@@ -1316,6 +1329,8 @@ impl Command {
             | Self::VaultFill { .. }
             | Self::VaultSaveRespond { .. }
             | Self::VaultSources
+            | Self::VaultScanQr { .. }
+            | Self::VaultAttachTotp { .. }
             | Self::VaultBitwardenUnlock { .. }
             | Self::VaultBitwardenLock => CommandFamily::Vault,
             Self::AppOpenSettings { .. } => CommandFamily::App,
@@ -1502,6 +1517,8 @@ impl Command {
             Self::VaultFill { .. } => "vault.fill",
             Self::VaultSaveRespond { .. } => "vault.saveRespond",
             Self::VaultSources => "vault.sources",
+            Self::VaultScanQr { .. } => "vault.scanQr",
+            Self::VaultAttachTotp { .. } => "vault.attachTotp",
             Self::VaultBitwardenUnlock { .. } => "vault.bitwardenUnlock",
             Self::VaultBitwardenLock => "vault.bitwardenLock",
             Self::AppOpenSettings { .. } => "app.openSettings",

@@ -54,6 +54,8 @@ pub enum VaultOutcome {
     Value(Value),
     /// A fill menu's items (spec 11 §4.1).
     MenuItems(mado_types::PromptId, Vec<mado_types::state::FillMenuItem>),
+    /// A QR scan's result (spec 11 §7).
+    Scanned(Option<Box<(super::totp::Scan, Value)>>),
     /// A login was saved (spec 11 §5); `changed` when anything was written.
     Saved {
         site: String,
@@ -275,6 +277,7 @@ impl Core {
                 Ok(secret.map_or(Value::Null, |s| json!({ "recoverySecret": s })))
             }
             Ok(VaultOutcome::Value(v)) => Ok(v),
+            Ok(VaultOutcome::Scanned(found)) => self.scanned(found),
             Ok(VaultOutcome::Saved { site, changed }) => {
                 if changed {
                     self.saved_notice(&site, rec);
@@ -399,6 +402,10 @@ impl Core {
                     let _ = std::fs::remove_file(cfg.dir.join(BITWARDEN_FILE));
                 }
                 Ok(Value::Null)
+            }
+            Command::VaultScanQr { tab_id } => self.scan_qr(origin, tab_id, reply_to),
+            Command::VaultAttachTotp { scan_id, item_id } => {
+                self.attach_totp(origin, &scan_id, item_id, reply_to)
             }
             Command::VaultLock => {
                 self.lock_vault(rec);
