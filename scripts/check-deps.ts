@@ -5,6 +5,7 @@
 export type Graph = Record<string, string[]>;
 
 const ADAPTERS = ["mado-engine-webkit"];
+const CLI_DEPS = ["mado-types", "mado-control", "mado-platform"];
 
 export function findViolations(graph: Graph): string[] {
   const violations: string[] = [];
@@ -23,8 +24,13 @@ export function findViolations(graph: Graph): string[] {
       if (crate === "mado-types-derive") {
         violations.push(`mado-types-derive -> ${dep}: the derive depends on no workspace crate`);
       }
-      if ((crate === "mado-cli" || crate === "mado-engine") && dep !== "mado-types") {
+      if (crate === "mado-engine" && dep !== "mado-types") {
         violations.push(`${crate} -> ${dep}: ${crate} may depend only on mado-types`);
+      }
+      // The CLI talks to the app only through the control socket: the
+      // protocol (mado-control), paths and the Keychain (mado-platform).
+      if (crate === "mado-cli" && !CLI_DEPS.includes(dep)) {
+        violations.push(`${crate} -> ${dep}: mado-cli may depend only on ${CLI_DEPS.join(", ")}`);
       }
     }
   }
