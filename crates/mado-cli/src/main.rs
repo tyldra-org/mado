@@ -6,6 +6,7 @@
 use mado_types::catalog;
 
 mod guide;
+mod mcp;
 mod profiles;
 mod rpc;
 mod tokens;
@@ -347,10 +348,11 @@ async fn run(o: Opts) -> i32 {
             )
             .await
         }
-        ["mcp"] => {
-            eprintln!("mado: the MCP server arrives with M5-T08.");
+        ["mcp"] if o.task.is_some() => {
+            eprintln!("mado: task tokens arrive with M5-T13.");
             FAILED
         }
+        ["mcp"] => mcp::serve(o.profile.clone()).await,
         ["setup" | "remove", ..] => {
             eprintln!("mado: setup arrives with M5-T16.");
             FAILED
