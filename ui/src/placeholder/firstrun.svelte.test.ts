@@ -30,6 +30,7 @@ describe("first run", () => {
             { id: "off", name: "Off", active: false },
           ],
           "app.defaultBrowser": { isDefault: false },
+          "vault.setup": { recoverySecret: "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY-Z" },
         };
         return { status: "ok", id: request.id, value: values[request.cmd.type] ?? null };
       },
@@ -47,6 +48,12 @@ describe("first run", () => {
     await fireEvent.click(screen.getByLabelText("DuckDuckGo"));
     await fireEvent.click(screen.getByLabelText("Show search suggestions as you type"));
     await fireEvent.click(next);
+    await settle();
+    // Passwords (M4-T12): Mado Passwords shows its recovery secret first.
+    await fireEvent.click(screen.getByRole("button", { name: "Keep passwords in Mado" }));
+    await settle();
+    expect(seen.some((c) => c.type === "vault.setup")).toBe(true);
+    await fireEvent.click(screen.getByRole("button", { name: "I've saved it" }));
     await settle();
     await fireEvent.click(screen.getByRole("button", { name: "Make Mado the default browser" }));
     await settle();

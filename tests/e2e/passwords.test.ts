@@ -69,6 +69,12 @@ run("passwords", () => {
   const state = async () => (await mado.control.call<{ state: State }>("state.get")).state;
   const asUser = (command: Record<string, unknown>) =>
     mado.control.call("test.asUser", { command });
+  // Secrets need Touch ID: a one-time token, as the page gets after it.
+  const token = async () => {
+    await mado.control.call("test.fakeAuthSuccess");
+    return ((await asUser({ type: "app.authenticate", reason: "test" })) as { token: string })
+      .token;
+  };
   const evalIn = async <T>(tabId: string, source: string): Promise<T> =>
     JSON.parse(await mado.control.call<string>("test.eval", { tabId, source })) as T;
 
@@ -185,7 +191,11 @@ run("passwords", () => {
       const list = (await asUser({ type: "vault.query", site: "pages.mado.test" })) as {
         id: string;
       }[];
-      const got = (await asUser({ type: "vault.get", id: list[0]?.id ?? "" })) as {
+      const got = (await asUser({
+        type: "vault.get",
+        id: list[0]?.id ?? "",
+        token: await token(),
+      })) as {
         item: { password: string };
       };
       return got.item.password === "a-new-password" ? got : undefined;
@@ -214,7 +224,7 @@ run("passwords", () => {
     const { id } = (await asUser({ type: "vault.attachTotp", scanId: scan.scanId })) as {
       id: string;
     };
-    const got = (await asUser({ type: "vault.get", id })) as {
+    const got = (await asUser({ type: "vault.get", id, token: await token() })) as {
       item: { kind: string; uri: string };
     };
     expect(got.item.kind).toBe("totp");

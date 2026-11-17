@@ -14,6 +14,7 @@
   import ExtensionsSection from "./ExtensionsSection.svelte";
   import BlockerSection from "./BlockerSection.svelte";
   import PasswordSources from "./PasswordSources.svelte";
+  import PasswordsSection from "./PasswordsSection.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -108,6 +109,7 @@
       <BlockerSection {store} />
     {/if}
     {#if hits === null && section === "passwords"}
+      <PasswordsSection {store} />
       <PasswordSources {store} />
     {/if}
     {#if hits === null && section === "extensions"}

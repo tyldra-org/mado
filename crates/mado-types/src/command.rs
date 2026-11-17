@@ -1037,9 +1037,15 @@ pub enum Command {
         #[serde(default)]
         site: Option<String>,
     },
-    /// One item with its secrets.
+    /// One item, `{ id, item, code, codeRemaining, … }`. Passwords, card
+    /// numbers and codes' secrets are blank unless `token` (from
+    /// `app.authenticate`) is valid; passkeys' private keys never leave.
     #[serde(rename = "vault.get", rename_all = "camelCase")]
-    VaultGet { id: String },
+    VaultGet {
+        id: String,
+        #[serde(default)]
+        token: Option<String>,
+    },
     /// Adds an item, or replaces item `id`. `item` is the item JSON of
     /// spec 11 §2.2.
     #[serde(rename = "vault.save", rename_all = "camelCase")]
@@ -1809,6 +1815,9 @@ pub enum InternalPage {
     Credits,
     /// Lists extensions; managing them is in Settings › Extensions.
     Extensions,
+    /// Points to Settings › Passwords, where the vault is managed (no
+    /// secret reaches a page in a tab).
+    Passwords,
 }
 
 impl InternalPage {
@@ -1824,6 +1833,7 @@ impl InternalPage {
             "about" => Self::About,
             "credits" => Self::Credits,
             "extensions" => Self::Extensions,
+            "passwords" => Self::Passwords,
             _ => return None,
         })
     }
@@ -1864,6 +1874,7 @@ impl InternalPage {
                     | C::ExtensionOpenOptions { .. }
                     | C::AppOpenSettings { .. }
             ),
+            Self::Passwords => matches!(cmd, C::StateGet | C::AppOpenSettings { .. }),
         }
     }
 }

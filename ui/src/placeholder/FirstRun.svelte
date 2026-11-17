@@ -9,7 +9,8 @@
   type Engine = { id: string; name: string; active: boolean };
   let { store }: { store: CoreStore } = $props();
 
-  let step = $state<"import" | "search" | "browser">("import");
+  let step = $state<"import" | "search" | "passwords" | "browser">("import");
+  let secret = $state("");
   let engines = $state<Engine[]>([]);
   let engine = $state("");
   let suggestions = $state(false);
@@ -25,9 +26,23 @@
     step = "search";
   }
 
-  async function toBrowser() {
+  async function toPasswords() {
     if (engine) await set("search.defaultEngine", engine);
     await set("search.suggestions", suggestions ? "on" : "off");
+    step = (store.state?.vault?.status ?? "none") === "none" ? "passwords" : "browser";
+    if (step === "browser") await toBrowser();
+  }
+
+  // The password manager step (11, roadmap M4-T12): Mado Passwords now, or
+  // 1Password and Bitwarden in Settings › Passwords.
+  async function useMado() {
+    const r = (await store.client.call({ type: "vault.setup" }).catch(() => null)) as {
+      recoverySecret: string;
+    } | null;
+    secret = r?.recoverySecret ?? "";
+  }
+
+  async function toBrowser() {
     const d = (await store.client.call({ type: "app.defaultBrowser" }).catch(() => null)) as {
       isDefault: boolean;
     } | null;
@@ -55,7 +70,25 @@
     {/each}
     <label><input type="checkbox" bind:checked={suggestions} /> {t("firstRun.suggestions")}</label>
     <p class="help">{t("firstRun.suggestionsHelp")}</p>
-    <button type="button" disabled={!engine} onclick={toBrowser}>{t("firstRun.next")}</button>
+    <button type="button" disabled={!engine} onclick={toPasswords}>{t("firstRun.next")}</button>
+  {:else if step === "passwords"}
+    <h2>{t("firstRun.passwords")}</h2>
+    {#if secret}
+      <p>{t("passwords.secret")}</p>
+      <pre>{secret}</pre>
+      <button type="button" onclick={toBrowser}>{t("passwords.secret.saved")}</button>
+    {:else}
+      <button type="button" onclick={useMado}>{t("firstRun.passwords.mado")}</button>
+      <button
+        type="button"
+        onclick={() =>
+          store.client
+            .call({ type: "app.openSettings", section: "passwords" })
+            .catch(() => {})
+            .then(toBrowser)}>{t("firstRun.passwords.other")}</button
+      >
+      <button type="button" onclick={toBrowser}>{t("firstRun.notNow")}</button>
+    {/if}
   {:else}
     <h2>{t("firstRun.browser")}</h2>
     {#if isDefault}
