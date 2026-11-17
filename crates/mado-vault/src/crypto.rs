@@ -80,6 +80,20 @@ impl Keys {
         open(&self.ek, nonce, data, &aad(id, kind))
     }
 
+    /// Encrypts a secret the vault keeps outside `items` (the Bitwarden
+    /// session): nonce then ciphertext, bound to `label`.
+    pub fn seal_secret(&self, label: &str, secret: &[u8]) -> Vec<u8> {
+        let (nonce, data) = seal(&self.ek, secret, label.as_bytes());
+        [nonce, data].concat()
+    }
+
+    pub fn open_secret(&self, label: &str, blob: &[u8]) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+        if blob.len() < 12 {
+            return Err(VaultError::BadKey);
+        }
+        open(&self.ek, &blob[..12], &blob[12..], label.as_bytes())
+    }
+
     /// `HMAC-SHA256(IK, text)`: an index tag that names a site without
     /// storing it.
     pub fn tag(&self, text: &str) -> Vec<u8> {

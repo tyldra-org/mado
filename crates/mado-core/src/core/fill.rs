@@ -221,6 +221,9 @@ impl Core {
         if self.vault.is_some() && self.setting("passwords.onePassword") == true {
             out.push(Arc::clone(&self.onepassword) as Arc<dyn FillSource>);
         }
+        if self.vault.is_some() && self.setting("passwords.bitwarden") == true {
+            out.push(Arc::clone(&self.bitwarden) as Arc<dyn FillSource>);
+        }
         out
     }
 

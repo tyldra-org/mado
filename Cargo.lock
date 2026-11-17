@@ -2697,6 +2697,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -2774,6 +2775,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

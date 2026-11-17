@@ -131,7 +131,8 @@ fn ecdh(secret: &SecretKey, peer: &PublicKey) -> Zeroizing<[u8; 32]> {
     out
 }
 
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// Writes a file only this user may read, replacing it in one rename.
+pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::OpenOptionsExt as _;
     let tmp = path.with_extension("tmp");
