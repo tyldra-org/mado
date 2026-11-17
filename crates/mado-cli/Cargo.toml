@@ -20,7 +20,7 @@ mado-control = { version = "0.0.0", path = "../mado-control" }
 mado-platform = { version = "0.0.0", path = "../mado-platform" }
 mado-types = { version = "0.0.0", path = "../mado-types" }
 serde_json = "1.0.154"
-tokio = { version = "1.54.1", features = ["rt", "net", "io-util", "time", "macros", "signal", "sync"] }
+tokio = { version = "1.54.1", features = ["rt", "net", "io-util", "time", "macros", "signal", "sync", "io-std"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
