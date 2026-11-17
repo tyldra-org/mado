@@ -1,0 +1,4 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Let me look."}]}}],"usageMetadata":{"promptTokenCount":120}}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"page_title","args":{"tab":"t1"}},"thoughtSignature":"sig-g"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":30,"thoughtsTokenCount":12,"cachedContentTokenCount":20}}
+
