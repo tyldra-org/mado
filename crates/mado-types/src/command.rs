@@ -1061,6 +1061,16 @@ pub enum Command {
     /// `locked`, `ready` or `{ error }`.
     #[serde(rename = "vault.sources")]
     VaultSources,
+    /// Answers a passkey sheet (spec 11 §8): `save` (create), `use` with
+    /// `itemId` (get), `otherDevice` (the system's own WebAuthn), or
+    /// `cancel`.
+    #[serde(rename = "vault.passkeyRespond", rename_all = "camelCase")]
+    VaultPasskeyRespond {
+        prompt_id: crate::PromptId,
+        action: PasskeyAction,
+        #[serde(default)]
+        item_id: Option<String>,
+    },
     /// Looks for an `otpauth` QR code in the tab's visible area (spec 11
     /// §7): `{ scanId, issuer, account, site, logins: [{ id, title,
     /// username }] }`, or `error.vault.noQr`.
@@ -1329,6 +1339,7 @@ impl Command {
             | Self::VaultFill { .. }
             | Self::VaultSaveRespond { .. }
             | Self::VaultSources
+            | Self::VaultPasskeyRespond { .. }
             | Self::VaultScanQr { .. }
             | Self::VaultAttachTotp { .. }
             | Self::VaultBitwardenUnlock { .. }
@@ -1517,6 +1528,7 @@ impl Command {
             Self::VaultFill { .. } => "vault.fill",
             Self::VaultSaveRespond { .. } => "vault.saveRespond",
             Self::VaultSources => "vault.sources",
+            Self::VaultPasskeyRespond { .. } => "vault.passkeyRespond",
             Self::VaultScanQr { .. } => "vault.scanQr",
             Self::VaultAttachTotp { .. } => "vault.attachTotp",
             Self::VaultBitwardenUnlock { .. } => "vault.bitwardenUnlock",
@@ -1576,6 +1588,17 @@ impl Command {
                 | Self::SitePrivacyReport { .. }
         )
     }
+}
+
+/// How a passkey sheet was answered (spec 11 §8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum PasskeyAction {
+    Save,
+    Use,
+    OtherDevice,
+    Cancel,
 }
 
 /// How the save prompt was answered (spec 11 §5).

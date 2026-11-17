@@ -370,10 +370,15 @@ impl Core {
         );
         self.state.tx(rec).set_prompts(prompts);
         let sources = self.fill_sources();
+        // A conditional passkey request on the page (11 §8.3 step 4).
+        let passkeys = matches!(target.kind, FormKind::Login | FormKind::UsernameOnly)
+            .then(|| self.conditional_for(target.tab))
+            .flatten()
+            .zip(self.vault_keys.clone());
         if !sources.is_empty() {
             let (kind, site) = (target.kind, target.site.clone());
             let preferred = self.preferred_source();
-            let _ = self.vault_job(None, move |_, _| {
+            let _ = self.vault_job(None, move |c, _| {
                 let kinds = kinds_for(kind);
                 let found = sources
                     .iter()
@@ -386,7 +391,14 @@ impl Core {
                         }
                     })
                     .collect();
-                let mut items: Vec<FillMenuItem> = merge(found, preferred).iter().map(menu_item).collect();
+                let mut items: Vec<FillMenuItem> = match passkeys {
+                    Some(((rp, allow), keys)) => super::webauthn::passkeys_for(c, &keys, &rp, &allow)?
+                        .iter()
+                        .map(|(i, p)| super::webauthn::menu_item(i, p))
+                        .collect(),
+                    None => Vec::new(),
+                };
+                items.extend(merge(found, preferred).iter().map(menu_item));
                 if let Some(first) = first
                     && let Some(pos) = items.iter().position(|i| i.item_ref == first)
                 {
@@ -482,6 +494,10 @@ impl Core {
             .ok_or_else(|| MadoError::new(ErrorCode::NotFound, "error.vault.noForm"))?;
         if item_ref == GENERATE {
             return self.fill_generated(target, reply_to, rec);
+        }
+        if let Some(id) = item_ref.strip_prefix("passkey:") {
+            self.close_fill_menus(tab, rec);
+            return self.fill_passkey(tab, id.to_owned(), reply_to);
         }
         let (source_key, id) = item_ref
             .split_once(':')

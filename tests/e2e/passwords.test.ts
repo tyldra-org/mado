@@ -33,7 +33,7 @@ type Menu = {
 };
 type State = {
   prompts: Record<string, Menu>;
-  tabs: Record<string, { title: string }>;
+  tabs: Record<string, { title: string; url: string }>;
   windows: Record<string, { tabOrder: string[] }>;
 };
 
@@ -220,4 +220,114 @@ run("passwords", () => {
     expect(got.item.kind).toBe("totp");
     expect(got.item.uri).toContain("secret=JBSWY3DPEHPK3PXP");
   }, 60_000);
+
+  test("a passkey made in Mado signs a sign-in the page verifies (11 §12 check 3)", async () => {
+    await asUser({ type: "vault.setup" }).catch(() => {});
+    const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+      private: false,
+      urls: ["https://pages.mado.test/passwords/passkey.html"],
+    });
+    const tabId = await until(
+      "the tab",
+      async () => (await state()).windows[windowId]?.tabOrder[0],
+    );
+    // The fixture's certificate is not trusted on a developer's Mac: Proceed.
+    await until("the certificate page or the fixture", async () => {
+      const t = (await state()).tabs[tabId]?.title;
+      if (t === "Passkeys") return true;
+      if (t && t !== "pending") {
+        await mado.control.call("test.errorAction", { tabId, action: "proceed" }).catch(() => {});
+      }
+      return undefined;
+    });
+    await sleep(500);
+    const at = (id: string) =>
+      evalIn<{ x: number; y: number }>(
+        tabId,
+        `const r = document.getElementById("${id}").getBoundingClientRect();
+         return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 });`,
+      );
+    const data = (key: string) =>
+      evalIn<string | null>(tabId, `return JSON.stringify(document.body.dataset.${key} ?? null);`);
+    type Sheet = { type: string; id: string; mode: string; accounts: { itemId: string }[] };
+    const sheet = (mode: string) =>
+      until(`the ${mode} sheet`, async () =>
+        Object.values((await state()).prompts as unknown as Record<string, Sheet>).find(
+          (p) =>
+            p.type === "passkey" && p.mode === mode && (mode === "create" || p.accounts.length > 0),
+        ),
+      );
+    const create = await at("create");
+    await mado.control.call("test.click", { tabId, ...create });
+    const made = await sheet("create");
+    await asUser({ type: "vault.passkeyRespond", promptId: made.id, action: "save" });
+    expect(await until("created", async () => (await data("created")) ?? undefined)).toBe(
+      "public-key:webauthn.create:true",
+    );
+    const get = await at("get");
+    await mado.control.call("test.click", { tabId, ...get });
+    const use = await sheet("get");
+    await asUser({
+      type: "vault.passkeyRespond",
+      promptId: use.id,
+      action: "use",
+      itemId: use.accounts[0]?.itemId,
+    });
+    expect(await until("verified", async () => (await data("verified")) ?? undefined)).toBe("yes");
+  }, 60_000);
+
+  // The live site, so only with MADO_E2E_NETWORK=1.
+  (process.env.MADO_E2E_NETWORK === "1" ? test : test.skip)(
+    "webauthn.io registers and signs in with a Mado passkey (11 §12 check 3)",
+    async () => {
+      await asUser({ type: "vault.setup" }).catch(() => {});
+      await mado.control.call("settings.set", { key: "proxy.mode", value: "direct" });
+      const { windowId } = await mado.control.call<{ windowId: string }>("window.new", {
+        private: false,
+        urls: ["https://webauthn.io/"],
+      });
+      const tabId = await until("webauthn.io", async () => {
+        const s = await state();
+        const t = s.windows[windowId]?.tabOrder[0];
+        return t && s.tabs[t]?.title === "WebAuthn.io" ? t : undefined;
+      });
+      await sleep(1500);
+      const name = `mado${Date.now()}`;
+      await evalIn(
+        tabId,
+        `const i = document.querySelector("#input-email");
+         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(i, "${name}");
+         i.dispatchEvent(new Event("input", { bubbles: true }));
+         document.querySelector("#register-button").click();
+         return "1";`,
+      );
+      type Sheet = { type: string; id: string; mode: string; accounts: { itemId: string }[] };
+      const sheet = (mode: string) =>
+        until(`the ${mode} sheet`, async () =>
+          Object.values((await state()).prompts as unknown as Record<string, Sheet>).find(
+            (p) =>
+              p.type === "passkey" &&
+              p.mode === mode &&
+              (mode === "create" || p.accounts.length > 0),
+          ),
+        );
+      const made = await sheet("create");
+      await asUser({ type: "vault.passkeyRespond", promptId: made.id, action: "save" });
+      await sleep(3000);
+      await evalIn(tabId, `document.querySelector("#login-button").click(); return "1";`);
+      const use = await sheet("get");
+      await asUser({
+        type: "vault.passkeyRespond",
+        promptId: use.id,
+        action: "use",
+        itemId: use.accounts[0]?.itemId,
+      });
+      const url = await until("logged in", async () => {
+        const u = (await state()).tabs[tabId]?.url;
+        return u?.includes("/profile") ? u : undefined;
+      });
+      expect(url).toBe("https://webauthn.io/profile");
+    },
+    90_000,
+  );
 });

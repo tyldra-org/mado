@@ -5,6 +5,7 @@ import type { ExtensionId } from "./ExtensionId";
 import type { ExtensionInstallPrompt } from "./ExtensionInstallPrompt";
 import type { FillMenuPrompt } from "./FillMenuPrompt";
 import type { OverlapChoice } from "./OverlapChoice";
+import type { PasskeyAccount } from "./PasskeyAccount";
 import type { PromptId } from "./PromptId";
 import type { SafariReason } from "./SafariReason";
 import type { TabId } from "./TabId";
@@ -18,7 +19,23 @@ import type { WindowId } from "./WindowId";
  * prompts in 11, approvals in 13, pairing in 14, takeover and restore in
  * 04.
  */
-export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "savePassword", id: PromptId, windowId: WindowId, tabId: TabId, site: string, username: string, update: boolean, } | { "type": "unsavedText", id: PromptId, 
+export type PromptState = { "type": "fillMenu" } & FillMenuPrompt | { "type": "passkey", id: PromptId, windowId: WindowId, tabId: TabId, 
+/**
+ * `create` or `get`.
+ */
+mode: string, rpId: string, 
+/**
+ * The account being created.
+ */
+userName: string, 
+/**
+ * The passkeys to choose from (`get`).
+ */
+accounts: Array<PasskeyAccount>, 
+/**
+ * The vault is locked: unlock first.
+ */
+locked: boolean, } | { "type": "savePassword", id: PromptId, windowId: WindowId, tabId: TabId, site: string, username: string, update: boolean, } | { "type": "unsavedText", id: PromptId, 
 /**
  * The window being closed; `None` when quitting.
  */
