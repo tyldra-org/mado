@@ -93,7 +93,10 @@ impl Class {
 
     /// "Allow for this task" is not offered for payments and deletes (9.3).
     pub fn may_allow_for_task(self) -> bool {
-        !matches!(self, Self::Pay | Self::Transfer | Self::Delete | Self::Skill)
+        !matches!(
+            self,
+            Self::Pay | Self::Transfer | Self::Delete | Self::Skill
+        )
     }
 }
 
