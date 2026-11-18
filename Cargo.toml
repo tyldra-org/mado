@@ -56,6 +56,14 @@ opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
 
+# The blocker's fixture test matches URLs against every converted EasyList
+# rule as a regex; unoptimized, that took most of a minute in CI.
+[profile.dev.package.regex-automata]
+opt-level = 3
+
+[profile.dev.package.regex-syntax]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
