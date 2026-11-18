@@ -1037,8 +1037,28 @@ fn test_access(
 /// Paired clients' `hello` and calls go to the core, which decides
 /// (spec 14 §2).
 fn control_access(core: &CoreHandle) -> mado_control::ControlAccess {
-    let (c1, c2) = (core.clone(), core.clone());
+    let (c1, c2, c3) = (core.clone(), core.clone(), core.clone());
     mado_control::ControlAccess {
+        follow: Arc::new(move |_client, params| {
+            let core = c3.clone();
+            Box::pin(async move {
+                let task: mado_types::TaskId = serde_json::from_value(params["taskId"].clone())
+                    .map_err(|_| {
+                        mado_types::MadoError::new(
+                            mado_types::ErrorCode::InvalidInput,
+                            "error.control.badCommand",
+                        )
+                    })?;
+                let (reply, rx) = tokio::sync::oneshot::channel();
+                core.send(Input::Internal(Internal::TaskFollow { task, reply }));
+                rx.await.unwrap_or_else(|_| {
+                    Err(mado_types::MadoError::new(
+                        mado_types::ErrorCode::Internal,
+                        "error.coreStopped",
+                    ))
+                })
+            })
+        }),
         hello: Arc::new(move |client, token| {
             let core = c1.clone();
             Box::pin(async move {

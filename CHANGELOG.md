@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - mado mcp: AI apps that speak the Model Context Protocol, such as Claude Code, can use Mado's agent tools once you allow them in Mado.
 - Agents work in their own tabs, grouped under the task and drawn off to the side so your window keeps its tab and focus; showing one of their tabs takes it over until you hand it back. Agents leave your own tabs alone unless Settings › AI allows them.
 - Agents ask before paying, sending, deleting, signing in, uploading, changing Mado or leaving the sites you named, showing what they want to do and the total for a payment; a no holds for the rest of the task. Text read on one site can't be typed into another without asking, every step goes in the task's audit, and a spending limit pauses a task.
+- Tasks: ask Mado's agent to do something, from the tasks panel or with mado "…". It works step by step in its own tabs, asks you when it needs to, takes steering and follow-ups, can hand parts to helpers, and ends with an answer and its sources. Up to three run at once.
 
 ### Fixed
 

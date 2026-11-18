@@ -255,6 +255,14 @@ mod tests {
                     }
                 })
             }),
+            follow: Arc::new(|_, _| {
+                Box::pin(async {
+                    Err(mado_types::MadoError::new(
+                        mado_types::ErrorCode::NotFound,
+                        "error.ai.noTask",
+                    ))
+                })
+            }),
             call: Arc::new(move |who, method, _| {
                 Box::pin(async move {
                     if method == "slow" {

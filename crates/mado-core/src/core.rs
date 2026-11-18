@@ -35,6 +35,7 @@ mod safety;
 mod save;
 mod session;
 mod site;
+mod tasks;
 pub(crate) mod tools;
 pub(crate) mod totp;
 pub(crate) mod vault;
@@ -145,6 +146,16 @@ pub enum Internal {
         prompt: String,
         runtime: String,
         mode: Option<mado_agent::safety::Mode>,
+    },
+    /// A task's progress (13 §7).
+    TaskEvent {
+        task: mado_types::TaskId,
+        event: tasks::TaskEvent,
+    },
+    /// `task.events`: a follower of a task (14 §2).
+    TaskFollow {
+        task: mado_types::TaskId,
+        reply: oneshot::Sender<Result<mpsc::UnboundedReceiver<Value>, MadoError>>,
     },
     /// A tool call finished: its audit row (13 §9.7).
     ToolAudit { origin: Origin, detail: Value },
@@ -679,6 +690,9 @@ pub struct Core {
     ai_roles: BTreeMap<String, mado_ai::catalog::RoleChoice>,
     /// Chats writing an answer (13 §5).
     chat_jobs: BTreeMap<String, tokio::task::AbortHandle>,
+    /// Live tasks and the ones waiting to start (13 §7).
+    task_ctl: BTreeMap<mado_types::TaskId, tasks::TaskCtl>,
+    task_queue: tasks::Queue,
     /// Each task's safety state and the approval cards on screen (13 §9).
     guards: BTreeMap<mado_types::TaskId, safety::TaskGuard>,
     pending_approvals: BTreeMap<PromptId, safety::Pending>,
@@ -1018,6 +1032,8 @@ impl Core {
             pending_uploads: BTreeMap::new(),
             control_tasks: BTreeMap::new(),
             guards: BTreeMap::new(),
+            task_ctl: BTreeMap::new(),
+            task_queue: tasks::Queue::new(),
             pending_approvals: BTreeMap::new(),
             handed_back: std::collections::BTreeSet::new(),
             pairings: BTreeMap::new(),
@@ -1770,6 +1786,10 @@ impl Core {
                 self.ensure_task_row(task, &prompt, &runtime);
                 self.set_scope(task, &prompt, mode);
             }
+            Internal::TaskEvent { task, event } => self.task_event(task, event, rec),
+            Internal::TaskFollow { task, reply } => {
+                let _ = reply.send(self.follow_task(task));
+            }
             Internal::ToolAudit { origin, detail } => {
                 if let Some(task) = self.task_of(&origin, rec) {
                     self.audit(task, "tool_call", detail);
@@ -2132,6 +2152,7 @@ impl Core {
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
             Timer::AiRetention => self.chat_retention(),
+            Timer::AgentTabsClose(task) => self.close_agent_tabs(task),
             Timer::PairingTimeout(id) => self.pairing_timed_out(id, &mut rec),
             Timer::VaultLock => self.vault_lock_check(&mut rec),
             Timer::BlockerStatsFlush => self.flush_blocker_stats_later(),

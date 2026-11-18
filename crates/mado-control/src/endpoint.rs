@@ -77,12 +77,24 @@ pub type ClientCall = Arc<
         + Sync,
 >;
 
+/// Follows a task for a client: the notifications to forward.
+pub type FollowFn = Arc<
+    dyn Fn(
+            mado_types::ClientId,
+            Value,
+        ) -> BoxFuture<Result<tokio::sync::mpsc::UnboundedReceiver<Value>, MadoError>>
+        + Send
+        + Sync,
+>;
+
 /// Paired clients' access (spec 14 §2): `hello` and calls go to the core.
 #[derive(Clone)]
 pub struct ControlAccess {
     pub hello: HelloFn,
     /// Runs `method` with `params` for a client's session.
     pub call: ClientCall,
+    /// `task.events`: the task's notifications until it ends.
+    pub follow: FollowFn,
 }
 
 impl std::fmt::Debug for ControlAccess {
@@ -307,6 +319,29 @@ async fn connection(
             continue;
         }
         let current = session.lock().map(|s| s.clone()).unwrap_or(Session::None);
+        if rpc.method == "task.events"
+            && let (Session::Client(client), Some(control)) = (&current, control.as_ref())
+        {
+            match (control.follow)(*client, rpc.params.clone()).await {
+                Ok(mut rx) => {
+                    let _ = out.send(
+                        json!({ "jsonrpc": "2.0", "id": rpc.id, "result": { "following": true } }),
+                    );
+                    let out2 = out.clone();
+                    tokio::spawn(async move {
+                        while let Some(n) = rx.recv().await {
+                            if out2.send(n).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    let _ = out.send(reply(Err(e), rpc.id));
+                }
+            }
+            continue;
+        }
         let id = rpc.id.clone();
         let key = id.to_string();
         let job: BoxFuture<Value> = match current {

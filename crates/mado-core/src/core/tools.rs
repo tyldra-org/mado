@@ -317,6 +317,28 @@ fn tab_of(args: &Value) -> Result<TabId, MadoError> {
     serde_json::from_value(args["tab"].clone()).map_err(|_| bad("error.ai.needsTab"))
 }
 
+/// Runs a tool and writes its audit row (13 §9.7), as tasks and control
+/// clients call it.
+pub async fn run_audited(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError> {
+    // The audit keeps the call without what was typed (13 §9.7).
+    let mut logged = args.clone();
+    for key in ["text", "code"] {
+        if let Some(t) = logged.get(key).and_then(Value::as_str) {
+            logged[key] = json!(format!("({} characters)", t.chars().count()));
+        }
+    }
+    let result = run(ctx, name, args).await;
+    let summary = match &result {
+        Ok(_) => json!({ "tool": name, "args": logged, "ok": true }),
+        Err(e) => json!({ "tool": name, "args": logged, "error": e.message_key }),
+    };
+    let _ = ctx.inputs.send(Input::Internal(Internal::ToolAudit {
+        origin: ctx.origin,
+        detail: summary,
+    }));
+    result
+}
+
 /// Runs tool `name` with `args`.
 pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError> {
     let tool = mado_agent::tools::find(name)
@@ -844,15 +866,9 @@ fn script(ctx: &Ctx, code: &str) -> Result<Value, MadoError> {
 }
 
 impl super::Core {
-    /// A tool call from a control client or a task.
-    pub(super) fn tool_call(&mut self, origin: Origin, name: String, args: Value, reply: Reply) {
-        if self.setting("features.ai") != true
-            && !matches!(origin, Origin::Control { .. } | Origin::FullControl { .. })
-        {
-            let _ = reply.send(Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off")));
-            return;
-        }
-        let ctx = Ctx {
+    /// What a tool job needs from the core, for `origin`.
+    pub(super) fn tool_ctx(&self, origin: Origin) -> Ctx {
+        Ctx {
             inputs: self.inputs.clone(),
             origin,
             sensitive: mado_lists::sensitive_hosts().banking.clone(),
@@ -868,24 +884,20 @@ impl super::Core {
             proxy: (self.setting_str("proxy.mode") == "manual")
                 .then(|| self.setting_str("proxy.http"))
                 .filter(|p| !p.is_empty()),
-        };
+        }
+    }
+
+    /// A tool call from a control client or a task.
+    pub(super) fn tool_call(&mut self, origin: Origin, name: String, args: Value, reply: Reply) {
+        if self.setting("features.ai") != true
+            && !matches!(origin, Origin::Control { .. } | Origin::FullControl { .. })
+        {
+            let _ = reply.send(Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off")));
+            return;
+        }
+        let ctx = self.tool_ctx(origin);
         tokio::task::spawn_local(async move {
-            // The audit keeps the call without what was typed (13 §9.7).
-            let mut logged = args.clone();
-            for key in ["text", "code"] {
-                if let Some(t) = logged.get(key).and_then(Value::as_str) {
-                    logged[key] = json!(format!("({} characters)", t.chars().count()));
-                }
-            }
-            let result = run(&ctx, &name, args).await;
-            let summary = match &result {
-                Ok(_) => json!({ "tool": name, "args": logged, "ok": true }),
-                Err(e) => json!({ "tool": name, "args": logged, "error": e.message_key }),
-            };
-            let _ = ctx.inputs.send(Input::Internal(Internal::ToolAudit {
-                origin: ctx.origin,
-                detail: summary,
-            }));
+            let result = run_audited(&ctx, &name, args).await;
             let _ = reply.send(result);
         });
     }

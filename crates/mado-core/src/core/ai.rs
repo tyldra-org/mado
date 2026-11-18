@@ -404,6 +404,9 @@ impl Core {
         ) {
             return self.chat_command(origin, cmd, reply_to);
         }
+        if cmd.name().starts_with("ai.task.") && !matches!(cmd, Command::AiTaskRaiseLimit { .. }) {
+            return self.task_command(origin, cmd, reply_to, rec);
+        }
         if let Command::AiTaskRaiseLimit { task_id } = cmd {
             if !origin.is_user() {
                 return Err(not_allowed());
