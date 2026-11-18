@@ -1,0 +1,374 @@
+/* Base styles for every Mado page (decisions/09-ui.md §1): type, the
+   controls placeholders and components share, focus and scrollbars. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font: var(--weight-regular) var(--text-body) / var(--leading-body) var(--font);
+  color: var(--text);
+  background: var(--chrome);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* Each webview's backdrop: the overlay draws only its cards; Mado's pages
+   in tabs sit on the page surface. */
+:root[data-surface="overlay"] body {
+  background: transparent;
+}
+:root[data-surface="internal"] body {
+  background: var(--surface);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: var(--weight-strong);
+  line-height: var(--leading-title);
+}
+h1 {
+  font-size: var(--text-heading);
+}
+h2,
+h3 {
+  font-size: var(--text-title);
+}
+h4 {
+  font-size: var(--text-body);
+}
+
+p {
+  margin: 0;
+}
+
+small {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Text can be selected where people read or copy it. */
+p,
+input,
+textarea,
+[contenteditable],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Controls */
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-press) var(--ease-out),
+    border-color var(--duration-press) var(--ease-out);
+}
+button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--surface-raised), var(--text) 6%);
+}
+button:active:not(:disabled) {
+  background: color-mix(in oklch, var(--surface-raised), var(--text) 11%);
+}
+button:disabled {
+  opacity: 0.45;
+}
+button.primary,
+button[data-variant="primary"] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+button.primary:hover:not(:disabled),
+button[data-variant="primary"]:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent), black 10%);
+}
+button.quiet,
+button[data-variant="quiet"] {
+  border-color: transparent;
+  background: transparent;
+}
+button.quiet:hover:not(:disabled),
+button[data-variant="quiet"]:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+button.danger,
+button[data-variant="danger"] {
+  color: var(--danger);
+}
+button.icon {
+  width: var(--control-height);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+button.icon:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),
+select,
+textarea {
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  outline: none;
+}
+textarea {
+  padding: var(--space-3) var(--space-4);
+  resize: vertical;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+select {
+  padding-right: var(--space-6);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Focus: a ring outside the control, keyboard only. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+
+[role="alert"] {
+  color: var(--danger);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: var(--space-4) 0;
+}
+
+/* Scrollbars stay thin and quiet. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 10px;
+  background: var(--line-strong) padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Cards: Mado's floating and grouped surfaces. */
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+}
+.card.floating {
+  box-shadow: var(--shadow-float);
+}
+
+/* Popovers sit in the window's popover region, under the toolbar. */
+.popover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 340px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--space-5);
+  color: var(--text);
+  animation: enter var(--duration-panel) var(--ease-out);
+}
+.popover h2 {
+  font-size: var(--text-title);
+}
+.popover li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+.popover.menu {
+  gap: 0;
+  width: 240px;
+  padding: var(--space-2);
+}
+.popover.menu li {
+  padding: 0;
+}
+.popover.menu li > button,
+.popover.menu li > span {
+  flex: 1;
+  justify-content: flex-start;
+  min-height: 24px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  font-weight: var(--weight-regular);
+}
+.popover.menu li > button:hover {
+  background: var(--accent) !important;
+  color: var(--accent-text);
+}
+.popover.menu li > span[aria-current] {
+  font-weight: var(--weight-strong);
+}
+
+/* Side panels: chat and tasks, beside the page. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 360px;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  animation: enter var(--duration-panel) var(--ease-out);
+}
+.panel label {
+  display: grid;
+  gap: var(--space-2);
+}
+.panel li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Prompt cards: the requests in the prompt area above the page. */
+.prompt-card,
+[role="alertdialog"],
+.prompts [role="dialog"],
+.prompts [role="status"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  color: var(--text);
+  animation: enter var(--duration-panel) var(--ease-out);
+}
+.prompts [role="alertdialog"] h2,
+.prompts [role="dialog"] h2 {
+  flex: 1 1 100%;
+  font-size: var(--text-body);
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.secondary {
+  color: var(--text-secondary);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 120ms !important;
+  }
+}

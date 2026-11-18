@@ -4,6 +4,8 @@
   // same downloads with the internal pages (M2-T14).
   import type { CoreStore } from "../core/store.svelte";
   import type { DownloadState } from "../generated/DownloadState";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
   let { store }: { store: CoreStore } = $props();
@@ -93,13 +95,23 @@
 </script>
 
 {#if downloads.length}
-  <button type="button" aria-expanded={open} onclick={() => (open = !open)}
-    >{t("downloads.show", { count: downloads.length })}</button
+  <button
+    type="button"
+    class="icon"
+    aria-expanded={open}
+    aria-label={t("downloads.show", { count: downloads.length })}
+    title={t("downloads.show", { count: downloads.length })}
+    onclick={() => (open = !open)}><Icon name="download" /></button
   >
 {/if}
 
 {#if open}
-  <div role="dialog" aria-labelledby="downloads-title">
+  <div
+    class="popover card floating"
+    role="dialog"
+    aria-labelledby="downloads-title"
+    {@attach portal("popovers")}
+  >
     <h2 id="downloads-title">{t("downloads.title")}</h2>
     <ul>
       {#each downloads as d (d.id)}

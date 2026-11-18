@@ -5,6 +5,8 @@
   import type { CoreStore } from "../core/store.svelte";
   import type { ExtensionButton } from "../generated/ExtensionButton";
   import type { WindowId } from "../generated/WindowId";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
   let { store, windowId }: { store: CoreStore; windowId: WindowId } = $props();
@@ -44,11 +46,16 @@
         {#if b.badgeText}<span class="badge">{b.badgeText}</span>{/if}
       </button>
     {/each}
-    <button type="button" aria-expanded={menu} onclick={() => (menu = !menu)}
-      >{t("extensions.menu")}</button
+    <button
+      type="button"
+      class="icon"
+      aria-expanded={menu}
+      aria-label={t("extensions.menu")}
+      title={t("extensions.menu")}
+      onclick={() => (menu = !menu)}><Icon name="puzzle" /></button
     >
     {#if menu}
-      <ul role="menu">
+      <ul class="popover card floating menu" role="menu" {@attach portal("popovers")}>
         {#each buttons as b (b.id)}
           <li role="none">
             <button type="button" role="menuitem" onclick={(e) => click(b, e.currentTarget)}

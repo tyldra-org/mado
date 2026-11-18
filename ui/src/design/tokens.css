@@ -1,0 +1,155 @@
+/* Mado's design tokens (decisions/09-ui.md §1). Light values on :root,
+   dark on [data-theme="dark"] and on "system" when macOS is dark. Names are
+   by role; components use these, never raw values. */
+
+:root {
+  /* Type */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --text-caption: 11px;
+  --text-small: 12px;
+  --text-body: 13px;
+  --text-title: 15px;
+  --text-heading: 20px;
+  --text-display: 28px;
+  --weight-regular: 400;
+  --weight-strong: 590;
+  --weight-display: 700;
+  --leading-body: 1.35;
+  --leading-title: 1.2;
+
+  /* Spacing */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 48px;
+
+  /* Sizes (comfortable density) */
+  --control-height: 28px;
+  --row-height: 32px;
+  --tab-height: 32px;
+  --toolbar-height: 40px;
+  --sidebar-width: 240px;
+  --page-gutter: 8px;
+
+  /* Radius */
+  --radius-small: 5px;
+  --radius-control: 7px;
+  --radius-card: 10px;
+  --radius-sheet: 14px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --duration-press: 120ms;
+  --duration-panel: 180ms;
+
+  /* Colour: light. Neutrals tinted toward hue 250. */
+  color-scheme: light;
+  --accent: AccentColor;
+  --accent-text: #fff;
+  --chrome: oklch(0.925 0.006 250);
+  --chrome-hover: oklch(0.885 0.008 250);
+  --chrome-active: oklch(0.985 0.002 250);
+  --surface: oklch(0.995 0.001 250);
+  --surface-raised: #fff;
+  --surface-sunken: oklch(0.955 0.004 250);
+  --fill: oklch(0.5 0.01 250 / 0.08);
+  --fill-hover: oklch(0.5 0.01 250 / 0.13);
+  --fill-pressed: oklch(0.5 0.01 250 / 0.19);
+  --line: oklch(0.5 0.01 250 / 0.16);
+  --line-strong: oklch(0.5 0.01 250 / 0.28);
+  --text: oklch(0.22 0.01 250);
+  --text-secondary: oklch(0.45 0.012 250);
+  --text-tertiary: oklch(0.58 0.01 250);
+  --text-on-chrome: oklch(0.24 0.01 250);
+  --success: oklch(0.55 0.14 150);
+  --success-tint: oklch(0.55 0.14 150 / 0.12);
+  --warning: oklch(0.6 0.14 75);
+  --warning-tint: oklch(0.75 0.15 75 / 0.16);
+  --danger: oklch(0.55 0.19 25);
+  --danger-tint: oklch(0.55 0.19 25 / 0.1);
+  --shadow-float: 0 1px 2px oklch(0 0 0 / 0.08), 0 8px 24px oklch(0 0 0 / 0.12);
+  --scrim: oklch(0 0 0 / 0.25);
+}
+
+@supports not (color: AccentColor) {
+  :root {
+    --accent: #0a84ff;
+  }
+}
+
+:root[data-density="compact"] {
+  --control-height: 24px;
+  --row-height: 28px;
+  --tab-height: 28px;
+  --toolbar-height: 36px;
+  --page-gutter: 6px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --chrome: oklch(0.2 0.008 250);
+  --chrome-hover: oklch(0.26 0.01 250);
+  --chrome-active: oklch(0.31 0.01 250);
+  --surface: oklch(0.235 0.008 250);
+  --surface-raised: oklch(0.28 0.009 250);
+  --surface-sunken: oklch(0.2 0.008 250);
+  --fill: oklch(1 0 0 / 0.07);
+  --fill-hover: oklch(1 0 0 / 0.11);
+  --fill-pressed: oklch(1 0 0 / 0.16);
+  --line: oklch(1 0 0 / 0.1);
+  --line-strong: oklch(1 0 0 / 0.2);
+  --text: oklch(0.95 0.004 250);
+  --text-secondary: oklch(0.76 0.008 250);
+  --text-tertiary: oklch(0.64 0.008 250);
+  --text-on-chrome: oklch(0.92 0.005 250);
+  --success: oklch(0.75 0.15 150);
+  --success-tint: oklch(0.75 0.15 150 / 0.14);
+  --warning: oklch(0.82 0.14 80);
+  --warning-tint: oklch(0.82 0.14 80 / 0.14);
+  --danger: oklch(0.72 0.17 25);
+  --danger-tint: oklch(0.72 0.17 25 / 0.14);
+  --shadow-float: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 30px oklch(0 0 0 / 0.45);
+  --scrim: oklch(0 0 0 / 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --chrome: oklch(0.2 0.008 250);
+    --chrome-hover: oklch(0.26 0.01 250);
+    --chrome-active: oklch(0.31 0.01 250);
+    --surface: oklch(0.235 0.008 250);
+    --surface-raised: oklch(0.28 0.009 250);
+    --surface-sunken: oklch(0.2 0.008 250);
+    --fill: oklch(1 0 0 / 0.07);
+    --fill-hover: oklch(1 0 0 / 0.11);
+    --fill-pressed: oklch(1 0 0 / 0.16);
+    --line: oklch(1 0 0 / 0.1);
+    --line-strong: oklch(1 0 0 / 0.2);
+    --text: oklch(0.95 0.004 250);
+    --text-secondary: oklch(0.76 0.008 250);
+    --text-tertiary: oklch(0.64 0.008 250);
+    --text-on-chrome: oklch(0.92 0.005 250);
+    --success: oklch(0.75 0.15 150);
+    --success-tint: oklch(0.75 0.15 150 / 0.14);
+    --warning: oklch(0.82 0.14 80);
+    --warning-tint: oklch(0.82 0.14 80 / 0.14);
+    --danger: oklch(0.72 0.17 25);
+    --danger-tint: oklch(0.72 0.17 25 / 0.14);
+    --shadow-float: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 30px oklch(0 0 0 / 0.45);
+    --scrim: oklch(0 0 0 / 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-panel: 120ms;
+  }
+}

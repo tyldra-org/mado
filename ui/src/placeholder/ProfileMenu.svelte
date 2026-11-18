@@ -2,6 +2,8 @@
   // The profile menu in the window's toolbar (spec 12 §1): the profiles,
   // to open one, and Manage profiles. Placeholder until M6.
   import type { CoreStore } from "../core/store.svelte";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
   type Profile = { id: string; name: string; current: boolean };
@@ -16,11 +18,18 @@
   }
 </script>
 
-<button type="button" aria-expanded={open} onclick={toggle}>
-  {store.state?.profile.name ?? t("app.name")}
+<button type="button" class="quiet profile" aria-expanded={open} onclick={toggle}>
+  <span class="avatar" data-color={store.state?.profile.color}
+    >{(store.state?.profile.name ?? t("app.name")).charAt(0)}</span
+  >
+  <span>{store.state?.profile.name ?? t("app.name")}</span>
 </button>
 {#if open}
-  <ul aria-label={t("profiles.menu")}>
+  <ul
+    class="popover card floating menu"
+    aria-label={t("profiles.menu")}
+    {@attach portal("popovers")}
+  >
     {#each profiles as p (p.id)}
       <li>
         {#if p.current}
@@ -58,3 +67,23 @@
     </li>
   </ul>
 {/if}
+
+<style>
+  .profile {
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+    color: var(--text-on-chrome);
+    font-weight: var(--weight-regular);
+  }
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-strong);
+  }
+</style>

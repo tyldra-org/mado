@@ -2,8 +2,8 @@
 // roadmap M5-T07). The person's answers on the pairing card come through
 // the test hooks.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { spawn } from "bun";
 import { join } from "node:path";
+import { spawn } from "bun";
 import { bin, Mado } from "./harness";
 
 const cli = process.env.MADO_CLI_BIN ?? "target/debug/mado";
