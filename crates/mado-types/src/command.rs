@@ -1155,6 +1155,15 @@ pub enum Command {
     /// §2.2): `[{ provider, baseUrl, models }]`.
     #[serde(rename = "ai.connection.detectLocal")]
     AiConnectionDetectLocal,
+    /// The subscription CLIs found on this Mac (spec 13 §2.3): `[{ provider,
+    /// name, path, version, acp, needsNode, nodeOk, install, login,
+    /// loginHint, ready }]`.
+    #[serde(rename = "ai.cli.list")]
+    AiCliList,
+    /// Runs a CLI's official `install` or `login` command in the person's
+    /// own terminal (spec 13 §2.3). Protected: Mado's windows only.
+    #[serde(rename = "ai.cli.run", rename_all = "camelCase")]
+    AiCliRun { provider: String, what: String },
     /// Every model of every connection for pickers (spec 13 §4): starred
     /// first, then shown ones by connection; `[{ connectionId, modelId,
     /// name, show, starred, info }]`, `info` null for unknown models.
@@ -1573,6 +1582,8 @@ impl Command {
             | Self::AiConnectionRemove { .. }
             | Self::AiConnectionTest { .. }
             | Self::AiConnectionDetectLocal
+            | Self::AiCliList
+            | Self::AiCliRun { .. }
             | Self::AiModelList
             | Self::AiModelSet { .. }
             | Self::AiRoleSet { .. }
@@ -1799,6 +1810,8 @@ impl Command {
             Self::AiConnectionRemove { .. } => "ai.connection.remove",
             Self::AiConnectionTest { .. } => "ai.connection.test",
             Self::AiConnectionDetectLocal => "ai.connection.detectLocal",
+            Self::AiCliList => "ai.cli.list",
+            Self::AiCliRun { .. } => "ai.cli.run",
             Self::AiModelList => "ai.model.list",
             Self::AiModelSet { .. } => "ai.model.set",
             Self::AiRoleSet { .. } => "ai.role.set",
@@ -1900,6 +1913,7 @@ impl Command {
                 | Self::AiChatList
                 | Self::AiChatGet { .. }
                 | Self::AiModelList
+                | Self::AiCliList
         )
     }
 }

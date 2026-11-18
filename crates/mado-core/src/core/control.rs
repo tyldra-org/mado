@@ -137,6 +137,21 @@ impl Core {
             .collect()
     }
 
+    /// A one-time token for a CLI task's MCP server (13 §7.2).
+    pub(super) fn task_token(&mut self, task: mado_types::TaskId) -> Result<String, MadoError> {
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes).map_err(|_| MadoError::internal())?;
+        let token = BASE64URL_NOPAD.encode(&bytes);
+        self.task_tokens.insert(hash(&token), task);
+        Ok(token)
+    }
+
+    /// A task ended: its token and sessions stop working.
+    pub(super) fn end_task_access(&mut self, task: mado_types::TaskId) {
+        self.task_tokens.retain(|_, t| *t != task);
+        self.task_clients.retain(|_, t| *t != task);
+    }
+
     /// `hello` (14 §2): a valid token opens a session; no token opens a
     /// pairing card.
     pub(super) fn control_hello(
@@ -146,6 +161,20 @@ impl Core {
         reply: oneshot::Sender<HelloAnswer>,
         rec: &mut PatchRecorder,
     ) {
+        // A CLI task's MCP server (13 §7.2): its one-time token opens a
+        // session that only calls tools, as the task, whether or not
+        // Control is on.
+        if let Some(t) = &token
+            && let Some(task) = self.task_tokens.remove(&hash(t))
+        {
+            let client = ClientId::new();
+            self.task_clients.insert(client, task);
+            let _ = reply.send(HelloAnswer::Session {
+                client,
+                scopes: vec!["read".into(), "act".into()],
+            });
+            return;
+        }
         if !self.control_on() {
             let _ = reply.send(HelloAnswer::Refused(err(
                 ErrorCode::PermissionDenied,
@@ -376,6 +405,18 @@ impl Core {
         reply: Reply,
         rec: &mut PatchRecorder,
     ) {
+        if let Some(&task) = self.task_clients.get(&client) {
+            match method.strip_prefix("tool.") {
+                Some(name) => {
+                    self.tool_call(Origin::Agent { task }, name.to_owned(), params, reply)
+                }
+                None => {
+                    let _ =
+                        reply.send(Err(err(ErrorCode::NotFound, "error.control.unknownMethod")));
+                }
+            }
+            return;
+        }
         if let Some(name) = method.strip_prefix("tool.") {
             match self.tool_check(client, name) {
                 Ok(origin) => self.tool_call(origin, name.to_owned(), params, reply),

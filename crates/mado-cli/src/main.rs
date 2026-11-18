@@ -348,11 +348,15 @@ async fn run(o: Opts) -> i32 {
             )
             .await
         }
-        ["mcp"] if o.task.is_some() => {
-            eprintln!("mado: task tokens arrive with M5-T13.");
-            FAILED
-        }
-        ["mcp"] => mcp::serve(o.profile.clone()).await,
+        // A CLI task's MCP server (13 §7.2): Mado passes the task's token.
+        ["mcp"] if o.task.is_some() => match std::env::var("MADO_TASK_TOKEN") {
+            Ok(token) if !token.is_empty() => mcp::serve(o.profile.clone(), Some(token)).await,
+            _ => {
+                eprintln!("mado: mcp --task needs MADO_TASK_TOKEN, which Mado sets.");
+                USAGE
+            }
+        },
+        ["mcp"] => mcp::serve(o.profile.clone(), None).await,
         ["setup" | "remove", ..] => {
             eprintln!("mado: setup arrives with M5-T16.");
             FAILED

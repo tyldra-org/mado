@@ -156,8 +156,28 @@ pub struct SensitiveHosts {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Models {
     pub models: BTreeMap<String, ModelInfo>,
+    /// By connection provider (`claudeCode`, `codex`…).
     #[serde(default)]
-    pub cli: BTreeMap<String, serde_json::Value>,
+    pub cli: BTreeMap<String, CliInfo>,
+}
+
+/// A subscription CLI (13 §2.3): how Mado finds it, the vendor's install
+/// and login commands it shows before running them in a terminal, and how
+/// it speaks ACP.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliInfo {
+    /// The executable `--version` is asked of.
+    pub binary: String,
+    pub install: String,
+    pub login: String,
+    /// What to do once the login command runs, when it is not the command.
+    #[serde(default)]
+    pub login_hint: Option<String>,
+    /// The ACP agent's command and arguments; `npx` adapters need Node.js 18+.
+    pub acp: Vec<String>,
+    /// The vendor's docs the commands were checked against.
+    pub docs: String,
 }
 
 /// What Mado knows about one model.
@@ -215,6 +235,14 @@ impl Models {
                 .any(|x| !x.is_finite() || *x < 0.0)
             {
                 return Err(format!("{key}: a price is not a positive number"));
+            }
+        }
+        for (key, c) in &list.cli {
+            if c.binary.is_empty() || c.acp.is_empty() || c.install.is_empty() || c.login.is_empty()
+            {
+                return Err(format!(
+                    "cli {key}: binary, install, login and acp are needed"
+                ));
             }
         }
         Ok(list)

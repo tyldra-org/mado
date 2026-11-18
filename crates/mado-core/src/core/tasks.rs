@@ -41,6 +41,8 @@ pub(super) struct TaskCtl {
     pub detached: bool,
     pub steps: Vec<String>,
     pub start: Option<Start>,
+    /// Pages its tools opened (`open`, `navigate`), for its sources.
+    pub opened: Vec<String>,
 }
 
 /// How a queued task starts.
@@ -48,6 +50,10 @@ pub(super) struct TaskCtl {
 pub(super) struct Start {
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// A subscription CLI runtime (13 §7.2): its provider key.
+    pub cli: Option<String>,
+    /// `access: full`: the CLI agent may read and write files.
+    pub full: bool,
 }
 
 /// What a running task tells the core.
@@ -61,6 +67,8 @@ pub enum TaskEvent {
         answer: String,
         sources: Vec<String>,
     },
+    /// An audit row from the runtime (a CLI turn's `model_call`).
+    Audit(&'static str, Value),
 }
 
 /// Everything the loop needs, so it runs off the core's state.
@@ -92,23 +100,38 @@ impl Env {
 
     /// Waits for the person's answer (`ask`, `handoff`, a spend limit).
     async fn person(&self, reason: String) -> Option<String> {
-        let (tx, rx) = oneshot::channel();
-        if let Ok(mut w) = self.waiting.lock() {
-            *w = Some(tx);
-        }
-        self.emit(TaskEvent::Waiting(reason));
-        let stop = Arc::clone(&self.stop);
-        let answered = tokio::select! {
-            a = rx => a.ok(),
-            () = async move {
-                while !stop.load(Ordering::SeqCst) {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-            } => None,
-        };
-        self.emit(TaskEvent::Resumed);
-        answered
+        wait_for_person(&self.inputs, self.task, &self.waiting, &self.stop, reason).await
     }
+}
+
+/// Sets the task `waiting` until the person answers (`ai.task.answer`) or
+/// the task stops.
+pub(super) async fn wait_for_person(
+    inputs: &mpsc::UnboundedSender<Input>,
+    task: TaskId,
+    waiting: &Arc<Mutex<Option<oneshot::Sender<String>>>>,
+    stop: &Arc<AtomicBool>,
+    reason: String,
+) -> Option<String> {
+    let emit = |e: TaskEvent| {
+        let _ = inputs.send(Input::Internal(Internal::TaskEvent { task, event: e }));
+    };
+    let (tx, rx) = oneshot::channel();
+    if let Ok(mut w) = waiting.lock() {
+        *w = Some(tx);
+    }
+    emit(TaskEvent::Waiting(reason));
+    let stop = Arc::clone(stop);
+    let answered = tokio::select! {
+        a = rx => a.ok(),
+        () = async move {
+            while !stop.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        } => None,
+    };
+    emit(TaskEvent::Resumed);
+    answered
 }
 
 /// The tools a model is offered: every tool but those whose task has not
@@ -405,14 +428,20 @@ impl Core {
             Command::AiTaskStart {
                 prompt,
                 mode,
+                access,
+                runtime,
                 cli,
                 model,
                 effort,
                 scope,
-                ..
             } => {
-                if cli.is_some() {
-                    return self.start_cli_task(origin, prompt, cli, mode, rec);
+                let cli = match cli.or(runtime.filter(|r| r != "mado")) {
+                    Some(c) => Some(resolve_cli(&c)?),
+                    None => None,
+                };
+                let full = access.as_deref() == Some("full");
+                if full && !origin.is_user() {
+                    return Err(MadoError::new(ErrorCode::Protected, "error.ai.notAllowed"));
                 }
                 let task = TaskId::new();
                 let title: String = prompt.chars().take(60).collect();
@@ -432,7 +461,7 @@ impl Core {
                     Some(s) if !s.is_empty() => format!("{prompt} {}", s.join(" ")),
                     _ => prompt.clone(),
                 };
-                self.ensure_task_row(task, &prompt, "mado");
+                self.ensure_task_row(task, &prompt, cli.as_deref().unwrap_or("mado"));
                 self.set_scope(task, &scope_prompt, mode);
                 self.task_ctl.insert(
                     task,
@@ -445,7 +474,13 @@ impl Core {
                         followers: Vec::new(),
                         detached: false,
                         steps: Vec::new(),
-                        start: Some(Start { model, effort }),
+                        start: Some(Start {
+                            model,
+                            effort,
+                            cli,
+                            full,
+                        }),
+                        opened: Vec::new(),
                     },
                 );
                 self.task_queue.push_back(task);
@@ -619,6 +654,10 @@ impl Core {
             let Some(start) = c.start.take() else {
                 continue;
             };
+            if let Some(cli) = start.cli {
+                self.start_acp(task, cli, start.full, rec);
+                continue;
+            }
             let attempts = match start.model.as_deref() {
                 Some(m) => self.attempts_for(m),
                 None => self.ai_attempts("tasks"),
@@ -704,14 +743,29 @@ impl Core {
                 }
                 return;
             }
+            TaskEvent::Audit(kind, detail) => {
+                self.audit(task, kind, detail.clone());
+                return;
+            }
             TaskEvent::Done {
                 status,
                 answer,
                 sources,
             } => {
-                let n = json!({ "jsonrpc": "2.0", "method": "task.done", "params": { "taskId": task, "status": status, "answer": answer, "sources": sources } });
+                // The pages its tools opened come first (13 §7.1).
+                let mut all = self
+                    .task_ctl
+                    .get(&task)
+                    .map(|c| c.opened.clone())
+                    .unwrap_or_default();
+                for s in sources {
+                    if !all.contains(s) {
+                        all.push(s.clone());
+                    }
+                }
+                let n = json!({ "jsonrpc": "2.0", "method": "task.done", "params": { "taskId": task, "status": status, "answer": answer, "sources": all } });
                 self.notify_followers(task, &n);
-                self.task_finished(task, *status, answer.clone(), sources.clone(), rec);
+                self.task_finished(task, *status, answer.clone(), all, rec);
                 return;
             }
         };
@@ -739,6 +793,7 @@ impl Core {
         rec: &mut PatchRecorder,
     ) {
         self.task_ctl.remove(&task);
+        self.end_task_access(task);
         if let Some(mut t) = self.state.tx(rec).ai().tasks().get(&task) {
             t.set_status(status);
             t.set_step(String::new());
@@ -806,18 +861,205 @@ impl Core {
         Ok(rx)
     }
 
-    /// `cli` tasks (ACP, M5-T13).
-    fn start_cli_task(
-        &mut self,
-        _origin: &Origin,
-        _prompt: String,
-        _cli: Option<String>,
-        _mode: Option<String>,
-        _rec: &mut PatchRecorder,
-    ) -> Result<Value, MadoError> {
-        Err(MadoError::new(ErrorCode::Unsupported, "error.ai.notYet"))
+    /// A subscription CLI task (13 §7.2): its agent over ACP, with Mado's
+    /// MCP server and a one-time token for this task.
+    fn start_acp(&mut self, task: TaskId, provider: String, full: bool, rec: &mut PatchRecorder) {
+        let Some(c) = self.task_ctl.get(&task) else {
+            return;
+        };
+        let scope: Vec<String> = self
+            .guards
+            .get(&task)
+            .and_then(|g| g.scope.clone())
+            .map(|s| s.into_iter().collect())
+            .unwrap_or_default();
+        let system = mado_agent::chat::task_system(&c.prompt, &scope);
+        let ctl = mado_agent::acp::Steering {
+            steer: Arc::clone(&c.steer),
+            queue: Arc::clone(&c.queue),
+            stop: Arc::clone(&c.stop),
+        };
+        let prompt = format!("{system}\n\nThe task: {}", c.prompt);
+        let token = match self.task_token(task) {
+            Ok(t) => t,
+            Err(_) => {
+                self.task_finished(
+                    task,
+                    TaskStatus::Failed,
+                    "No task token.".into(),
+                    Vec::new(),
+                    rec,
+                );
+                return;
+            }
+        };
+        let cwd = self
+            .backups
+            .parent()
+            .map_or_else(std::env::temp_dir, std::path::Path::to_path_buf)
+            .join("AI")
+            .join("tasks")
+            .join(task.to_string());
+        let session = mado_agent::acp::Session {
+            cwd,
+            mcp: mado_agent::acp::McpServer {
+                name: "mado".into(),
+                command: self.ai.mado_cli.clone(),
+                args: vec![
+                    "mcp".into(),
+                    "--task".into(),
+                    task.to_string(),
+                    "--profile".into(),
+                    self.state.profile.id.to_string(),
+                ],
+                env: vec![("MADO_TASK_TOKEN".into(), token)],
+            },
+            prompt,
+            full,
+        };
+        if let Some(mut t) = self.state.tx(rec).ai().tasks().get(&task) {
+            t.set_status(TaskStatus::Running);
+        }
+        let (inputs, dirs) = (self.inputs.clone(), self.ai.cli_dirs.clone());
+        tokio::task::spawn_local(async move {
+            let (status, answer, sources) =
+                run_acp(task, provider, dirs, session, ctl, inputs.clone()).await;
+            let _ = inputs.send(Input::Internal(Internal::TaskEvent {
+                task,
+                event: TaskEvent::Done {
+                    status,
+                    answer,
+                    sources,
+                },
+            }));
+        });
     }
 }
 
 /// Queued tasks in start order.
 pub(super) type Queue = VecDeque<TaskId>;
+
+/// A CLI name as the person writes it (`claude`, `gemini`, `claudeCode`)
+/// to its provider key in `models.json`.
+fn resolve_cli(name: &str) -> Result<String, MadoError> {
+    let lower = name.to_lowercase();
+    mado_lists::models()
+        .cli
+        .iter()
+        .find(|(key, info)| {
+            key.to_lowercase() == lower
+                || info.binary == name
+                || key.to_lowercase().starts_with(&lower)
+        })
+        .map(|(k, _)| k.clone())
+        .ok_or_else(|| {
+            MadoError::new(ErrorCode::InvalidInput, "error.ai.unknownCli").arg("cli", name)
+        })
+}
+
+/// Runs a CLI task's agent (13 §7.2): finds the CLI, starts its ACP
+/// command, turns its updates into steps and audit rows and its permission
+/// requests into Mado's approvals.
+async fn run_acp(
+    task: TaskId,
+    provider: String,
+    dirs: Option<Vec<std::path::PathBuf>>,
+    session: mado_agent::acp::Session,
+    ctl: mado_agent::acp::Steering,
+    inputs: mpsc::UnboundedSender<Input>,
+) -> (TaskStatus, String, Vec<String>) {
+    use mado_agent::acp::{End, Event};
+    let emit = |e: TaskEvent| {
+        let _ = inputs.send(Input::Internal(Internal::TaskEvent { task, event: e }));
+    };
+    let key = provider.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        let dirs = dirs.unwrap_or_else(mado_agent::cli::search_dirs);
+        let f = super::ai::detect_clis(Some(dirs.clone()))
+            .into_iter()
+            .find(|f| f.provider == key);
+        (f, dirs)
+    })
+    .await;
+    let Ok((Some(found), dirs)) = found else {
+        return (
+            TaskStatus::Failed,
+            "This CLI is not known.".into(),
+            Vec::new(),
+        );
+    };
+    let (true, Some(program)) = (found.ready(), found.acp.clone()) else {
+        return (
+            TaskStatus::Failed,
+            format!("{} is not ready. Set it up in Settings › AI.", found.name),
+            Vec::new(),
+        );
+    };
+    let args: Vec<String> = mado_lists::models()
+        .cli
+        .get(&provider)
+        .map(|c| c.acp.iter().skip(1).cloned().collect())
+        .unwrap_or_default();
+    let mut path = dirs;
+    if let Some(p) = std::env::var_os("PATH") {
+        path.extend(std::env::split_paths(&p));
+    }
+    let env = vec![(
+        "PATH".to_owned(),
+        std::env::join_paths(path)
+            .map_or_else(|_| String::new(), |p| p.to_string_lossy().into_owned()),
+    )];
+    emit(TaskEvent::Step(format!("Starting {}", found.name)));
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let run = mado_agent::acp::run(&program, &args, &env, session, ctl, tx);
+    tokio::pin!(run);
+    let handle = |ev: Event| match ev {
+        Event::Step(t) => emit(TaskEvent::Step(t)),
+        Event::TurnEnded { stop_reason } => emit(TaskEvent::Audit(
+            "model_call",
+            json!({ "model": format!("cli:{provider}"), "stopReason": stop_reason, "costMicros": 0 }),
+        )),
+        Event::Ask(ask, answer) => match ask.class("mado") {
+            None => answer.send(true),
+            Some(class) => {
+                let url = if class == mado_agent::safety::Class::LeaveScope {
+                    ask.url()
+                } else {
+                    String::new()
+                };
+                let (reply, rx) = oneshot::channel();
+                let _ = inputs.send(Input::Internal(Internal::ToolGuard {
+                    ask: super::safety::Ask {
+                        origin: Origin::Agent { task },
+                        tab: None,
+                        class,
+                        url,
+                        detail: ask.title.clone(),
+                        amount: None,
+                    },
+                    reply,
+                }));
+                tokio::task::spawn_local(async move {
+                    answer.send(matches!(rx.await, Ok(Ok(()))));
+                });
+            }
+        },
+    };
+    let end = loop {
+        tokio::select! {
+            end = &mut run => break end,
+            Some(ev) = rx.recv() => handle(ev),
+        }
+    };
+    while let Ok(ev) = rx.try_recv() {
+        handle(ev);
+    }
+    match end {
+        End::Done(text) => {
+            let sources = mado_agent::chat::sources_in(&text);
+            (TaskStatus::Done, text, sources)
+        }
+        End::Cancelled => (TaskStatus::Cancelled, String::new(), Vec::new()),
+        End::Failed(e) => (TaskStatus::Failed, e, Vec::new()),
+    }
+}

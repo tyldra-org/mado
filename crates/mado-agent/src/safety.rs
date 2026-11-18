@@ -48,6 +48,10 @@ pub enum Class {
     /// Acting in one of the person's own tabs (`ai.agentsInUserTabs` =
     /// `askFirst`, 13 §7.3).
     UserTab,
+    /// A CLI agent's file change, or a file outside its task folder (13 §7.2).
+    Files,
+    /// A CLI agent's command on the Mac (13 §7.2).
+    Terminal,
 }
 
 impl Class {
@@ -68,6 +72,8 @@ impl Class {
             Self::TypeInForm => "typeInForm",
             Self::Download => "download",
             Self::UserTab => "userTab",
+            Self::Files => "files",
+            Self::Terminal => "terminal",
         }
     }
 

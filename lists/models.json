@@ -242,5 +242,44 @@
       }
     }
   },
-  "cli": {}
+  "cli": {
+    "claudeCode": {
+      "binary": "claude",
+      "install": "curl -fsSL https://claude.ai/install.sh | bash",
+      "login": "claude",
+      "loginHint": "Type /login and follow the steps.",
+      "acp": ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+      "docs": "https://github.com/agentclientprotocol/claude-agent-acp"
+    },
+    "codex": {
+      "binary": "codex",
+      "install": "npm install -g @openai/codex",
+      "login": "codex login",
+      "acp": ["npx", "-y", "@agentclientprotocol/codex-acp"],
+      "docs": "https://github.com/agentclientprotocol/codex-acp"
+    },
+    "geminiCli": {
+      "binary": "gemini",
+      "install": "npm install -g @google/gemini-cli",
+      "login": "gemini",
+      "loginHint": "Choose Login with Google.",
+      "acp": ["gemini", "--acp"],
+      "docs": "https://github.com/google-gemini/gemini-cli"
+    },
+    "copilotCli": {
+      "binary": "copilot",
+      "install": "npm install -g @github/copilot",
+      "login": "copilot",
+      "loginHint": "Type /login and follow the steps.",
+      "acp": ["copilot", "--acp", "--stdio"],
+      "docs": "https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server"
+    },
+    "cursorCli": {
+      "binary": "cursor-agent",
+      "install": "curl https://cursor.com/install -fsS | bash",
+      "login": "cursor-agent login",
+      "acp": ["cursor-agent", "acp"],
+      "docs": "https://cursor.com/docs/cli/acp"
+    }
+  }
 }

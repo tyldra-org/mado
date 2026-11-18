@@ -542,11 +542,7 @@ fn start_owner(
             .unwrap_or_default(),
         vault: vault_config(paths, id, info.is_private || info.is_guest),
         password_clis: mado_core::PasswordClis::system(),
-        ai: if info.is_private || info.is_guest {
-            mado_core::AiConfig::in_memory()
-        } else {
-            mado_core::AiConfig::system(id)
-        },
+        ai: ai_config(id, info.is_private || info.is_guest),
         profiles: Arc::new(profile_service::AppProfiles {
             app_db: Arc::clone(&owner.app_db),
             paths: owner.paths.clone(),
@@ -1032,6 +1028,22 @@ fn test_access(
     _relaunch: RelaunchParts,
 ) -> Option<mado_control::TestAccess> {
     None
+}
+
+/// AI's secrets and addresses (spec 13). With `test-hooks`,
+/// `MADO_TEST_CLI_DIRS` is where subscription CLIs are looked for.
+fn ai_config(id: mado_types::ProfileId, in_memory: bool) -> mado_core::AiConfig {
+    #[cfg_attr(not(feature = "test-hooks"), allow(unused_mut))]
+    let mut ai = if in_memory {
+        mado_core::AiConfig::in_memory()
+    } else {
+        mado_core::AiConfig::system(id)
+    };
+    #[cfg(feature = "test-hooks")]
+    if let Some(dirs) = std::env::var_os("MADO_TEST_CLI_DIRS") {
+        ai.cli_dirs = Some(std::env::split_paths(&dirs).collect());
+    }
+    ai
 }
 
 /// Paired clients' `hello` and calls go to the core, which decides
