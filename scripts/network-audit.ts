@@ -87,10 +87,16 @@ async function main(): Promise<number> {
   const files = (await readdir(join(root, "tests/e2e")))
     .filter((f) => f.endsWith(".test.ts"))
     .sort();
+  // The blocker's file is the one that updates the filter lists, so their
+  // hosts are recorded without every launch compiling them.
   const run = (file: string) =>
     spawn(["bun", "test", "--timeout", "120000", join("tests/e2e", file)], {
       cwd: root,
-      env: { ...env, MADO_AUDIT_PROXY: address },
+      env: {
+        ...env,
+        MADO_AUDIT_PROXY: address,
+        ...(file === "blocker.test.ts" ? { MADO_AUDIT_LISTS: "1" } : {}),
+      },
       stdout: "inherit",
       stderr: "inherit",
     }).exited;

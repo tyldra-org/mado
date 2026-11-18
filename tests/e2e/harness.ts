@@ -110,6 +110,10 @@ export class Mado {
             // Servers the tests start on this Mac (the AI model stand-ins)
             // are reached directly: loopback traffic never leaves the Mac.
             NO_PROXY: "127.0.0.1,localhost",
+            // Downloading and compiling the filter lists in every one of
+            // the suite's launches loads a CI runner enough to make page
+            // loads time out; the audit lets one file's launches do it.
+            ...(process.env.MADO_AUDIT_LISTS ? {} : { MADO_BLOCKER_UPDATE: "0" }),
           }
         : {
             // Tests never reach Apple's captive portal probe or the lists.
