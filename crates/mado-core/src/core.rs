@@ -1624,6 +1624,9 @@ impl Core {
             cmd if cmd.family() == mado_types::command::CommandFamily::Vault => {
                 self.vault_command(origin, cmd, reply_to, rec)
             }
+            cmd @ (Command::ControlSetupStatus | Command::ControlSetup { .. }) => {
+                self.setup_command(origin, cmd, reply_to)
+            }
             cmd if cmd.family() == mado_types::command::CommandFamily::Control => {
                 self.control_command(origin, cmd, rec)
             }
@@ -2108,6 +2111,13 @@ impl Core {
         {
             let on = self.page_commands_on();
             self.ui.ai_menu(on);
+        }
+        if out
+            .changes
+            .iter()
+            .any(|c| c.key == "features.ai" && c.new == true)
+        {
+            self.probe_on_device();
         }
         if out
             .changes

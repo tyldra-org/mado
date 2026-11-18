@@ -9,6 +9,7 @@ mod guide;
 mod mcp;
 mod profiles;
 mod rpc;
+mod setup;
 mod tokens;
 
 use std::io::IsTerminal as _;
@@ -41,7 +42,7 @@ usage: mado \"task text\" [--profile P] [--mode ask|auto|full] [--access browser
        mado commands [--json]
        mado <group> <verb> [key=value...]     (mado <group> --help)
        mado mcp [--task ID]
-       mado setup [claude|codex|cursor|path] | remove [...]
+       mado setup [claude|codex|cursor|path] [--yes] [--json] | remove [...]
        mado status [--json] | quit [--force] | serve [--stop]
        mado guide [mcp]
 ";
@@ -61,6 +62,7 @@ struct Opts {
     force: bool,
     stop: bool,
     task: Option<String>,
+    yes: bool,
     rest: Vec<String>,
 }
 
@@ -88,6 +90,7 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--force" => o.force = true,
             "--stop" => o.stop = true,
             "--task" => o.task = Some(value("--task")?),
+            "--yes" | "-y" => o.yes = true,
             "-h" | "--help" => o.rest.push("--help".into()),
             s if s.starts_with("--") => return Err(format!("unknown option {s}")),
             s => o.rest.push(s.to_owned()),
@@ -360,9 +363,55 @@ async fn run(o: Opts) -> i32 {
             }
         },
         ["mcp"] => mcp::serve(o.profile.clone(), None).await,
-        ["setup" | "remove", ..] => {
-            eprintln!("mado: setup arrives with M5-T16.");
-            FAILED
+        [verb @ ("setup" | "remove"), targets @ ..] => {
+            let Ok(p) = paths() else { return FAILED };
+            let env = setup::Env::system(p.root().to_path_buf(), o.yes);
+            if *verb == "setup" && targets.is_empty() {
+                let st = setup::status(&env);
+                if o.json {
+                    println!(
+                        "{}",
+                        json!({ "targets": st, "config": setup::config(&env) })
+                    );
+                } else {
+                    for t in st.as_array().into_iter().flatten() {
+                        let state = if t["setUp"] == true {
+                            "set up"
+                        } else if t["available"] == true {
+                            "not set up"
+                        } else {
+                            "not installed"
+                        };
+                        println!("{:<8} {state}", t["target"].as_str().unwrap_or_default());
+                    }
+                }
+                return 0;
+            }
+            let all: Vec<&str> = if targets.is_empty() {
+                setup::TARGETS.to_vec()
+            } else {
+                targets.to_vec()
+            };
+            let mut code = 0;
+            for t in all {
+                let r = if *verb == "setup" {
+                    setup::setup(&env, t)
+                } else {
+                    setup::remove(&env, t)
+                };
+                match r {
+                    Ok(said) => println!("{said}"),
+                    Err(e) => {
+                        eprintln!("mado: {e}");
+                        code = if setup::TARGETS.contains(&t) {
+                            FAILED
+                        } else {
+                            USAGE
+                        };
+                    }
+                }
+            }
+            code
         }
         urls if urls.iter().all(|u| looks_like_url(u)) => open(&o, urls).await,
         [group, rest @ ..]

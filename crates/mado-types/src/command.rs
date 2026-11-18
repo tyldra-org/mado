@@ -1361,6 +1361,15 @@ pub enum Command {
     #[serde(rename = "control.revoke", rename_all = "camelCase")]
     ControlRevoke { client_id: ClientId },
     /// Answers a pairing card: `scopes` from `read`, `act`, `tasks`,
+    /// Other agents Mado is set up in (spec 14 §5): `{ targets: [{ target,
+    /// setUp, available }], config }`, from `mado setup --json`.
+    #[serde(rename = "control.setupStatus")]
+    ControlSetupStatus,
+    /// Runs `mado setup <target>` or `mado remove <target>` (14 §5); the
+    /// button is the person's yes to the shell profile line. Answers `{
+    /// message }`. Mado's windows only.
+    #[serde(rename = "control.setup", rename_all = "camelCase")]
+    ControlSetup { target: String, remove: bool },
     /// `settings` and `full`.
     #[serde(rename = "control.pairRespond", rename_all = "camelCase")]
     ControlPairRespond {
@@ -1683,9 +1692,11 @@ impl Command {
             | Self::AiTaskList
             | Self::AiTaskGet { .. }
             | Self::AiTaskExport { .. } => CommandFamily::Ai,
-            Self::ControlClients | Self::ControlRevoke { .. } | Self::ControlPairRespond { .. } => {
-                CommandFamily::Control
-            }
+            Self::ControlClients
+            | Self::ControlRevoke { .. }
+            | Self::ControlPairRespond { .. }
+            | Self::ControlSetupStatus
+            | Self::ControlSetup { .. } => CommandFamily::Control,
             Self::AppOpenSettings { .. } => CommandFamily::App,
             Self::ProfileList
             | Self::ProfileCreate { .. }
@@ -1929,6 +1940,8 @@ impl Command {
             Self::ControlClients => "control.clients",
             Self::ControlRevoke { .. } => "control.revoke",
             Self::ControlPairRespond { .. } => "control.pairRespond",
+            Self::ControlSetupStatus => "control.setupStatus",
+            Self::ControlSetup { .. } => "control.setup",
             Self::AppOpenSettings { .. } => "app.openSettings",
             Self::ProfileList => "profile.list",
             Self::ProfileCreate { .. } => "profile.create",

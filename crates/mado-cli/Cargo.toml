@@ -16,11 +16,14 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+data-encoding = "2.11.1"
 mado-control = { version = "0.0.0", path = "../mado-control" }
 mado-platform = { version = "0.0.0", path = "../mado-platform" }
 mado-types = { version = "0.0.0", path = "../mado-types" }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 tokio = { version = "1.54.1", features = ["rt", "net", "io-util", "time", "macros", "signal", "sync", "io-std"] }
+toml_edit = "0.25.19"
 
 [dev-dependencies]
 tempfile = "3.27.0"
