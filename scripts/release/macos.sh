@@ -71,9 +71,10 @@ codesign --force --options runtime --timestamp=none \
   --keychain "$keychain" --sign "$sha1" "$app/Contents/MacOS/mado"
 # The on-device model helper (spec 13 §2.1) sits next to Mado's executable
 # and is signed first, so the bundle's signature covers it.
-arch=${target%%-*}
-[ "$arch" = aarch64 ] && arch=arm64
-xcrun swiftc -parse-as-library -O -target "$arch-apple-macos26.0" \
+# Swift names the architecture arm64; the release files keep `$arch`.
+swift_arch=${target%%-*}
+[ "$swift_arch" = aarch64 ] && swift_arch=arm64
+xcrun swiftc -parse-as-library -O -target "$swift_arch-apple-macos26.0" \
   -o "$app/Contents/MacOS/mado-ondevice" "$root/crates/mado-platform/swift/ondevice.swift"
 codesign --force --options runtime --timestamp=none \
   --keychain "$keychain" --sign "$sha1" "$app/Contents/MacOS/mado-ondevice"
