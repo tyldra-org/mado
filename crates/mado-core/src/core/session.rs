@@ -177,6 +177,47 @@ impl Core {
                 w.content_rect = Some(rect);
                 Ok(Value::Null)
             }
+            Command::WindowOverlayOpen {
+                window_id,
+                kind,
+                id,
+                rect,
+            } => {
+                if !matches!(origin, Origin::Ui { window } | Origin::Overlay { window } if *window == window_id)
+                {
+                    return Err(MadoError::new(
+                        ErrorCode::PermissionDenied,
+                        "error.window.notYours",
+                    ));
+                }
+                self.model.window(window_id)?;
+                if let Some(mut w) = self.state.tx(rec).windows().get(&window_id) {
+                    w.set_overlay(Some(mado_types::state::OverlayContent { kind, id, rect }));
+                    w.set_focus(mado_types::state::Focus::Overlay);
+                }
+                self.outbox.push(EngineOp::ApplyWindow(
+                    window_id,
+                    WindowCommand::ShowOverlay { rect },
+                ));
+                Ok(Value::Null)
+            }
+            Command::WindowOverlayClose { window_id } => {
+                if !matches!(origin, Origin::Ui { window } | Origin::Overlay { window } if *window == window_id)
+                {
+                    return Err(MadoError::new(
+                        ErrorCode::PermissionDenied,
+                        "error.window.notYours",
+                    ));
+                }
+                self.model.window(window_id)?;
+                if let Some(mut w) = self.state.tx(rec).windows().get(&window_id) {
+                    w.set_overlay(None);
+                    w.set_focus(mado_types::state::Focus::Ui);
+                }
+                self.outbox
+                    .push(EngineOp::ApplyWindow(window_id, WindowCommand::HideOverlay));
+                Ok(Value::Null)
+            }
             Command::WindowNew { private, urls } => {
                 if private && !self.state.profile.is_private {
                     // Private windows run in their own temporary profile

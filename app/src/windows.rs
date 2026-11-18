@@ -271,11 +271,15 @@ fn apply(
                         overlay.set_position(LogicalPosition::new(rect.x, rect.y))?;
                         overlay.set_size(LogicalSize::new(rect.width, rect.height))?;
                         overlay.show()?;
+                        overlay.set_focus()?;
                     }
                 }
                 WindowCommand::HideOverlay => {
                     if let Some(overlay) = app.get_webview(&overlay_label(window)) {
                         overlay.hide()?;
+                    }
+                    if let Some(ui) = app.get_webview(&ui_label(window)) {
+                        ui.set_focus()?;
                     }
                 }
                 WindowCommand::SetTitle(title) => w.set_title(&title)?,

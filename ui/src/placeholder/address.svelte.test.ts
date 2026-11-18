@@ -8,6 +8,7 @@ import type { Transport } from "../core/transport";
 import type { Request } from "../generated/Request";
 import type { Response } from "../generated/Response";
 import type { State } from "../generated/State";
+import AddressBar from "./AddressBar.svelte";
 import MainWindow from "./MainWindow.svelte";
 
 const W = "01a1d7aa-0000-7000-8000-000000000001";
@@ -93,12 +94,21 @@ async function shown(extra?: Partial<Record<string, unknown>>) {
   return seen;
 }
 
+// The field itself: in the window it is the command bar's, in the overlay.
+async function field() {
+  const { store, seen } = setup();
+  await store.start();
+  render(AddressBar, { store, windowId: W });
+  await tick();
+  return seen;
+}
+
 const sent = (seen: Request[], type: string) =>
   seen.filter((r) => r.cmd.type === type).map((r) => r.cmd);
 
 describe("address bar", () => {
   test("shows the display URL, suggests while typing and completes inline", async () => {
-    const seen = await shown();
+    const seen = await field();
     const input = screen.getByRole("textbox", { name: "Address and search" }) as HTMLInputElement;
     expect(input.value).toBe("alpha.example");
     expect(screen.getByText("Secure")).toBeTruthy();
@@ -112,7 +122,7 @@ describe("address bar", () => {
   });
 
   test("Enter opens what was typed; a search first asks for an engine", async () => {
-    const seen = await shown();
+    const seen = await field();
     const input = screen.getByRole("textbox", { name: "Address and search" });
     await fireEvent.focus(input);
     await fireEvent.input(input, { target: { value: "rust book" } });
@@ -130,6 +140,26 @@ describe("address bar", () => {
       { type: "settings.set", key: "search.defaultEngine", value: "duckduckgo", token: null },
     ]);
     expect(sent(seen, "nav.open")).toHaveLength(2);
+  });
+
+  test("in the window, the address opens the command bar over the page", async () => {
+    const seen = await shown();
+    const input = screen.getByRole("textbox", { name: "Address and search" }) as HTMLInputElement;
+    expect(input.value).toBe("alpha.example");
+    expect(input.readOnly).toBe(true);
+    const main = document.querySelector("main") as HTMLElement;
+    main.getBoundingClientRect = () =>
+      ({ x: 240, y: 48, width: 1000, height: 700, top: 48, left: 240 }) as DOMRect;
+    await fireEvent.mouseDown(input);
+    expect(sent(seen, "window.overlayOpen")).toMatchObject([
+      {
+        type: "window.overlayOpen",
+        windowId: W,
+        kind: "commandBar",
+        id: "location",
+        rect: { x: 420, y: 60, width: 640, height: 440 },
+      },
+    ]);
   });
 
   test("the Safari prompt answers nav.openExternally", async () => {

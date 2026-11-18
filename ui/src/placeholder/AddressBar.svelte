@@ -4,6 +4,7 @@
   import { onAction } from "../core/actions";
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
+  import Icon from "../design/Icon.svelte";
   import { t } from "../i18n";
 
   type Row = {
@@ -16,7 +17,45 @@
   };
   type Engine = { id: string; name: string; active: boolean };
 
-  let { store, windowId }: { store: CoreStore; windowId: WindowId } = $props();
+  // `field` edits in place (and in tests); `launcher` is the toolbar's
+  // display, which opens the command bar in the overlay (decisions/09-ui.md
+  // §3); `palette` is the command bar's field there.
+  let {
+    store,
+    windowId,
+    mode = "field",
+  }: { store: CoreStore; windowId: WindowId; mode?: "field" | "launcher" | "palette" } = $props();
+
+  // The command bar: centred near the top of the page area.
+  function launch() {
+    const page = document.querySelector("main")?.getBoundingClientRect();
+    if (!page || page.width < 240) return;
+    const width = Math.min(640, page.width - 32);
+    const rect = {
+      x: Math.round(page.x + (page.width - width) / 2),
+      y: Math.round(page.y + 12),
+      width: Math.round(width),
+      height: Math.round(Math.min(440, page.height - 24)),
+    };
+    void store.client
+      .call({ type: "window.overlayOpen", windowId, kind: "commandBar", id: "location", rect })
+      .catch(() => {});
+  }
+
+  const close = () => store.client.call({ type: "window.overlayClose", windowId }).catch(() => {});
+
+  // The palette starts editing the page's address, selected.
+  $effect(() => {
+    if (mode !== "palette" || !input) return;
+    editing = true;
+    text = tab?.url ?? "";
+    const field = input;
+    queueMicrotask(() => {
+      field.value = text;
+      field.focus();
+      field.select();
+    });
+  });
 
   const tab = $derived.by(() => {
     const id = store.state?.windows[windowId]?.activeTabId;
@@ -38,7 +77,9 @@
   // ⌘L, F6 (01 §5.3): focus moves to the address bar with its text selected.
   $effect(() =>
     onAction(store, (action) => {
-      if ((action === "openLocation" || action === "focusAddressBar") && input) {
+      if (action !== "openLocation" && action !== "focusAddressBar") return;
+      if (mode === "launcher") launch();
+      else if (input) {
         input.focus();
         input.select();
       }
@@ -86,6 +127,7 @@
     if (tabId) {
       await store.client.call({ type: "tab.activate", tabId }).catch(() => {});
       editing = false;
+      if (mode === "palette") void close();
       return;
     }
     const out = (await store.client
@@ -112,6 +154,7 @@
     }
     editing = false;
     rows = [];
+    if (mode === "palette") void close();
   }
 
   async function pick(engine: string) {
@@ -141,13 +184,14 @@
     } else if (e.key === "Escape") {
       editing = false;
       rows = [];
+      if (mode === "palette") void close();
     } else {
       deleted = e.key === "Backspace" || e.key === "Delete";
     }
   }
 </script>
 
-<div class="address">
+<div class="address" data-mode={mode}>
   <span
     class="security"
     class:visually-hidden={["secure", "internal", "local"].includes(
@@ -164,7 +208,15 @@
     placeholder={t("address.placeholder")}
     aria-label={t("address.label")}
     value={editing ? text : (tab?.displayUrl?.text ?? "")}
+    readonly={mode === "launcher"}
+    onmousedown={(e) => {
+      if (mode === "launcher") {
+        e.preventDefault();
+        launch();
+      }
+    }}
     onfocus={() => {
+      if (mode === "launcher") return;
       editing = true;
       text = tab?.url ?? "";
     }}
@@ -205,7 +257,24 @@
       {#each rows as row, i (i)}
         <li role="option" aria-selected={i === selected}>
           <button type="button" onclick={() => open(row.input, "suggestion", false, row.tabId)}>
-            {row.kind === "tab" ? t("address.switchToTab", { title: row.title }) : row.title}
+            <Icon
+              name={row.kind === "tab"
+                ? "sidebar"
+                : row.kind === "history"
+                  ? "history"
+                  : row.kind === "bookmark"
+                    ? "bookmark"
+                    : row.kind === "search"
+                      ? "search"
+                      : "globe"}
+              size={14}
+            />
+            <span class="row-title"
+              >{row.kind === "tab"
+                ? t("address.switchToTab", { title: row.title })
+                : row.title}</span
+            >
+            {#if row.url && row.url !== row.title}<span class="row-url">{row.url}</span>{/if}
           </button>
         </li>
       {/each}
@@ -287,6 +356,35 @@
   .inline {
     color: var(--text-tertiary);
   }
+  .address[data-mode="palette"] {
+    height: 44px;
+    padding: 0 var(--space-5);
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    background: transparent;
+    box-shadow: none !important;
+    font-size: var(--text-title);
+  }
+  .address[data-mode="palette"] input {
+    text-align: left;
+    color: var(--text);
+  }
+  .address[data-mode="palette"] [role="listbox"] {
+    position: static;
+    flex-basis: 100%;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+  .address[data-mode="palette"] {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 44px;
+  }
+  .address[data-mode="launcher"] input {
+    cursor: default;
+  }
   [role="listbox"] {
     position: absolute;
     top: calc(100% + 4px);
@@ -299,8 +397,29 @@
     background: var(--surface-raised);
     box-shadow: var(--shadow-float);
   }
+  .row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row-url {
+    margin-left: auto;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: var(--text-small);
+    font-weight: var(--weight-regular);
+  }
+  [role="option"][aria-selected="true"] .row-url {
+    color: inherit;
+    opacity: 0.8;
+  }
   [role="option"] button {
     width: 100%;
+    min-height: var(--row-height);
+    gap: var(--space-4);
     justify-content: flex-start;
     border: 0;
     background: transparent;
