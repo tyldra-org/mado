@@ -107,7 +107,9 @@ export class Mado {
             HTTP_PROXY: `http://${audit}`,
             HTTPS_PROXY: `http://${audit}`,
             ALL_PROXY: `http://${audit}`,
-            NO_PROXY: "",
+            // Servers the tests start on this Mac (the AI model stand-ins)
+            // are reached directly: loopback traffic never leaves the Mac.
+            NO_PROXY: "127.0.0.1,localhost",
           }
         : {
             // Tests never reach Apple's captive portal probe or the lists.

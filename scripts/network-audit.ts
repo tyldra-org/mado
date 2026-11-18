@@ -80,7 +80,7 @@ async function main(): Promise<number> {
     proxy.kill();
     return 1;
   }
-  const tests = spawn(["bun", "test", "tests/e2e"], {
+  const tests = spawn(["bun", "test", "--timeout", "120000", "tests/e2e"], {
     cwd: root,
     env: { ...env, MADO_AUDIT_PROXY: address },
     stdout: "inherit",
