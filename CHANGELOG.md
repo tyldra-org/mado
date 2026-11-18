@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
+The first release: a beta for trying Mado. It is not notarised by Apple and
+updates itself on the beta channel.
+
 ### Added
 
 - Repository scaffold: Rust workspace with one crate per area, Svelte UI and page script packages, checks and CI.
