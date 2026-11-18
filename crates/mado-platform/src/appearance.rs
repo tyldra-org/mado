@@ -11,8 +11,12 @@ pub fn set(theme: &str) {
     // SAFETY: the appearance names are AppKit's constants; main thread.
     unsafe {
         let named = match theme {
-            "light" => objc2_app_kit::NSAppearance::appearanceNamed(objc2_app_kit::NSAppearanceNameAqua),
-            "dark" => objc2_app_kit::NSAppearance::appearanceNamed(objc2_app_kit::NSAppearanceNameDarkAqua),
+            "light" => {
+                objc2_app_kit::NSAppearance::appearanceNamed(objc2_app_kit::NSAppearanceNameAqua)
+            }
+            "dark" => objc2_app_kit::NSAppearance::appearanceNamed(
+                objc2_app_kit::NSAppearanceNameDarkAqua,
+            ),
             _ => None,
         };
         app.setAppearance(named.as_deref());

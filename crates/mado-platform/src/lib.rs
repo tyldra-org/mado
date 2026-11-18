@@ -4,10 +4,10 @@
 //! Specification: `mado-docs/spec/00-overview.md` (paths) and the sections
 //! that call it. Roadmap: M1-T10.
 
+pub mod appearance;
 pub mod applinks;
 pub mod auth;
 pub mod default_browser;
-pub mod appearance;
 pub mod dock;
 pub mod enclave;
 pub mod files;
