@@ -284,7 +284,7 @@ impl Core {
     }
 
     /// A role (`commands`, `fast`…) or a `<connectionId>:<modelId>`.
-    fn attempts_for(&self, wanted: &str) -> Vec<Attempt> {
+    pub(super) fn attempts_for(&self, wanted: &str) -> Vec<Attempt> {
         if mado_lists::ROLES.contains(&wanted) {
             return self.ai_attempts(wanted);
         }

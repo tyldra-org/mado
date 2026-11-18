@@ -1285,5 +1285,21 @@
   "ai.approval.deny": "Deny",
   "ai.approval.amount": "Total: {amount}",
   "ai.task.paused.spendLimit": "Paused: the spending limit was reached.",
-  "ai.task.raiseLimit": "Raise limit for this task"
+  "ai.task.raiseLimit": "Raise limit for this task",
+  "ai.tasks": "Tasks",
+  "ai.task.new": "Ask the agent to",
+  "ai.task.start": "Start",
+  "ai.task.stop": "Stop",
+  "ai.task.answer": "Answer",
+  "ai.task.status.queued": "Waiting to start",
+  "ai.task.status.running": "Working",
+  "ai.task.status.waiting": "Needs you",
+  "ai.task.status.paused": "Paused",
+  "ai.task.status.done": "Done",
+  "ai.task.status.failed": "Failed",
+  "ai.task.status.cancelled": "Stopped",
+  "error.ai.agentsOff": "Agents are turned off in Settings › Features.",
+  "error.ai.noTask": "That task no longer exists.",
+  "error.ai.notWaiting": "That task isn't waiting for an answer.",
+  "error.ai.tooManyHelpers": "This task already has 6 helpers."
 }

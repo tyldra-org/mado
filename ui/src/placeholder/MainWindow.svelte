@@ -25,6 +25,7 @@
   import AiResultCard from "./AiResultCard.svelte";
   import PairingCard from "./PairingCard.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
+  import TasksPanel from "./TasksPanel.svelte";
   import PasskeySheet from "./PasskeySheet.svelte";
   import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
@@ -106,6 +107,7 @@
     <AiResultCard {store} {windowId} />
     <PairingCard {store} />
     <ApprovalCard {store} {windowId} />
+    <TasksPanel {store} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}>
     {#if locked}

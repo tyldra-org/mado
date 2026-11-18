@@ -120,6 +120,33 @@ pub fn request(
     }
 }
 
+/// Mado's task instructions (13 §7.4), `prompts/task.md` with the request
+/// and its scope.
+pub fn task_system(prompt: &str, scope: &[String]) -> String {
+    let scope = if scope.is_empty() {
+        "any site the request needs".to_owned()
+    } else {
+        scope.join(", ")
+    };
+    include_str!("../prompts/task.md")
+        .replace("{prompt}", prompt)
+        .replace("{scope}", &scope)
+}
+
+/// URLs listed under "Sources" in an answer, or any URLs in it.
+pub fn sources_in(answer: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for word in answer
+        .split(|c: char| c.is_whitespace() || matches!(c, '(' | ')' | '<' | '>' | '[' | ']' | '"'))
+    {
+        let w = word.trim_end_matches(['.', ',', ';']);
+        if (w.starts_with("http://") || w.starts_with("https://")) && !out.iter().any(|u| u == w) {
+            out.push(w.to_owned());
+        }
+    }
+    out
+}
+
 /// The `fast` model's request for a new chat's title.
 pub fn title_request(model: &str, question: &str, answer: &str) -> ModelRequest {
     let (q, _) = cap(question, 500);

@@ -10,8 +10,8 @@ mod forward;
 mod secret;
 
 pub use endpoint::{
-    CallHandler, ClientInfo, ControlAccess, Endpoint, ForwardHandler, HelloAnswer, PairingDecision,
-    TestAccess, rpc_code, serve,
+    CallHandler, ClientInfo, ControlAccess, Endpoint, FollowFn, ForwardHandler, HelloAnswer,
+    PairingDecision, TestAccess, rpc_code, serve,
 };
 pub use forward::{ForwardError, forward};
 pub use secret::LaunchSecret;

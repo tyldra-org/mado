@@ -629,7 +629,7 @@ impl Core {
 
     /// Closes tabs, pushing one closed-stack entry (04 §4). A single active
     /// pinned tab closed by the user follows `tabs.closePinned`.
-    fn close_tabs(&mut self, tabs: &[TabId], user_close: bool) {
+    pub(super) fn close_tabs(&mut self, tabs: &[TabId], user_close: bool) {
         let now = self.now();
         if user_close
             && let [one] = tabs

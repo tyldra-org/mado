@@ -1225,6 +1225,57 @@ pub enum Command {
         prompt_id: crate::PromptId,
         answer: String,
     },
+    /// Starts an agent task (spec 13 §7.1); answers `{ taskId }`. From the
+    /// CLI, `cli` names a subscription CLI runtime (M5-T13).
+    #[serde(rename = "ai.task.start", rename_all = "camelCase")]
+    AiTaskStart {
+        prompt: String,
+        #[serde(default)]
+        mode: Option<String>,
+        #[serde(default)]
+        access: Option<String>,
+        #[serde(default)]
+        runtime: Option<String>,
+        #[serde(default)]
+        cli: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        effort: Option<String>,
+        #[serde(default)]
+        scope: Option<Vec<String>>,
+    },
+    /// Text the agent reads at its next step.
+    #[serde(rename = "ai.task.steer", rename_all = "camelCase")]
+    AiTaskSteer { task_id: TaskId, text: String },
+    /// Text for after the current goal.
+    #[serde(rename = "ai.task.queue", rename_all = "camelCase")]
+    AiTaskQueue { task_id: TaskId, text: String },
+    /// Answers a task waiting for the person (`ask`, `handoff`).
+    #[serde(rename = "ai.task.answer", rename_all = "camelCase")]
+    AiTaskAnswer { task_id: TaskId, text: String },
+    /// `mado session resume`: answers a waiting task, or steers a running
+    /// one, and follows it; answers `{ taskId }`.
+    #[serde(rename = "ai.task.resume", rename_all = "camelCase")]
+    AiTaskResume {
+        task_id: TaskId,
+        #[serde(default)]
+        text: Option<String>,
+    },
+    #[serde(rename = "ai.task.stop", rename_all = "camelCase")]
+    AiTaskStop { task_id: TaskId },
+    /// The follower leaves on purpose (exit 3): the task keeps waiting.
+    #[serde(rename = "ai.task.detach", rename_all = "camelCase")]
+    AiTaskDetach { task_id: TaskId },
+    /// Tasks, newest first.
+    #[serde(rename = "ai.task.list")]
+    AiTaskList,
+    /// A task with its steps, answer and audit.
+    #[serde(rename = "ai.task.get", rename_all = "camelCase")]
+    AiTaskGet { task_id: TaskId },
+    /// Writes a task and its audit as JSON (13 §9.7).
+    #[serde(rename = "ai.task.export", rename_all = "camelCase")]
+    AiTaskExport { task_id: TaskId, path: String },
     /// Raises a paused task's spending limit (spec 13 §9.6): its spend so
     /// far plus `ai.spendLimits.perTask` again.
     #[serde(rename = "ai.task.raiseLimit", rename_all = "camelCase")]
@@ -1535,7 +1586,17 @@ impl Command {
             | Self::AiCommandRespond { .. }
             | Self::AiTabHandBack { .. }
             | Self::AiApprovalRespond { .. }
-            | Self::AiTaskRaiseLimit { .. } => CommandFamily::Ai,
+            | Self::AiTaskRaiseLimit { .. }
+            | Self::AiTaskStart { .. }
+            | Self::AiTaskSteer { .. }
+            | Self::AiTaskQueue { .. }
+            | Self::AiTaskAnswer { .. }
+            | Self::AiTaskResume { .. }
+            | Self::AiTaskStop { .. }
+            | Self::AiTaskDetach { .. }
+            | Self::AiTaskList
+            | Self::AiTaskGet { .. }
+            | Self::AiTaskExport { .. } => CommandFamily::Ai,
             Self::ControlClients | Self::ControlRevoke { .. } | Self::ControlPairRespond { .. } => {
                 CommandFamily::Control
             }
@@ -1752,6 +1813,16 @@ impl Command {
             Self::AiTabHandBack { .. } => "ai.tab.handBack",
             Self::AiApprovalRespond { .. } => "ai.approval.respond",
             Self::AiTaskRaiseLimit { .. } => "ai.task.raiseLimit",
+            Self::AiTaskStart { .. } => "ai.task.start",
+            Self::AiTaskSteer { .. } => "ai.task.steer",
+            Self::AiTaskQueue { .. } => "ai.task.queue",
+            Self::AiTaskAnswer { .. } => "ai.task.answer",
+            Self::AiTaskResume { .. } => "ai.task.resume",
+            Self::AiTaskStop { .. } => "ai.task.stop",
+            Self::AiTaskDetach { .. } => "ai.task.detach",
+            Self::AiTaskList => "ai.task.list",
+            Self::AiTaskGet { .. } => "ai.task.get",
+            Self::AiTaskExport { .. } => "ai.task.export",
             Self::ControlClients => "control.clients",
             Self::ControlRevoke { .. } => "control.revoke",
             Self::ControlPairRespond { .. } => "control.pairRespond",
@@ -1790,7 +1861,7 @@ impl Command {
             _ if matches!(
                 self,
                 Self::AiChatSend { .. } | Self::AiChatCancel { .. } | Self::AiChatDelete { .. }
-            ) =>
+            ) || self.name().starts_with("ai.task.") =>
             {
                 "tasks"
             }
