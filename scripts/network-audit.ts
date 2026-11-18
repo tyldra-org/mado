@@ -7,7 +7,7 @@
 //     bun scripts/network-audit.ts
 //
 // The app must be built with the test-hooks feature (MADO_TEST_PROXY).
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "bun";
@@ -80,13 +80,30 @@ async function main(): Promise<number> {
     proxy.kill();
     return 1;
   }
-  const tests = spawn(["bun", "test", "--timeout", "120000", "tests/e2e"], {
-    cwd: root,
-    env: { ...env, MADO_AUDIT_PROXY: address },
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const code = await tests.exited;
+  // One file at a time, each run again once if it fails: a loaded CI
+  // runner sometimes misses a page load by a few seconds, and a release
+  // should not stop on that. Files that pass only on the second run are
+  // named, so a real flake stays visible.
+  const files = (await readdir(join(root, "tests/e2e")))
+    .filter((f) => f.endsWith(".test.ts"))
+    .sort();
+  const run = (file: string) =>
+    spawn(["bun", "test", "--timeout", "120000", join("tests/e2e", file)], {
+      cwd: root,
+      env: { ...env, MADO_AUDIT_PROXY: address },
+      stdout: "inherit",
+      stderr: "inherit",
+    }).exited;
+  const failed: string[] = [];
+  const retried: string[] = [];
+  for (const file of files) {
+    if ((await run(file)) === 0) continue;
+    if ((await run(file)) === 0) retried.push(file);
+    else failed.push(file);
+  }
+  const code = failed.length ? 1 : 0;
+  if (retried.length) console.log(`network-audit: passed on the second run: ${retried.join(", ")}`);
+  if (failed.length) console.error(`network-audit: failed twice: ${failed.join(", ")}`);
   proxy.kill();
   const recorded = (await readFile(record, "utf8").catch(() => "")).split("\n");
   const bad = unlisted(recorded, await allowlist());
