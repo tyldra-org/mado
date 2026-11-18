@@ -53,7 +53,7 @@ jobs:
       # it from a branch of this repository; GitHub's otherwise. Anyone
       # else's push, a fork, Dependabot or a bot runs on GitHub's Macs. Fork
       # pull requests also wait for the owner's approval before any job runs.
-      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098' && (github.event_name != 'pull_request' || (github.event.pull_request.user.login == 'yogeshprasad098' && github.event.pull_request.head.repo.full_name == github.repository))) && '["self-hosted","mado-mac"]' || '"macos-latest"' }}
+      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098' && (github.event_name != 'pull_request' || (github.event.pull_request.user.login == 'yogeshprasad098' && github.event.pull_request.head.repo.full_name == github.repository))) && 'my Mac' || 'macos-latest' }}
       base: ${{ steps.base.outputs.sha }}
       full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -96,11 +96,15 @@ jobs:
         run: bun scripts/ci-scope.ts areas "$BASE" | tee -a "$GITHUB_OUTPUT"
 
   rust:
-    name: Rust
+    name: Rust (${{ matrix.mac }})
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    # Mado ships on macOS: lint and test on a Mac.
-    runs-on: ${{ fromJSON(needs.changes.outputs.mac) }}
+    # Mado ships on macOS: lint and test on a Mac. A one-entry matrix, so the
+    # run's graph groups it and its name says which Mac ran it.
+    strategy:
+      matrix:
+        mac: ["${{ needs.changes.outputs.mac }}"]
+    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 30
     defaults:
       run:
@@ -208,10 +212,13 @@ jobs:
   visual:
     # Screenshot tests of every gallery screen in light and dark (M6-T10),
     # in WebKit on a Mac, where the stored images were made.
-    name: Screenshots
+    name: Screenshots (${{ matrix.mac }})
     needs: changes
     if: needs.changes.outputs.ts == 'true'
-    runs-on: ${{ fromJSON(needs.changes.outputs.mac) }}
+    strategy:
+      matrix:
+        mac: ["${{ needs.changes.outputs.mac }}"]
+    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
