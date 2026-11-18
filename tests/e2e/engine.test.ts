@@ -161,12 +161,35 @@ run("WebKit adapter", () => {
 
   test("the shims answer for the permission flow to come", async () => {
     const { tab } = await open("http://pages.mado.test/scripts/shims.html");
-    const t = await tabWhere(tab, (t) => t.title.includes("geo"));
-    expect(JSON.parse(t.title.slice("Shims: ".length))).toEqual({
-      protocol: "registered",
-      notification: "default",
-      geo: 1,
-    });
+    // Whether the page's requests reach a prompt depends on timing: a
+    // notification request made before the commit's permission note is
+    // answered by it ("default"); one made after shows a prompt. On macOS 26
+    // a location request shows one too, unless macOS already says no. The
+    // person here dismisses whatever is asked; the page must hear back.
+    let t: Tab | undefined;
+    for (let i = 0; i < 300 && !t; i++) {
+      const s = await state();
+      const current = s.tabs[tab];
+      if (current?.title.includes("geo")) {
+        t = current;
+        break;
+      }
+      for (const p of Object.values(
+        (s as unknown as { prompts: Record<string, { id: string; type: string; tabId?: string }> })
+          .prompts,
+      )) {
+        if (p.type === "permission" && p.tabId === tab)
+          await mado.control
+            .call("test.asUser", { command: { type: "prompt.dismiss", id: p.id } })
+            .catch(() => {});
+      }
+      await sleep(50);
+    }
+    if (!t) throw new Error("the shims did not answer");
+    const got = JSON.parse(t.title.slice("Shims: ".length)) as Record<string, unknown>;
+    expect(got.protocol).toBe("registered");
+    expect(["default", "denied"]).toContain(String(got.notification));
+    expect(got.geo).toBe(1);
   });
 
   test("a page that stops answering gets the unresponsive prompt, which goes when it recovers (02 §5.3)", async () => {
