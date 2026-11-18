@@ -699,6 +699,10 @@ pub struct Core {
     /// Each control client's implicit task (spec 14 §4) and agent tabs the
     /// person handed back after taking them over (13 §7.3).
     control_tasks: BTreeMap<mado_types::ClientId, mado_types::TaskId>,
+    /// CLI tasks' one-time MCP tokens (hashed) and the sessions they
+    /// opened (13 §7.2).
+    task_tokens: BTreeMap<Vec<u8>, mado_types::TaskId>,
+    task_clients: BTreeMap<mado_types::ClientId, mado_types::TaskId>,
     handed_back: std::collections::BTreeSet<mado_types::TabId>,
     /// Files the next file chooser of a tab gets (the `upload` tool).
     pending_uploads: BTreeMap<mado_types::TabId, Vec<PathBuf>>,
@@ -1031,6 +1035,8 @@ impl Core {
             control_clients: BTreeMap::new(),
             pending_uploads: BTreeMap::new(),
             control_tasks: BTreeMap::new(),
+            task_tokens: BTreeMap::new(),
+            task_clients: BTreeMap::new(),
             guards: BTreeMap::new(),
             task_ctl: BTreeMap::new(),
             task_queue: tasks::Queue::new(),
@@ -1791,6 +1797,15 @@ impl Core {
                 let _ = reply.send(self.follow_task(task));
             }
             Internal::ToolAudit { origin, detail } => {
+                if let Origin::Agent { task } = origin
+                    && detail["ok"] == true
+                    && matches!(detail["tool"].as_str(), Some("open" | "navigate"))
+                    && let Some(url) = detail["args"]["url"].as_str()
+                    && let Some(c) = self.task_ctl.get_mut(&task)
+                    && !c.opened.iter().any(|u| u == url)
+                {
+                    c.opened.push(url.to_owned());
+                }
                 if let Some(task) = self.task_of(&origin, rec) {
                     self.audit(task, "tool_call", detail);
                 }

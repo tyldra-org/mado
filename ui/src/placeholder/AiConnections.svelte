@@ -4,6 +4,7 @@
   // only by their last four characters.
   import type { CoreStore } from "../core/store.svelte";
   import { t } from "../i18n";
+  import AiClis from "./AiClis.svelte";
 
   let { store }: { store: CoreStore } = $props();
 
@@ -151,5 +152,6 @@
         >{t("ai.connection.useLocal", { name: t(`ai.provider.${f.provider}`) })}</button
       >
     {/each}
+    <AiClis {store} />
   {/if}
 </section>

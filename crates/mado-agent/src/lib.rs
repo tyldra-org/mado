@@ -2,7 +2,9 @@
 //!
 //! Specification: `mado-docs/spec/13-ai.md` sections 5 to 12. Roadmap: M5.
 
+pub mod acp;
 pub mod chat;
+pub mod cli;
 pub mod commands;
 pub mod safety;
 pub mod untrusted;

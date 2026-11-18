@@ -895,6 +895,38 @@ impl super::Core {
             let _ = reply.send(Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off")));
             return;
         }
+        // A CLI task's `ask` and `handoff` (13 §7.2) wait for the person,
+        // as in Mado's runtime.
+        if let Origin::Agent { task } = origin
+            && matches!(name.as_str(), "ask" | "handoff")
+            && let Some(c) = self.task_ctl.get(&task)
+        {
+            let reason = ["question", "reason"]
+                .iter()
+                .find_map(|k| args[*k].as_str())
+                .unwrap_or("The person's turn")
+                .to_owned();
+            let (waiting, stop, inputs) = (
+                std::sync::Arc::clone(&c.waiting),
+                std::sync::Arc::clone(&c.stop),
+                self.inputs.clone(),
+            );
+            tokio::task::spawn_local(async move {
+                let answered =
+                    super::tasks::wait_for_person(&inputs, task, &waiting, &stop, reason).await;
+                let result = match answered {
+                    Some(a) if name == "ask" => Ok(json!({ "answer": a })),
+                    Some(a) => Ok(json!({ "handedBack": true, "note": a })),
+                    None => Err(MadoError::new(ErrorCode::Conflict, "error.ai.taskStopped")),
+                };
+                let _ = inputs.send(Input::Internal(Internal::ToolAudit {
+                    origin,
+                    detail: json!({ "tool": name, "args": args, "ok": result.is_ok() }),
+                }));
+                let _ = reply.send(result);
+            });
+            return;
+        }
         let ctx = self.tool_ctx(origin);
         tokio::task::spawn_local(async move {
             let result = run_audited(&ctx, &name, args).await;

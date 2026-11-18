@@ -18,9 +18,9 @@ pub use current::{
     sensitive_hosts, serial, top_domains, tracking_params,
 };
 pub use data::{
-    ActionLexicon, Blocked, Category, Compat, CompatEntry, FilterList, FilterLists, HstsPreload,
-    ListKind, MinSafeEngine, ModelInfo, Models, PaymentFrames, Price, ROLES, SensitiveHosts,
-    Status, TopDomainList, TrackingParams,
+    ActionLexicon, Blocked, Category, CliInfo, Compat, CompatEntry, FilterList, FilterLists,
+    HstsPreload, ListKind, MinSafeEngine, ModelInfo, Models, PaymentFrames, Price, ROLES,
+    SensitiveHosts, Status, TopDomainList, TrackingParams,
 };
 pub use signature::{PUBLIC_KEY, file_comment, signed_serial, trusted_comment, verify_file};
 pub use store::{Installed, Store};

@@ -22,11 +22,14 @@ enum Link {
     Ready { conn: Conn, scopes: Vec<String> },
 }
 
-async fn connect(profile: Option<String>) -> Link {
+async fn connect(profile: Option<String>, task_token: Option<String>) -> Link {
     let o = crate::Opts {
         profile,
         ..crate::Opts::default()
     };
+    if let Some(token) = task_token {
+        return task_session(&o, &token).await;
+    }
     let r = match crate::profile(&o, true) {
         Ok(r) => r,
         Err(_) => return Link::Waiting("Mado is not running and did not start.".into()),
@@ -75,6 +78,28 @@ async fn connect(profile: Option<String>) -> Link {
             conn,
             scopes: strings(&h["scopes"]),
         },
+    }
+}
+
+/// A CLI task's session (13 §7.2): Mado started the agent that started
+/// this server, and gave it a one-time token for the task's tools.
+async fn task_session(o: &crate::Opts, token: &str) -> Link {
+    let Ok(r) = crate::profile(o, false) else {
+        return Link::Waiting("Mado is not running.".into());
+    };
+    let Ok(mut conn) = Conn::connect(&r.endpoint).await else {
+        return Link::Waiting("Mado's control endpoint did not answer.".into());
+    };
+    let client = json!({ "name": "mado task", "version": env!("CARGO_PKG_VERSION") });
+    match conn
+        .call("hello", json!({ "client": client, "token": token }))
+        .await
+    {
+        Ok(h) if h["pairingRequired"] != true => Link::Ready {
+            conn,
+            scopes: strings(&h["scopes"]),
+        },
+        _ => Link::Waiting("This task's access to Mado has ended.".into()),
     }
 }
 
@@ -131,7 +156,7 @@ fn error(id: &Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
-pub async fn serve(profile: Option<String>) -> i32 {
+pub async fn serve(profile: Option<String>, task_token: Option<String>) -> i32 {
     let (out, mut outbox) = mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
@@ -145,8 +170,9 @@ pub async fn serve(profile: Option<String>) -> i32 {
     // Pairing may wait for the person; requests are answered meanwhile.
     let (linked_tx, mut linked_rx) = mpsc::unbounded_channel::<Link>();
     let start = |tx: mpsc::UnboundedSender<Link>, p: Option<String>| {
+        let token = task_token.clone();
         tokio::spawn(async move {
-            let _ = tx.send(connect(p).await);
+            let _ = tx.send(connect(p, token).await);
         });
     };
     start(linked_tx.clone(), profile.clone());

@@ -31,6 +31,11 @@ pub struct AiConfig {
     pub local: Vec<(Provider, String)>,
     /// Never ask Apple's on-device model (tests).
     pub skip_on_device: bool,
+    /// Where subscription CLIs are looked for; `None` asks the login shell
+    /// (13 §2.3). Tests pass a folder of fakes.
+    pub cli_dirs: Option<Vec<std::path::PathBuf>>,
+    /// The `mado` CLI, which CLI agents start as Mado's MCP server (13 §7.2).
+    pub mado_cli: std::path::PathBuf,
 }
 
 impl AiConfig {
@@ -45,6 +50,11 @@ impl AiConfig {
             openrouter_api: "https://openrouter.ai/api/v1".into(),
             local: mado_ai::local::defaults(),
             skip_on_device: false,
+            cli_dirs: None,
+            mado_cli: std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("mado")))
+                .unwrap_or_else(|| "mado".into()),
         }
     }
 
@@ -55,6 +65,21 @@ impl AiConfig {
             ..Self::system(mado_types::ProfileId::new())
         }
     }
+}
+
+/// Every subscription CLI of `models.json` (13 §2.3), looked for in `dirs`
+/// or the login shell's `PATH`. Blocks: runs `--version`s.
+pub(super) fn detect_clis(dirs: Option<Vec<std::path::PathBuf>>) -> Vec<mado_agent::cli::Found> {
+    let dirs = dirs.unwrap_or_else(mado_agent::cli::search_dirs);
+    let models = mado_lists::models();
+    models
+        .cli
+        .iter()
+        .map(|(key, info)| {
+            let name = Provider::from_key(key).map_or_else(|| key.clone(), |p| p.name().to_owned());
+            mado_agent::cli::detect(key, &name, info, &dirs)
+        })
+        .collect()
 }
 
 /// The profile's Keychain service, account `ai.<connectionId>`.
@@ -543,6 +568,64 @@ impl Core {
                 });
                 Ok(Value::Null)
             }
+            Command::AiCliList => {
+                let Some(reply) = reply_to.take() else {
+                    return Ok(Value::Null);
+                };
+                let dirs = self.ai.cli_dirs.clone();
+                tokio::task::spawn_blocking(move || {
+                    let _ = reply.send(Ok(json!(
+                        detect_clis(dirs)
+                            .into_iter()
+                            .map(|f| {
+                                let ready = f.ready();
+                                let mut v = json!(f);
+                                v["ready"] = json!(ready);
+                                v
+                            })
+                            .collect::<Vec<_>>()
+                    )));
+                });
+                Ok(Value::Null)
+            }
+            Command::AiCliRun { provider, what } => {
+                if !origin.is_user() {
+                    return Err(not_allowed());
+                }
+                let info = mado_lists::models()
+                    .cli
+                    .get(&provider)
+                    .cloned()
+                    .ok_or_else(|| {
+                        MadoError::new(ErrorCode::InvalidInput, "error.ai.unknownProvider")
+                    })?;
+                let command = match what.as_str() {
+                    "install" => info.install,
+                    "login" => info.login,
+                    _ => {
+                        return Err(MadoError::new(
+                            ErrorCode::InvalidInput,
+                            "error.control.badCommand",
+                        ));
+                    }
+                };
+                let dirs = self.ai.cli_dirs.clone();
+                let tmp = std::env::temp_dir();
+                let reply = reply_to.take();
+                tokio::task::spawn_blocking(move || {
+                    let dirs = dirs.unwrap_or_else(mado_agent::cli::search_dirs);
+                    let r = mado_agent::cli::open_in_terminal(&command, &tmp, &dirs)
+                        .map(|()| Value::Null)
+                        .map_err(|e| {
+                            MadoError::new(ErrorCode::Internal, "error.ai.terminal")
+                                .arg("reason", e.to_string())
+                        });
+                    if let Some(reply) = reply {
+                        let _ = reply.send(r);
+                    }
+                });
+                Ok(Value::Null)
+            }
             Command::AiModelList => Ok(serde_json::to_value(mado_ai::catalog::picker(
                 &mado_lists::models(),
                 &self.ai_available(),
@@ -661,10 +744,6 @@ impl Core {
         let kind = Kind::from_key(kind).ok_or_else(|| invalid("error.ai.unknownKind"))?;
         let provider =
             Provider::from_key(provider).ok_or_else(|| invalid("error.ai.unknownProvider"))?;
-        // Subscription CLIs connect with M5-T13.
-        if kind == Kind::SubscriptionCli {
-            return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.notYet"));
-        }
         let secret = secret
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty());
@@ -787,6 +866,28 @@ impl Core {
             return;
         };
         let provider = Provider::from_key(&conn.provider);
+        if provider.is_some_and(|p| p.kinds() == [Kind::SubscriptionCli]) {
+            // 13 §2.3: installed, and its ACP command can start. It lists no
+            // models: tasks pick it by name.
+            let (inputs, id, dirs) = (self.inputs.clone(), id.to_owned(), self.ai.cli_dirs.clone());
+            let key = conn.provider.clone();
+            tokio::task::spawn_blocking(move || {
+                let found = detect_clis(dirs).into_iter().find(|f| f.provider == key);
+                let result = match found {
+                    Some(f) if f.ready() => Ok(Vec::new()),
+                    Some(f) if f.path.is_some() && f.needs_node && !f.node_ok => {
+                        Err("needsNode".to_owned())
+                    }
+                    _ => Err("notInstalled".to_owned()),
+                };
+                let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::Tested {
+                    id,
+                    result,
+                    reply,
+                })));
+            });
+            return;
+        }
         if provider == Some(Provider::Apple) {
             // Apple's on-device model has one model and no key.
             let (inputs, id, skip) = (self.inputs.clone(), id.to_owned(), self.ai.skip_on_device);
