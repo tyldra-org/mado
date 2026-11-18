@@ -20,11 +20,11 @@
 </script>
 
 {#each cards as c (c.id)}
-  <div role="alertdialog" aria-label={t("ai.approval.title")}>
+  <div class="approval" role="alertdialog" aria-label={t("ai.approval.title")}>
     <h2>{t("ai.approval.title")}</h2>
     <p>{c.detail}</p>
     <p>{c.site}</p>
-    {#if c.amount}<p><strong>{t("ai.approval.amount", { amount: c.amount })}</strong></p>{/if}
+    {#if c.amount}<p class="amount">{t("ai.approval.amount", { amount: c.amount })}</p>{/if}
     <button type="button" onclick={() => answer(c, "once")}>{t("ai.approval.once")}</button>
     {#if c.allowForTask}
       <button type="button" onclick={() => answer(c, "task")}>{t("ai.approval.task")}</button>

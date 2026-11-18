@@ -40,7 +40,13 @@
 
 <main>
   <h1>{t("internal.history.title")}</h1>
-  <input type="search" aria-label={t("internal.history.search")} bind:value={text} oninput={load} />
+  <input
+    type="search"
+    placeholder={t("internal.history.search")}
+    aria-label={t("internal.history.search")}
+    bind:value={text}
+    oninput={load}
+  />
   {#if days.length === 0}<p>{t("internal.history.empty")}</p>{/if}
   {#each days as d (d.day)}
     <h2>{d.day}</h2>

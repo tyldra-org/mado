@@ -9,8 +9,10 @@ export function prompts(kind: string): Record<string, unknown> {
       ...base,
       type: "permission",
       origin: "https://journal.example",
-      permissions: ["camera", "microphone"],
-      remember: true,
+      embedder: null,
+      keys: ["camera", "microphone"],
+      createdAt: 0,
+      armedAt: 0,
     },
     approval: {
       ...base,
