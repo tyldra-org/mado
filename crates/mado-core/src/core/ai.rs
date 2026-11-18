@@ -270,16 +270,7 @@ impl Core {
         self.ai_roles = roles;
         let on = self.page_commands_on();
         self.ui.ai_menu(on);
-        if !self.ai.skip_on_device {
-            let inputs = self.inputs.clone();
-            std::thread::spawn(move || {
-                let ready =
-                    mado_platform::ondevice::status() == mado_platform::ondevice::Status::Available;
-                let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::OnDevice(
-                    ready,
-                ))));
-            });
-        }
+        self.probe_on_device();
         // The first retention run soon after start, then daily (13 §5).
         self.timers.schedule(
             crate::Timer::AiRetention,
@@ -291,6 +282,22 @@ impl Core {
             std::time::Duration::from_secs(3600),
         );
         self.state.ai.roles = self.resolved_roles();
+    }
+
+    /// Asks Apple's on-device helper whether its model is there, only with
+    /// AI on (13 §13 check 1: no AI process with AI off).
+    pub(super) fn probe_on_device(&self) {
+        if self.ai.skip_on_device || self.setting("features.ai") != true {
+            return;
+        }
+        let inputs = self.inputs.clone();
+        std::thread::spawn(move || {
+            let ready =
+                mado_platform::ondevice::status() == mado_platform::ondevice::Status::Available;
+            let _ = inputs.send(super::Input::Internal(Internal::Ai(AiEvent::OnDevice(
+                ready,
+            ))));
+        });
     }
 
     /// Every model of a connection that exists, with its connection's

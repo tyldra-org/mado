@@ -28,4 +28,23 @@ describe("network audit", () => {
     expect(allowed).toContain("www.google.com");
     expect(allowed).toContain("duckduckgo.com");
   });
+
+  // 13 §13 check 1: the audit runs with AI off, so no AI provider may be
+  // allowed; any request to one fails the audit.
+  test("no AI provider's host is allowed", async () => {
+    const allowed = await allowlist();
+    for (const host of [
+      "api.anthropic.com",
+      "api.openai.com",
+      "generativelanguage.googleapis.com",
+      "api.x.ai",
+      "api.mistral.ai",
+      "api.deepseek.com",
+      "api.groq.com",
+      "openrouter.ai",
+      "gateway.ai.cloudflare.com",
+    ]) {
+      expect(unlisted([host], allowed)).toEqual([host]);
+    }
+  });
 });

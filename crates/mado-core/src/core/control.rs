@@ -278,6 +278,63 @@ impl Core {
         }
     }
 
+    /// Settings › Developers' Set up and Remove (14 §5): the `mado` CLI
+    /// does the work, so the result is the same as from a terminal.
+    pub(super) fn setup_command(
+        &mut self,
+        origin: &Origin,
+        cmd: Command,
+        reply_to: &mut Option<super::Reply>,
+    ) -> Result<Value, MadoError> {
+        if !matches!(
+            origin,
+            Origin::Settings | Origin::Ui { .. } | Origin::System
+        ) {
+            return Err(err(ErrorCode::Protected, "error.control.notAllowed"));
+        }
+        let args: Vec<String> = match cmd {
+            Command::ControlSetupStatus => vec!["setup".into(), "--json".into()],
+            Command::ControlSetup { target, remove } => {
+                if !["claude", "codex", "cursor", "path"].contains(&target.as_str()) {
+                    return Err(err(ErrorCode::InvalidInput, "error.control.setupTarget"));
+                }
+                let verb = if remove { "remove" } else { "setup" };
+                vec![verb.into(), target, "--yes".into()]
+            }
+            _ => return Err(err(ErrorCode::Unsupported, "error.unknownCommand")),
+        };
+        let status = args.contains(&"--json".to_owned());
+        let cli = self.ai.mado_cli.clone();
+        let Some(reply) = reply_to.take() else {
+            return Ok(Value::Null);
+        };
+        tokio::task::spawn_blocking(move || {
+            let out = std::process::Command::new(&cli).args(&args).output();
+            let r = match out {
+                Ok(o) if o.status.success() => {
+                    let text = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+                    if status {
+                        serde_json::from_str(&text)
+                            .map_err(|_| err(ErrorCode::Internal, "error.control.setupFailed"))
+                    } else {
+                        Ok(json!({ "message": text }))
+                    }
+                }
+                Ok(o) => Err(err(ErrorCode::Internal, "error.control.setupFailed").arg(
+                    "reason",
+                    String::from_utf8_lossy(&o.stderr)
+                        .trim()
+                        .trim_start_matches("mado: ")
+                        .to_owned(),
+                )),
+                Err(e) => Err(err(ErrorCode::Internal, "error.control.setupFailed")
+                    .arg("reason", e.to_string())),
+            };
+            let _ = reply.send(r);
+        });
+        Ok(Value::Null)
+    }
+
     pub(super) fn control_command(
         &mut self,
         origin: &Origin,

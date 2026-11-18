@@ -148,7 +148,9 @@ impl Core {
     }
 
     pub(super) fn memory_on(&self) -> bool {
-        self.setting("features.memory") == true && !self.state.profile.is_private
+        self.setting("features.ai") == true
+            && self.setting("features.memory") == true
+            && !self.state.profile.is_private
     }
 
     /// The skills, the person's first (13 §11). Reads the profile's folder.

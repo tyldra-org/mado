@@ -218,7 +218,9 @@ impl Core {
     /// on (13 §12); either way its next run is set.
     fn run_routine(&mut self, id: &str, rec: &mut PatchRecorder) -> Option<TaskId> {
         let now = self.now();
-        let paused = self.setting("features.routines") != true || self.energy_saver();
+        let paused = self.setting("features.ai") != true
+            || self.setting("features.routines") != true
+            || self.energy_saver();
         let r = self.routines.list.get(id)?.clone();
         let mut started = None;
         if !paused {
