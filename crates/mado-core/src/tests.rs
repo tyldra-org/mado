@@ -5166,6 +5166,226 @@ fn an_agent_fills_without_seeing_the_values() {
     );
 }
 
+/// Calls an agent tool as `origin`.
+fn tool(core: &TestCore, origin: Origin, name: &str, args: Value) -> Result<Value, MadoError> {
+    let (reply, rx) = tokio::sync::oneshot::channel();
+    core.handle.send(Input::Internal(Internal::ToolCall {
+        origin,
+        name: name.into(),
+        args,
+        reply,
+    }));
+    rx.blocking_recv().expect("answered")
+}
+
+/// Spec 13 §10 and §13 check 7: `remember` refuses a card number and
+/// other secrets, appends the rest to the inbox, and the search finds it;
+/// the person reads, edits and deletes the files; with memory off the
+/// tools refuse.
+#[test]
+fn memory_remembers_searches_and_refuses_secrets() {
+    let core = TestCore::start();
+    ai_on(&core);
+    let agent = Origin::Agent {
+        task: mado_types::TaskId::new(),
+    };
+    let off = tool(&core, agent, "remember", json!({ "text": "likes tea" })).expect_err("off");
+    assert_eq!(off.message_key, "error.ai.memoryOff");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "features.memory".into(),
+            value: json!(true),
+            token: None,
+        },
+    )
+    .expect("memory on");
+    let card = tool(
+        &core,
+        agent,
+        "remember",
+        json!({ "text": "Card 4111 1111 1111 1111 for shopping" }),
+    )
+    .expect_err("refused");
+    assert_eq!(card.message_key, "error.ai.memoryCard");
+    let key = tool(
+        &core,
+        agent,
+        "remember",
+        json!({ "text": "OpenAI key sk-proj-abcdefghijklmnopqrstuvwxyz" }),
+    )
+    .expect_err("refused");
+    assert_eq!(key.message_key, "error.ai.memoryKey");
+    tool(
+        &core,
+        agent,
+        "remember",
+        json!({ "text": "Prefers window seats on trains" }),
+    )
+    .expect("remembered");
+    let inbox = std::fs::read_to_string(core.dir.path().join("AI/memory/inbox.md")).expect("inbox");
+    assert!(inbox.contains("Prefers window seats on trains"), "{inbox}");
+    assert!(!inbox.contains("4111"));
+    let found = tool(
+        &core,
+        agent,
+        "memory_search",
+        json!({ "query": "window seat" }),
+    )
+    .expect("search");
+    assert_eq!(found["results"][0]["path"], "inbox.md");
+    assert_eq!(found["results"][0]["line"], 1);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiMemoryWrite {
+            path: "USER.md".into(),
+            text: "# Food\n- Vegetarian\n".into(),
+        },
+    )
+    .expect("written");
+    let veg = ask(
+        &core,
+        Origin::Settings,
+        Command::AiMemorySearch {
+            query: "vegetarian".into(),
+        },
+    )
+    .expect("search");
+    assert_eq!(veg[0]["heading"], "Food");
+    let read = tool(&core, agent, "memory_read", json!({ "path": "USER.md" })).expect("read");
+    assert_eq!(read["text"], "# Food\n- Vegetarian\n");
+    let escape = tool(
+        &core,
+        agent,
+        "memory_read",
+        json!({ "path": "../profile.sqlite" }),
+    )
+    .expect_err("outside");
+    assert_eq!(escape.message_key, "error.ai.memoryPath");
+    let list = ask(&core, Origin::Settings, Command::AiMemoryList).expect("list");
+    assert_eq!(list.as_array().map(Vec::len), Some(2));
+    let refused = ask(
+        &core,
+        agent,
+        Command::AiMemoryDelete {
+            path: "USER.md".into(),
+        },
+    )
+    .expect_err("protected");
+    assert_eq!(refused.message_key, "error.ai.notAllowed");
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiMemoryDelete {
+            path: "USER.md".into(),
+        },
+    )
+    .expect("deleted");
+    let gone = ask(
+        &core,
+        Origin::Settings,
+        Command::AiMemorySearch {
+            query: "vegetarian".into(),
+        },
+    )
+    .expect("search");
+    assert_eq!(gone, json!([]));
+    core.stop();
+}
+
+/// Spec 13 §11: built-in and saved skills, the save card, and the hint
+/// the first time a task's tab lands on a skill's site.
+#[test]
+fn skills_save_with_approval_and_hint_on_their_site() {
+    let core = TestCore::start();
+    ai_on(&core);
+    let task = mado_types::TaskId::new();
+    let agent = Origin::Agent { task };
+    let list = ask(&core, Origin::Settings, Command::AiSkillList).expect("list");
+    assert!(list.as_array().is_some_and(|l| {
+        l.iter()
+            .any(|s| s["name"] == "research" && s["builtin"] == true)
+    }));
+    let doc = "---\nname: book-a-table\ndescription: Book a table\nsites: [tables.example]\n---\n1. Pick a time.\n";
+    let (reply, rx) = tokio::sync::oneshot::channel();
+    core.handle.send(Input::Internal(Internal::ToolCall {
+        origin: agent,
+        name: "skill_save".into(),
+        args: json!({ "name": "book-a-table", "document": doc }),
+        reply,
+    }));
+    let find = || {
+        state_of(&core).prompts.values().find_map(|p| match p {
+            mado_types::state::PromptState::AiApproval {
+                id, action, detail, ..
+            } if action == "skill" => Some((*id, detail.clone())),
+            _ => None,
+        })
+    };
+    eventually("a card", || find().is_some());
+    let card = find().expect("a card");
+    assert!(
+        card.1.contains("1. Pick a time."),
+        "the card shows the document"
+    );
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiApprovalRespond {
+            prompt_id: card.0,
+            answer: "once".into(),
+        },
+    )
+    .expect("allowed");
+    assert_eq!(
+        rx.blocking_recv().expect("answered").expect("saved")["saved"],
+        "book-a-table"
+    );
+    let read = ask(
+        &core,
+        Origin::Settings,
+        Command::AiSkillRead {
+            name: "book-a-table".into(),
+        },
+    )
+    .expect("read");
+    assert_eq!(read["document"], doc);
+    let again = tool(
+        &core,
+        agent,
+        "skill_save",
+        json!({ "name": "book-a-table", "document": doc }),
+    )
+    .expect_err("exists");
+    assert_eq!(again.message_key, "error.ai.skillExists");
+    let hint = |url: &str| {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        core.handle.send(Input::Internal(Internal::SkillHint {
+            origin: agent,
+            url: url.into(),
+            reply,
+        }));
+        rx.blocking_recv().expect("answered")
+    };
+    assert_eq!(
+        hint("https://www.tables.example/book").as_deref(),
+        Some("Skill available: book-a-table")
+    );
+    assert_eq!(hint("https://tables.example/"), None, "once per task");
+    assert_eq!(hint("https://other.example/"), None);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiSkillDelete {
+            name: "book-a-table".into(),
+        },
+    )
+    .expect("deleted");
+    core.stop();
+}
+
 /// Turns `features.ai` on, as from the settings window.
 fn ai_on(core: &TestCore) {
     ask(

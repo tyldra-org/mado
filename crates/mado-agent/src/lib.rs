@@ -6,7 +6,9 @@ pub mod acp;
 pub mod chat;
 pub mod cli;
 pub mod commands;
+pub mod memory;
 pub mod safety;
+pub mod skills;
 pub mod untrusted;
 
 /// The command list and the tool table live in mado-types, so the CLI can

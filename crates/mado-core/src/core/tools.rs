@@ -56,6 +56,24 @@ impl Ctx {
         self.command_as(self.origin, cmd).await
     }
 
+    /// Adds "Skill available: <name>" the first time the task lands on a
+    /// skill's site (13 §11).
+    async fn with_skill_hint(&self, mut v: Value) -> Value {
+        let Some(url) = v["url"].as_str().map(str::to_owned) else {
+            return v;
+        };
+        let (reply, rx) = oneshot::channel();
+        let _ = self.inputs.send(Input::Internal(Internal::SkillHint {
+            origin: self.origin,
+            url,
+            reply,
+        }));
+        if let Ok(Some(hint)) = rx.await {
+            v["skill"] = json!(hint);
+        }
+        v
+    }
+
     async fn state(&self) -> Result<Value, MadoError> {
         Ok(self.command_as(Origin::System, Command::StateGet).await?["state"].take())
     }
@@ -381,7 +399,8 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
             }));
             let tab = rx.await.map_err(|_| MadoError::internal())??;
             ctx.settle(tab).await;
-            ctx.snapshot(tab, false, None).await
+            let v = ctx.snapshot(tab, false, None).await?;
+            Ok(ctx.with_skill_hint(v).await)
         }
         "navigate" => {
             let tab = tab_of(&args)?;
@@ -399,7 +418,8 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
             };
             ctx.command(cmd).await?;
             ctx.settle(tab).await;
-            ctx.snapshot(tab, false, None).await
+            let v = ctx.snapshot(tab, false, None).await?;
+            Ok(ctx.with_skill_hint(v).await)
         }
         "snapshot" => {
             let tab = tab_of(&args)?;
@@ -720,6 +740,16 @@ pub async fn run(ctx: &Ctx, name: &str, args: Value) -> Result<Value, MadoError>
                 }
             })
             .await
+        }
+        "memory_search" | "memory_read" | "remember" | "skills" | "skill" | "skill_save" => {
+            let (reply, rx) = oneshot::channel();
+            let _ = ctx.inputs.send(Input::Internal(Internal::MemoryTool {
+                origin: ctx.origin,
+                name: tool.name.to_owned(),
+                args,
+                reply,
+            }));
+            rx.await.map_err(|_| MadoError::internal())?
         }
         other => Err(later(other)),
     }

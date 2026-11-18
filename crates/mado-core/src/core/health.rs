@@ -34,6 +34,13 @@ fn read(cfg: &VaultConfig, keys: &Keys) -> Result<Read, mado_vault::VaultError> 
     Ok((entries, names))
 }
 
+/// The vault's passwords, so memory refuses them (13 §10). Blocks.
+pub(super) fn vault_passwords(cfg: &VaultConfig, keys: &Keys) -> Vec<String> {
+    read(cfg, keys)
+        .map(|(entries, _)| entries.into_iter().map(|e| e.password).collect())
+        .unwrap_or_default()
+}
+
 impl Core {
     pub(super) fn vault_health(
         &mut self,

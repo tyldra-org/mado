@@ -17,6 +17,7 @@
   import PasswordsSection from "./PasswordsSection.svelte";
   import AiConnections from "./AiConnections.svelte";
   import AiModels from "./AiModels.svelte";
+  import MemorySection from "./MemorySection.svelte";
   import ControlClients from "./ControlClients.svelte";
 
   let { store }: { store: CoreStore } = $props();
@@ -118,6 +119,7 @@
     {#if hits === null && section === "ai"}
       <AiConnections {store} />
       <AiModels {store} />
+      <MemorySection {store} />
     {/if}
     {#if hits === null && section === "developers"}
       <ControlClients {store} />

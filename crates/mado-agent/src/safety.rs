@@ -52,6 +52,8 @@ pub enum Class {
     Files,
     /// A CLI agent's command on the Mac (13 §7.2).
     Terminal,
+    /// Saving a skill (13 §11): the card shows the document.
+    Skill,
 }
 
 impl Class {
@@ -74,6 +76,7 @@ impl Class {
             Self::UserTab => "userTab",
             Self::Files => "files",
             Self::Terminal => "terminal",
+            Self::Skill => "skill",
         }
     }
 
@@ -90,7 +93,10 @@ impl Class {
 
     /// "Allow for this task" is not offered for payments and deletes (9.3).
     pub fn may_allow_for_task(self) -> bool {
-        !matches!(self, Self::Pay | Self::Transfer | Self::Delete)
+        !matches!(
+            self,
+            Self::Pay | Self::Transfer | Self::Delete | Self::Skill
+        )
     }
 }
 

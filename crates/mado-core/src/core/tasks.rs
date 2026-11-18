@@ -134,17 +134,12 @@ pub(super) async fn wait_for_person(
     answered
 }
 
-/// The tools a model is offered: every tool but those whose task has not
-/// come yet (memory and skills, M5-T14).
-fn offered() -> Vec<ToolSpec> {
+/// The tools a model is offered: the memory tools only with memory on
+/// (13 §10).
+fn offered(memory_on: bool) -> Vec<ToolSpec> {
     mado_types::tools::all()
         .into_iter()
-        .filter(|t| {
-            !matches!(
-                t.name,
-                "memory_search" | "memory_read" | "remember" | "skills" | "skill" | "skill_save"
-            )
-        })
+        .filter(|t| memory_on || !matches!(t.name, "memory_search" | "memory_read" | "remember"))
         .map(|t| ToolSpec {
             name: t.name.into(),
             description: t.description.into(),
@@ -682,15 +677,16 @@ impl Core {
                 .setting("ai.taskTimeLimit")
                 .as_i64()
                 .unwrap_or(1_800_000);
+            let (skills, memory_on) = (self.skills_index(), self.memory_on());
             let env = Env {
                 task,
                 inputs: self.inputs.clone(),
                 attempts,
                 secrets: Arc::clone(&self.ai.secrets),
                 effort,
-                system: mado_agent::chat::task_system(&c.prompt, &scope),
+                system: mado_agent::chat::task_system(&c.prompt, &scope, &skills),
                 prompt: c.prompt.clone(),
-                tools: offered(),
+                tools: offered(memory_on),
                 ctx: self.tool_ctx(Origin::Agent { task }),
                 steer: Arc::clone(&c.steer),
                 queue: Arc::clone(&c.queue),
@@ -794,6 +790,7 @@ impl Core {
     ) {
         self.task_ctl.remove(&task);
         self.end_task_access(task);
+        self.forget_skill_hints(task);
         if let Some(mut t) = self.state.tx(rec).ai().tasks().get(&task) {
             t.set_status(status);
             t.set_step(String::new());
@@ -873,7 +870,8 @@ impl Core {
             .and_then(|g| g.scope.clone())
             .map(|s| s.into_iter().collect())
             .unwrap_or_default();
-        let system = mado_agent::chat::task_system(&c.prompt, &scope);
+        let skills = self.skills_index();
+        let system = mado_agent::chat::task_system(&c.prompt, &scope, &skills);
         let ctl = mado_agent::acp::Steering {
             steer: Arc::clone(&c.steer),
             queue: Arc::clone(&c.queue),
