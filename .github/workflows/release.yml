@@ -67,8 +67,9 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build the UI and page scripts
         run: bun run build
-      - name: Build the app with test hooks and the fixture server
-        run: cargo build -p mado-app --features test-hooks --locked && cargo build -p mado-fixture-server --locked
+      - name: Build the app with test hooks, the mado CLI and the fixture server
+        # The CLI, MCP and task tests run the real `mado` (target/debug/mado).
+        run: cargo build -p mado-app --features test-hooks --locked && cargo build -p mado-cli -p mado-fixture-server --locked
       # The end-to-end suite behind the recording proxy: it fails on a failing
       # test or on any host outside tests/network-allowlist.json (spec 08 §11).
       - name: End-to-end tests and network audit
