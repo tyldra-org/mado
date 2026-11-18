@@ -67,8 +67,6 @@ const TS = [
   /^(ui|inject|tests)\//,
   /^scripts\/.+\.ts$/,
   /^(package\.json|bun\.lock|bunfig\.toml|\.bun-version|\.editorconfig)$/,
-  // The screenshot tests' configuration (tests/visual/ is under tests/).
-  /^playwright\.config\.ts$/,
   /^biome\.jsonc?$/,
   /^\.prettierrc(\..+)?$/,
   /(^|\/)tsconfig(\..+)?\.json$/,

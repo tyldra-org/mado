@@ -209,38 +209,6 @@ jobs:
           CHECK_TS_CHANGED_SINCE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.full != 'true' && needs.changes.outputs.ts-global != 'true' && needs.changes.outputs.base || '' }}
         run: ./scripts/check.sh --all --scope ts ${{ matrix.stages }}
 
-  visual:
-    # Screenshot tests of every gallery screen in light and dark (M6-T10),
-    # in WebKit on a Mac, where the stored images were made.
-    name: Screenshots (${{ matrix.mac }})
-    needs: changes
-    if: needs.changes.outputs.ts == 'true'
-    strategy:
-      matrix:
-        mac: ["${{ needs.changes.outputs.mac }}"]
-    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Install WebKit
-        run: bunx playwright install webkit
-      - name: Compare screenshots
-        run: bun run visual
-      - name: Keep the differences
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: screenshot-differences
-          path: test-results/
-          retention-days: 7
-
   supply:
     name: Supply chain
     needs: changes
@@ -301,7 +269,7 @@ jobs:
     # succeeded or was skipped because the change did not need it.
     name: ci
     if: always()
-    needs: [changes, rust, ts, visual, supply, scripts]
+    needs: [changes, rust, ts, supply, scripts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

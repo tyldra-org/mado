@@ -43,5 +43,3 @@ Thumbs.db
 /fuzz/coverage/
 /fuzz/Cargo.lock
 /.playwright-cli/
-/test-results/
-/playwright-report/
