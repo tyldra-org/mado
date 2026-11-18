@@ -3,6 +3,7 @@
   import type { Client } from "../core/client";
   import { CoreError } from "../core/client";
   import type { SettingEntry } from "../core/settings-index";
+  import Icon from "../design/Icon.svelte";
   import { t } from "../i18n";
 
   let {
@@ -35,6 +36,19 @@
             })
           : String(e);
     }
+  }
+
+  // An option's label: its translation when there is one, else the value
+  // in words (`askFirst` reads "Ask first").
+  function optionLabel(option: string): string {
+    const key = `${entry.label.replace(/\.label$/, "")}.option.${option}`;
+    const text = t(key);
+    if (text !== key) return text;
+    const words = option
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[-_]/g, " ")
+      .toLowerCase();
+    return words.charAt(0).toUpperCase() + words.slice(1);
   }
 
   const MINUTE = 60_000;
@@ -85,8 +99,16 @@
       .filter((l) => l !== "");
 </script>
 
-<div class="row" id={`row-${entry.key}`}>
-  <label for={id}>{t(entry.label)}</label>
+<div class="row" id={`row-${entry.key}`} data-renderer={entry.renderer}>
+  <div class="text">
+    <label for={id}
+      >{t(entry.label)}{#if entry.protected}<span class="lock" title={t("settings.protected")}
+          ><Icon name="lock" size={11} /></span
+        >{/if}</label
+    >
+    <p class="help">{t(entry.help)}</p>
+    {#if error}<p role="alert">{error}</p>{/if}
+  </div>
   {#if controlledBy}
     <p data-testid="controlled-by">
       {t("settings.controlledBy", { name: controlledBy.name })}
@@ -103,13 +125,14 @@
     <input
       {id}
       type="checkbox"
+      class="switch"
       checked={value === true}
       onchange={(e) => set(e.currentTarget.checked)}
     />
   {:else if entry.renderer === "select"}
     <select {id} value={String(value)} onchange={(e) => set(e.currentTarget.value)}>
       {#each entry.options ?? [] as option (option)}
-        <option value={option}>{option}</option>
+        <option value={option}>{optionLabel(option)}</option>
       {/each}
     </select>
   {:else if entry.renderer === "number"}
@@ -199,6 +222,63 @@
       onchange={(e) => set(e.currentTarget.value)}
     />
   {/if}
-  <p class="help">{t(entry.help)}</p>
-  {#if error}<p role="alert">{error}</p>{/if}
 </div>
+
+<style>
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-6);
+    min-height: 48px;
+    padding: var(--space-4) var(--space-6);
+  }
+  .row + :global(.row) {
+    border-top: 1px solid var(--line);
+  }
+  .text {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  label {
+    display: inline-flex;
+    gap: var(--space-2);
+    font-weight: var(--weight-regular);
+  }
+  .lock {
+    color: var(--text-tertiary);
+  }
+  .help {
+    margin-top: var(--space-1);
+    font-size: var(--text-small);
+    color: var(--text-secondary);
+  }
+  .row[data-renderer="list"] textarea,
+  .row[data-renderer="json"] textarea {
+    flex-basis: 100%;
+  }
+  [data-testid="controlled-by"] {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-control);
+    background: var(--warning-tint);
+    font-size: var(--text-small);
+  }
+  fieldset {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-5);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  select {
+    min-width: 160px;
+  }
+  input[type="number"] {
+    width: 90px;
+  }
+</style>

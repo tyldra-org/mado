@@ -431,8 +431,18 @@ run("WebKit adapter", () => {
     const { tab } = await open("mado://history");
     await tabWhere(tab, (t) => t.title === "History");
     // The first entry is the newest visit; clicking it opens it in this tab.
-    for (let y = 40; y < 400; y += 20) {
-      await mado.control.call("test.click", { tabId: tab, x: 60, y });
+    // Its place comes from the page, so the layout may change.
+    const at = JSON.parse(
+      await mado.control.call<string>("test.eval", {
+        tabId: tab,
+        source: `for (let i = 0; i < 50 && !document.querySelector("main li button"); i++)
+            await new Promise((r) => setTimeout(r, 50));
+          const r = document.querySelector("main li button")?.getBoundingClientRect();
+          return JSON.stringify(r ? { x: r.x + 20, y: r.y + r.height / 2 } : { x: 60, y: 120 });`,
+      }),
+    ) as { x: number; y: number };
+    for (let i = 0; i < 10; i++) {
+      await mado.control.call("test.click", { tabId: tab, x: at.x, y: at.y });
       await sleep(150);
       if ((await state()).tabs[tab]?.url === visited) break;
     }

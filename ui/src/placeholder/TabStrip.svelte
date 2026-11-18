@@ -237,11 +237,14 @@
             onmouseleave={hideHover}
           >
             <span class="favicon">
-              {#if tab.favicon}<img src={tab.favicon} alt="" width="16" height="16" />{:else}<span
-                  class="letter"
-                  data-initial={initial(tab)}
-                  aria-hidden="true"
-                ></span>{/if}
+              <span class="letter" data-initial={initial(tab)} aria-hidden="true"></span>
+              {#if tab.favicon}<img
+                  src={tab.favicon}
+                  alt=""
+                  width="16"
+                  height="16"
+                  onerror={(e) => e.currentTarget.remove()}
+                />{/if}
             </span>
             <span class="title">{tab.pinned ? "" : label(tab)}</span>
             {#if tab.pinned}<span class="visually-hidden">{label(tab)}</span>{/if}
@@ -444,8 +447,14 @@
     height: 16px;
     flex: none;
   }
+  .favicon {
+    position: relative;
+  }
   .favicon img {
+    position: absolute;
+    inset: 0;
     border-radius: 3px;
+    background: var(--chrome);
   }
   .letter::before {
     content: attr(data-initial);

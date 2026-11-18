@@ -1,8 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "ui",
-  "description": "Mado's own webviews (spec 01 §4.1): the UI and overlay of each window and the settings window may call mado_invoke and listen to the core's events. Tab views are not Tauri webviews and get nothing.",
+  "description": "Mado's own webviews (spec 01 §4.1): the UI and overlay of each window and the settings window may call mado_invoke and listen to the core's events, and empty chrome marked as a drag region moves and zooms the window (decisions/09-ui.md §9). Tab views are not Tauri webviews and get nothing.",
   "local": true,
   "webviews": ["ui-*", "overlay-*", "settings"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "allow-mado-invoke"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-mado-invoke",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
 }

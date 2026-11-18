@@ -175,6 +175,22 @@ fn escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// The error page's look (decisions/09-ui.md §8): centred, the safe action
+/// first as the primary button, risky ones as text buttons. Colours follow
+/// the app's appearance through `prefers-color-scheme`.
+const STYLE: &str = "\
+:root{color-scheme:light dark;--text:#1f2329;--secondary:#5d6470;--surface:#fdfdfe;--accent:AccentColor;--fill:rgba(60,64,72,.08)}\
+@media (prefers-color-scheme:dark){:root{--text:#eef0f3;--secondary:#aab0ba;--surface:#24272d;--fill:rgba(255,255,255,.08)}}\
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--surface);color:var(--text);font:13px/1.45 -apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}\
+main{max-width:30em;padding:2em;text-align:center}\
+svg{color:var(--secondary);margin-bottom:1em}\
+h1{margin:0 0 .5em;font-size:20px;font-weight:600}\
+p{margin:0 0 1.5em;color:var(--secondary)}\
+nav{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}\
+.button{display:inline-flex;align-items:center;min-height:28px;padding:0 14px;border-radius:7px;background:var(--fill);color:var(--text);font-weight:590;text-decoration:none}\
+.button:first-child{background:var(--accent);color:#fff}\
+.button:hover{filter:brightness(.95)}";
+
 /// The page's HTML: no script, no outside resources.
 pub fn render(kind: ErrorKind, host: &str, token: &str, text: &dyn Fn(&str) -> String) -> String {
     let fill = |key: &str| escape(&text(key).replace("{host}", host));
@@ -192,7 +208,7 @@ pub fn render(kind: ErrorKind, host: &str, token: &str, text: &dyn Fn(&str) -> S
         })
         .collect();
     format!(
-        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="color-scheme" content="light dark"><title>{title}</title><style>body{{font:15px -apple-system,system-ui,sans-serif;max-width:36em;margin:15vh auto;padding:0 1.5em;line-height:1.5}}h1{{font-size:1.4em}}.button{{display:inline-block;margin:.5em .5em 0 0;padding:.4em 1em;border-radius:6px;background:#0a66d8;color:#fff;text-decoration:none}}</style></head><body data-kind="{}"><h1>{title}</h1><p>{body}</p>{buttons}</body></html>"#,
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="color-scheme" content="light dark"><title>{title}</title><style>{STYLE}</style></head><body data-kind="{}"><main><svg width="40" height="40" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5 14 13H2zM8 6.5v3M8 11.25v.01"/></svg><h1>{title}</h1><p>{body}</p><nav>{buttons}</nav></main></body></html>"#,
         kind.key()
     )
 }

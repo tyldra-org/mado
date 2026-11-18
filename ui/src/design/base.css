@@ -191,6 +191,36 @@ input[type="radio"] {
   margin: 0;
 }
 
+/* Switches: checkboxes that turn something on. */
+input[type="checkbox"].switch {
+  appearance: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--fill-pressed);
+  transition: background-color var(--duration-press) var(--ease-out);
+}
+input[type="checkbox"].switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.25);
+  transition: transform var(--duration-press) var(--ease-out);
+}
+input[type="checkbox"].switch:checked {
+  background: var(--accent);
+}
+input[type="checkbox"].switch:checked::after {
+  transform: translateX(14px);
+}
+
 label {
   display: inline-flex;
   align-items: center;
@@ -244,6 +274,98 @@ hr {
 }
 .card.floating {
   box-shadow: var(--shadow-float);
+}
+
+/* Mado's own pages in tabs (decisions/09-ui.md §4, §8): one readable
+   column, rows for lists, quiet text buttons for links. */
+:root[data-surface="internal"] main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-10) var(--space-8);
+}
+:root[data-surface="internal"] main > h1 {
+  font-size: var(--text-display);
+  font-weight: var(--weight-display);
+  margin-bottom: var(--space-4);
+}
+:root[data-surface="internal"] main h2 {
+  margin-top: var(--space-6);
+  font-size: var(--text-small);
+  font-weight: var(--weight-strong);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+:root[data-surface="internal"] main input[type="search"] {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-5);
+  border-color: transparent;
+  background: var(--fill);
+}
+:root[data-surface="internal"] main ul ul {
+  padding-left: var(--space-6);
+}
+:root[data-surface="internal"] main li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  border-radius: var(--radius-control);
+}
+:root[data-surface="internal"] main li > strong {
+  flex-basis: 100%;
+  padding: var(--space-4) var(--space-3) var(--space-2);
+}
+:root[data-surface="internal"] main li > button:first-child {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-color: transparent;
+  background: transparent;
+  font-weight: var(--weight-regular);
+}
+:root[data-surface="internal"] main li > button:first-child:hover {
+  background: var(--fill-hover);
+}
+:root[data-surface="internal"] main li > button:not(:first-child) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: var(--weight-regular);
+}
+:root[data-surface="internal"] main li > button:not(:first-child):hover {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+:root[data-surface="internal"] main li > span {
+  color: var(--text-secondary);
+}
+:root[data-surface="internal"] main li > span:first-child {
+  flex: 1;
+  color: var(--text);
+  padding-left: var(--space-3);
+}
+:root[data-surface="internal"] table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+:root[data-surface="internal"] th {
+  text-align: left;
+  color: var(--text-secondary);
+  font-weight: var(--weight-strong);
+}
+:root[data-surface="internal"] th,
+:root[data-surface="internal"] td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Popovers sit in the window's popover region, under the toolbar. */
@@ -342,6 +464,87 @@ hr {
 .prompts [role="dialog"] h2 {
   flex: 1 1 100%;
   font-size: var(--text-body);
+}
+
+/* The first action of a prompt is its default, drawn as the primary
+   button; Deny and risky choices are never first (decisions/09-ui.md §6). */
+.prompts [role="alertdialog"] > button:first-of-type,
+.prompts [role="dialog"] > button:first-of-type {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.prompts [role="alertdialog"] > button:first-of-type:hover,
+.prompts [role="dialog"] > button:first-of-type:hover {
+  background: color-mix(in oklch, var(--accent), black 10%) !important;
+}
+.prompts [role="alertdialog"] p,
+.prompts [role="dialog"] p {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+}
+.prompts .approval {
+  border-color: color-mix(in oklch, var(--accent), transparent 40%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 85%);
+}
+.prompts .approval .amount {
+  font-size: var(--text-heading);
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.prompts [role="search"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  align-self: flex-end;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+}
+
+/* The side chat's conversation. */
+.panel ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.panel ol > li {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  border: 0;
+}
+.panel ol > li.user > p:not(.note) {
+  justify-self: end;
+  max-width: 85%;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-card);
+  background: var(--fill);
+}
+.panel .note {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.panel ol.sources {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.panel ol.sources a {
+  display: inline-block;
+  padding: 1px var(--space-4);
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.panel textarea {
+  min-height: 72px;
 }
 
 @keyframes enter {

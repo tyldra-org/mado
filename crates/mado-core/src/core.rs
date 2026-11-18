@@ -1141,6 +1141,8 @@ impl Core {
         core.load_vault(&mut PatchRecorder::new());
         core.load_ai();
         core.load_control();
+        let theme = core.setting_str("appearance.theme");
+        core.ui.appearance(&theme);
         core
     }
 
@@ -2111,6 +2113,10 @@ impl Core {
         {
             let on = self.page_commands_on();
             self.ui.ai_menu(on);
+        }
+        if out.changes.iter().any(|c| c.key == "appearance.theme") {
+            let theme = self.setting_str("appearance.theme");
+            self.ui.appearance(&theme);
         }
         if out
             .changes
