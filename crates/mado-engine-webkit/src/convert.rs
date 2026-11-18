@@ -28,8 +28,10 @@ pub fn error_code(error: &NSError) -> i64 {
 }
 
 /// A rectangle in the UI webview's CSS pixels, as a frame in the window's
-/// content view (proto, M0 experiment 1): CSS (0, 0) sits below the title
-/// bar's safe area, and the content view may count `y` from the bottom.
+/// content view. With the overlay title bar (decisions/09-ui.md §9) CSS
+/// (0, 0) is the window's top-left corner, so the title bar's safe area no
+/// longer shifts it (it did with the standard title bar, M0 experiment 1);
+/// the content view may count `y` from the bottom.
 pub fn frame_in(content: &NSView, rect: Rect) -> NSRect {
     let Some(ui) = content.subviews().firstObject() else {
         return NSRect::new(
@@ -37,11 +39,10 @@ pub fn frame_in(content: &NSView, rect: Rect) -> NSRect {
             NSSize::new(rect.width, rect.height),
         );
     };
-    let top = ui.safeAreaInsets().top;
     let y = if ui.isFlipped() {
-        rect.y + top
+        rect.y
     } else {
-        ui.bounds().size.height - top - rect.y - rect.height
+        ui.bounds().size.height - rect.y - rect.height
     };
     let in_ui = NSRect::new(
         NSPoint::new(rect.x, y),

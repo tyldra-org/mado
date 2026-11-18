@@ -3,9 +3,13 @@
   // with Stop, an answer when it waits for the person, and Raise limit when
   // a spend limit paused it. Placeholder until the design pass (M6).
   import type { CoreStore } from "../core/store.svelte";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
-  let { store }: { store: CoreStore } = $props();
+  let { store, open = true }: { store: CoreStore; open?: boolean } = $props();
+  // The toolbar button shows and hides the panel; it starts as the window asks.
+  let shown = $state((() => open)());
   const tasks = $derived(Object.values(store.state?.ai?.tasks ?? {}));
   let answers: Record<string, string> = $state({});
   let prompt = $state("");
@@ -26,7 +30,18 @@
 </script>
 
 {#if store.state?.features?.agents}
-  <section aria-label={t("ai.tasks")}>
+  <button
+    type="button"
+    class="icon"
+    aria-expanded={shown}
+    aria-label={t("ai.tasks")}
+    title={t("ai.tasks")}
+    data-running={tasks.some((x) => x.status === "running")}
+    onclick={() => (shown = !shown)}><Icon name="tasks" /></button
+  >
+{/if}
+{#if store.state?.features?.agents && shown}
+  <section class="panel" aria-label={t("ai.tasks")} {@attach portal("side-panels")}>
     <h3>{t("ai.tasks")}</h3>
     <label>{t("ai.task.new")} <input bind:value={prompt} /></label>
     <button type="button" disabled={!prompt.trim()} onclick={start}>{t("ai.task.start")}</button>

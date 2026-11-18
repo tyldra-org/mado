@@ -3,6 +3,8 @@
   // on the `mado://ai` event. Placeholder until the design pass (M6).
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
   let { store, windowId }: { store: CoreStore; windowId: WindowId } = $props();
@@ -98,11 +100,21 @@
 </script>
 
 {#if on}
-  <button type="button" aria-expanded={open} onclick={() => (open = !open)}
-    >{t("ai.chat.toggle")}</button
+  <button
+    type="button"
+    class="icon"
+    aria-expanded={open}
+    aria-label={t("ai.chat.toggle")}
+    title={t("ai.chat.toggle")}
+    onclick={() => (open = !open)}><Icon name="chat" /></button
   >
   {#if open}
-    <aside aria-label={t("ai.chat.title")} data-message={messageId}>
+    <aside
+      class="panel"
+      aria-label={t("ai.chat.title")}
+      data-message={messageId}
+      {@attach portal("side-panels")}
+    >
       <button type="button" onclick={fresh}>{t("ai.chat.new")}</button>
       <ol>
         {#each entries as e, i (i)}

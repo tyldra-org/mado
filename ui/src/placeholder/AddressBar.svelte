@@ -148,11 +148,20 @@
 </script>
 
 <div class="address">
-  <span class="security" data-level={tab?.security?.level ?? "internal"}
+  <span
+    class="security"
+    class:visually-hidden={["secure", "internal", "local"].includes(
+      tab?.security?.level ?? "internal",
+    )}
+    data-level={tab?.security?.level ?? "internal"}
     >{t(`address.security.${tab?.security?.level ?? "internal"}`)}</span
   >
   <input
     bind:this={input}
+    class:editing
+    spellcheck="false"
+    autocomplete="off"
+    placeholder={t("address.placeholder")}
     aria-label={t("address.label")}
     value={editing ? text : (tab?.displayUrl?.text ?? "")}
     onfocus={() => {
@@ -211,3 +220,94 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .address {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    gap: var(--space-3);
+    height: 30px;
+    padding: 0 var(--space-2) 0 var(--space-4);
+    border-radius: var(--radius-control);
+    background: var(--fill);
+    transition: background-color var(--duration-press) var(--ease-out);
+  }
+  .address:hover {
+    background: var(--fill-hover);
+  }
+  .address:focus-within {
+    background: var(--surface-raised);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 40%);
+  }
+  input {
+    flex: 1;
+    min-width: 0;
+    min-height: 0 !important;
+    height: 100%;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    text-align: center;
+    color: var(--text-on-chrome);
+  }
+  input.editing {
+    text-align: left;
+    color: var(--text);
+  }
+  .security {
+    flex: none;
+    padding: 1px var(--space-3);
+    border-radius: var(--radius-small);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-strong);
+  }
+  .security[data-level="notSecure"],
+  .security[data-level="mixed"] {
+    background: var(--warning-tint);
+    color: var(--warning);
+  }
+  .security[data-level="dangerous"] {
+    background: var(--danger-tint);
+    color: var(--danger);
+  }
+  .address > button {
+    min-height: 22px;
+    padding: 0 var(--space-3);
+    border: 0;
+    background: transparent;
+    font-size: var(--text-small);
+    color: var(--text-secondary);
+  }
+  .address > button:hover {
+    background: var(--fill-hover) !important;
+  }
+  .inline {
+    color: var(--text-tertiary);
+  }
+  [role="listbox"] {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 3;
+    padding: var(--space-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-float);
+  }
+  [role="option"] button {
+    width: 100%;
+    justify-content: flex-start;
+    border: 0;
+    background: transparent;
+    font-weight: var(--weight-regular);
+  }
+  [role="option"][aria-selected="true"] button {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+</style>

@@ -4,6 +4,7 @@
   // bar, prompts and notices.
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
+  import Icon from "../design/Icon.svelte";
   import { t } from "../i18n";
   import AddressBar from "./AddressBar.svelte";
   import AppLinkPrompt from "./AppLinkPrompt.svelte";
@@ -31,6 +32,7 @@
   import TabStrip from "./TabStrip.svelte";
   import UnresponsivePrompt from "./UnresponsivePrompt.svelte";
   import UnsavedPrompt from "./UnsavedPrompt.svelte";
+  import NavButtons from "./NavButtons.svelte";
 
   let { store, windowId }: { store: CoreStore; windowId: WindowId } = $props();
 
@@ -83,69 +85,182 @@
 </script>
 
 <div class="window" data-theme={theme} data-layout={layout}>
-  <header>
-    <ProfileMenu {store} />
-    <TabStrip {store} {windowId} />
-    <SiteInfo {store} {windowId} />
-    <AddressBar {store} {windowId} />
-    <ExtensionToolbar {store} {windowId} />
-    <BookmarksBar {store} {windowId} />
-    <FindBar {store} {windowId} />
-    <DownloadsBubble {store} />
-    <UnsavedPrompt {store} {windowId} />
-    <UnresponsivePrompt {store} {windowId} />
-    <SafariPrompt {store} {windowId} />
-    <PermissionPrompt {store} {windowId} />
-    <FillMenu {store} {windowId} />
-    <SavePrompt {store} {windowId} />
-    <PasskeySheet {store} {windowId} />
-    <AppLinkPrompt {store} {windowId} />
-    <ExtensionInstallPrompt {store} {windowId} />
-    <OverlapPrompt {store} />
-    <DialogSheet {store} {windowId} />
-    <SideChat {store} {windowId} />
-    <AiResultCard {store} {windowId} />
-    <PairingCard {store} />
-    <ApprovalCard {store} {windowId} />
-    <TasksPanel {store} />
-  </header>
-  <main bind:this={page} aria-label={t("window.pageArea")}>
-    {#if locked}
-      <!-- The page is hidden while the private window is locked (08 §6). -->
-      <div class="locked" role="dialog" aria-labelledby="lock-title">
-        <h1 id="lock-title">{t("lock.title")}</h1>
-        <button type="button" onclick={unlock}>{t("lock.unlock")}</button>
-        {#if unlockFailed}<p role="alert">{t("lock.failed")}</p>{/if}
+  {#if layout === "vertical"}
+    <aside class="sidebar" aria-label={t("tabs.label")}>
+      <div class="titlebar" data-tauri-drag-region></div>
+      <TabStrip {store} {windowId} />
+      <div class="sidebar-foot">
+        <ProfileMenu {store} />
+        <DownloadsBubble {store} />
+      </div>
+    </aside>
+  {/if}
+  <div class="content">
+    {#if layout === "horizontal"}
+      <div class="tabrow" data-tauri-drag-region>
+        <TabStrip {store} {windowId} />
       </div>
     {/if}
-  </main>
+    <header class="toolbar" data-tauri-drag-region>
+      <NavButtons {store} {windowId} />
+      <div class="location">
+        <SiteInfo {store} {windowId} />
+        <AddressBar {store} {windowId} />
+      </div>
+      <div class="tools">
+        <BookmarksBar {store} {windowId} />
+        <ExtensionToolbar {store} {windowId} />
+        <SideChat {store} {windowId} />
+        <TasksPanel {store} open={false} />
+        {#if layout === "horizontal"}
+          <DownloadsBubble {store} />
+          <ProfileMenu {store} />
+        {/if}
+      </div>
+    </header>
+    <div id="bookmarks-bar"></div>
+    <div id="popovers"></div>
+    <FindBar {store} {windowId} />
+    <section class="prompts" aria-label={t("window.prompts")}>
+      <UnsavedPrompt {store} {windowId} />
+      <UnresponsivePrompt {store} {windowId} />
+      <SafariPrompt {store} {windowId} />
+      <PermissionPrompt {store} {windowId} />
+      <FillMenu {store} {windowId} />
+      <SavePrompt {store} {windowId} />
+      <PasskeySheet {store} {windowId} />
+      <AppLinkPrompt {store} {windowId} />
+      <ExtensionInstallPrompt {store} {windowId} />
+      <OverlapPrompt {store} />
+      <DialogSheet {store} {windowId} />
+      <AiResultCard {store} {windowId} />
+      <PairingCard {store} />
+      <ApprovalCard {store} {windowId} />
+      <Notices {store} />
+    </section>
+    <div class="stage">
+      <main bind:this={page} aria-label={t("window.pageArea")}>
+        {#if locked}
+          <!-- The page is hidden while the private window is locked (08 §6). -->
+          <div class="locked" role="dialog" aria-labelledby="lock-title">
+            <Icon name="lock" size={28} />
+            <h1 id="lock-title">{t("lock.title")}</h1>
+            <button type="button" class="primary" onclick={unlock}>{t("lock.unlock")}</button>
+            {#if unlockFailed}<p role="alert">{t("lock.failed")}</p>{/if}
+          </div>
+        {/if}
+      </main>
+      <div id="side-panels"></div>
+    </div>
+  </div>
   {#if store.state?.firstRun}<FirstRun {store} />{/if}
-  <Notices {store} />
 </div>
 
 <style>
   .window {
     display: flex;
-    flex-direction: column;
     height: 100vh;
-    font-family: system-ui, sans-serif;
+    background: var(--chrome);
+    color: var(--text-on-chrome);
+    overflow: hidden;
   }
-  .window[data-layout="vertical"] {
-    flex-direction: row;
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: var(--sidebar-width);
+    flex: none;
+    min-height: 0;
+  }
+  .titlebar {
+    height: 38px;
+    flex: none;
+  }
+  .sidebar-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4) var(--space-4);
+  }
+  .content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    padding: 0 var(--page-gutter) var(--page-gutter) 0;
+  }
+  .window[data-layout="horizontal"] .content {
+    padding-left: var(--page-gutter);
+  }
+  .tabrow {
+    display: flex;
+    align-items: center;
+    height: 38px;
+    padding-left: 76px;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    height: var(--toolbar-height);
+    flex: none;
+  }
+  .location {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    max-width: 720px;
+    margin: 0 auto;
+    gap: var(--space-2);
+  }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  #popovers {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-4);
+  }
+  #popovers:not(:empty) {
+    padding-bottom: var(--space-4);
+  }
+  #side-panels {
+    display: flex;
+    gap: var(--page-gutter);
+  }
+  #side-panels:empty {
+    display: none;
+  }
+  .prompts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .prompts:not(:empty) {
+    padding-bottom: var(--space-4);
+  }
+  .stage {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    gap: var(--page-gutter);
   }
   main {
     flex: 1;
+    min-width: 0;
+    border-radius: var(--radius-card);
+    background: var(--surface);
   }
   .locked {
     display: grid;
-    place-content: center;
-    gap: 1em;
+    justify-items: center;
+    align-content: center;
+    gap: var(--space-5);
     height: 100%;
     text-align: center;
-  }
-  .window[data-theme="dark"] {
-    color-scheme: dark;
-    background: #1e1e1e;
-    color: #eee;
+    color: var(--text);
   }
 </style>

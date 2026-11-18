@@ -4,6 +4,8 @@
   // Placeholder until the design pass (M6).
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
   type Row = {
@@ -68,13 +70,29 @@
 {#if origin}
   <button
     type="button"
+    class="icon site-button"
+    data-level={tab?.security?.level ?? "internal"}
+    aria-label={t("siteInfo.button")}
+    title={t("siteInfo.button")}
     aria-expanded={open}
     onclick={() => ((open = !open), (cleared = false), open && load())}
-    >{t("siteInfo.button")}</button
+    ><Icon
+      name={tab?.security?.level === "secure" || !tab?.security
+        ? "lock"
+        : tab?.security?.level === "internal"
+          ? "info"
+          : "warning"}
+      size={14}
+    /></button
   >
 {/if}
 {#if open && origin && tab}
-  <div role="dialog" aria-labelledby="site-info-title">
+  <div
+    class="popover card floating"
+    role="dialog"
+    aria-labelledby="site-info-title"
+    {@attach portal("popovers")}
+  >
     <h2 id="site-info-title">{new URL(origin).host}</h2>
     <p>{t(`address.security.${tab.security?.level ?? "internal"}`)}</p>
     {#if origin.startsWith("https:")}
@@ -139,3 +157,13 @@
     {#if cleared}<p role="status">{t("siteInfo.dataCleared")}</p>{/if}
   </div>
 {/if}
+
+<style>
+  .site-button[data-level="notSecure"],
+  .site-button[data-level="mixed"] {
+    color: var(--warning);
+  }
+  .site-button[data-level="dangerous"] {
+    color: var(--danger);
+  }
+</style>

@@ -794,6 +794,24 @@ pub fn resume_view() -> Option<Retained<WKWebView>> {
     })
 }
 
+/// The page card's corners (decisions/09-ui.md §2): the tab view's layer
+/// is rounded and clips the page.
+fn round(view: &WKWebView) {
+    /// The radius of `--radius-card` in ui/src/design/tokens.css.
+    const RADIUS: f64 = 10.0;
+    view.setWantsLayer(true);
+    // SAFETY: `layer` is NSView's backing CALayer once `wantsLayer` is set;
+    // both setters take plain values. Main thread, as every adapter call.
+    unsafe {
+        let layer: Option<objc2::rc::Retained<objc2::runtime::AnyObject>> =
+            objc2::msg_send![view, layer];
+        if let Some(layer) = layer {
+            let _: () = objc2::msg_send![&*layer, setCornerRadius: RADIUS];
+            let _: () = objc2::msg_send![&*layer, setMasksToBounds: true];
+        }
+    }
+}
+
 fn failed(e: Option<&NSError>) -> EngineError {
     EngineError::Failed(
         e.map(|e| e.localizedDescription().to_string())
@@ -852,6 +870,7 @@ pub fn apply(tab: TabId, cmd: TabCommand) -> Result<(), EngineError> {
                     // Agent tabs fill the host window.
                 } else if let Some(content) = content_view(window) {
                     view.setFrame(convert::frame_in(&content, rect));
+                    round(&view);
                 }
             }
             TabCommand::SetWindow(to) => {

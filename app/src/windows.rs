@@ -296,6 +296,10 @@ fn create(app: &AppHandle, id: WindowId, bounds: &Bounds) -> tauri::Result<()> {
     };
     let mut builder = WindowBuilder::new(app, window_label(id))
         .title("Mado")
+        // The UI draws under the title bar; the traffic lights sit in the
+        // sidebar or the tab row (decisions/09-ui.md §2, §9).
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
         .inner_size(width, height)
         .min_inner_size(500.0, 300.0);
     if bounds.width > 0.0 && on_a_screen(app, bounds) {

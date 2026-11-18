@@ -5,6 +5,8 @@
   import { onAction } from "../core/actions";
   import type { CoreStore } from "../core/store.svelte";
   import type { WindowId } from "../generated/WindowId";
+  import Icon from "../design/Icon.svelte";
+  import { portal } from "../design/portal";
   import { t } from "../i18n";
 
   type Node = {
@@ -126,10 +128,22 @@
   }
 </script>
 
-<button type="button" onclick={bookmarkThisTab} disabled={!activeTab}>{t("bookmarks.add")}</button>
+<button
+  type="button"
+  class="icon"
+  aria-label={t("bookmarks.add")}
+  title={t("bookmarks.add")}
+  onclick={bookmarkThisTab}
+  disabled={!activeTab}><Icon name="star" /></button
+>
 
 {#if dialog}
-  <div role="dialog" aria-labelledby="bookmark-title">
+  <div
+    class="popover card floating"
+    role="dialog"
+    aria-labelledby="bookmark-title"
+    {@attach portal("popovers")}
+  >
     <h2 id="bookmark-title">{t("bookmarks.dialogTitle")}</h2>
     <label>
       {t("bookmarks.name")}
@@ -149,7 +163,7 @@
 {/if}
 
 {#if shown && bar}
-  <nav aria-label={t("bookmarks.bar")}>
+  <nav class="bar" aria-label={t("bookmarks.bar")} {@attach portal("bookmarks-bar")}>
     <ul>
       {#each bar.children ?? [] as node (node.id)}
         <li>
