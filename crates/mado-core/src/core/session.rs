@@ -981,7 +981,7 @@ impl Core {
             })
     }
 
-    fn energy_saver(&self) -> bool {
+    pub(super) fn energy_saver(&self) -> bool {
         match self.setting_str("performance.energySaver").as_str() {
             "battery20" => self.power.on_battery && self.power.percent <= 20,
             "unplugged" => self.power.on_battery,

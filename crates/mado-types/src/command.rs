@@ -1195,6 +1195,35 @@ pub enum Command {
     /// Deletes one of the person's skills. Protected.
     #[serde(rename = "ai.skill.delete", rename_all = "camelCase")]
     AiSkillDelete { name: String },
+    /// A routine (spec 13 §12): a task on a schedule. `mode` is `readOnly`
+    /// (default) or `askBeforeActing`. Answers `{ routineId, nextRunAt }`.
+    #[serde(rename = "ai.routine.create", rename_all = "camelCase")]
+    AiRoutineCreate {
+        prompt: String,
+        schedule: String,
+        #[serde(default)]
+        mode: Option<String>,
+    },
+    #[serde(rename = "ai.routine.update", rename_all = "camelCase")]
+    AiRoutineUpdate {
+        routine_id: String,
+        #[serde(default)]
+        prompt: Option<String>,
+        #[serde(default)]
+        schedule: Option<String>,
+        #[serde(default)]
+        mode: Option<String>,
+        #[serde(default)]
+        enabled: Option<bool>,
+    },
+    #[serde(rename = "ai.routine.delete", rename_all = "camelCase")]
+    AiRoutineDelete { routine_id: String },
+    /// Runs a routine now; answers `{ taskId }`.
+    #[serde(rename = "ai.routine.runNow", rename_all = "camelCase")]
+    AiRoutineRunNow { routine_id: String },
+    /// `[{ id, prompt, schedule, mode, enabled, lastRunAt, nextRunAt }]`.
+    #[serde(rename = "ai.routine.list")]
+    AiRoutineList,
     /// Every model of every connection for pickers (spec 13 §4): starred
     /// first, then shown ones by connection; `[{ connectionId, modelId,
     /// name, show, starred, info }]`, `info` null for unknown models.
@@ -1625,6 +1654,11 @@ impl Command {
             | Self::AiSkillList
             | Self::AiSkillRead { .. }
             | Self::AiSkillDelete { .. }
+            | Self::AiRoutineCreate { .. }
+            | Self::AiRoutineUpdate { .. }
+            | Self::AiRoutineDelete { .. }
+            | Self::AiRoutineRunNow { .. }
+            | Self::AiRoutineList
             | Self::AiModelList
             | Self::AiModelSet { .. }
             | Self::AiRoleSet { .. }
@@ -1863,6 +1897,11 @@ impl Command {
             Self::AiSkillList => "ai.skill.list",
             Self::AiSkillRead { .. } => "ai.skill.read",
             Self::AiSkillDelete { .. } => "ai.skill.delete",
+            Self::AiRoutineCreate { .. } => "ai.routine.create",
+            Self::AiRoutineUpdate { .. } => "ai.routine.update",
+            Self::AiRoutineDelete { .. } => "ai.routine.delete",
+            Self::AiRoutineRunNow { .. } => "ai.routine.runNow",
+            Self::AiRoutineList => "ai.routine.list",
             Self::AiModelList => "ai.model.list",
             Self::AiModelSet { .. } => "ai.model.set",
             Self::AiRoleSet { .. } => "ai.role.set",
@@ -1925,7 +1964,8 @@ impl Command {
             _ if matches!(
                 self,
                 Self::AiChatSend { .. } | Self::AiChatCancel { .. } | Self::AiChatDelete { .. }
-            ) || self.name().starts_with("ai.task.") =>
+            ) || self.name().starts_with("ai.task.")
+                || self.name().starts_with("ai.routine.") =>
             {
                 "tasks"
             }
@@ -1970,6 +2010,7 @@ impl Command {
                 | Self::AiMemorySearch { .. }
                 | Self::AiSkillList
                 | Self::AiSkillRead { .. }
+                | Self::AiRoutineList
         )
     }
 }

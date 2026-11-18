@@ -32,6 +32,7 @@ mod page_ai;
 mod pages;
 mod profiles;
 mod reader;
+mod routines;
 mod safety;
 mod save;
 mod session;
@@ -120,6 +121,8 @@ pub enum Internal {
         args: Value,
         reply: Reply,
     },
+    /// The Mac woke from sleep or its clock or time zone changed (13 §12).
+    ClockChanged,
     /// The skill hint for a page an agent tab landed on (13 §11).
     SkillHint {
         origin: Origin,
@@ -718,6 +721,8 @@ pub struct Core {
     task_tokens: BTreeMap<Vec<u8>, mado_types::TaskId>,
     /// Skill hints each task has had (13 §11).
     skill_hints: memory::SkillHints,
+    /// Routines and their running tasks (13 §12).
+    routines: routines::Routines,
     task_clients: BTreeMap<mado_types::ClientId, mado_types::TaskId>,
     handed_back: std::collections::BTreeSet<mado_types::TabId>,
     /// Files the next file chooser of a tab gets (the `upload` tool).
@@ -1053,6 +1058,7 @@ impl Core {
             control_tasks: BTreeMap::new(),
             task_tokens: BTreeMap::new(),
             skill_hints: BTreeMap::new(),
+            routines: routines::Routines::default(),
             task_clients: BTreeMap::new(),
             guards: BTreeMap::new(),
             task_ctl: BTreeMap::new(),
@@ -1701,6 +1707,8 @@ impl Core {
                 if let Err(e) = self.startup(bounds, rec) {
                     tracing::error!(error = %e.message_key, "startup could not open a window");
                 }
+                // Missed and `on open` routines run once the app is up (13 §12).
+                self.load_routines(rec);
             }
             Internal::OpenWindow { bounds } => {
                 if let Err(e) = self.open_window(bounds, &[]) {
@@ -1786,6 +1794,7 @@ impl Core {
                 args,
                 reply,
             } => self.memory_tool(origin, &name, args, reply, rec),
+            Internal::ClockChanged => self.recompute_routines(),
             Internal::SkillHint { origin, url, reply } => {
                 let _ = reply.send(self.skill_hint(&origin, &url, rec));
             }
@@ -2193,6 +2202,7 @@ impl Core {
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
             Timer::AiRetention => self.chat_retention(),
+            Timer::Routines(generation) => self.routines_due(generation, &mut rec),
             Timer::MemoryFiling => {
                 self.timers
                     .schedule(Timer::MemoryFiling, memory::FILING_EVERY);

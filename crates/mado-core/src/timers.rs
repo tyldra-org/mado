@@ -28,6 +28,9 @@ pub enum Timer {
     AiRetention,
     /// Files the memory inbox (spec 13 §10).
     MemoryFiling,
+    /// The earliest routine is due (spec 13 §12); older generations are
+    /// ignored.
+    Routines(u64),
     /// A finished task's agent tabs close (spec 13 §7.3).
     AgentTabsClose(mado_types::TaskId),
     /// A control pairing card had its two minutes (spec 14 §2).

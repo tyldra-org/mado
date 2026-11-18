@@ -5386,6 +5386,137 @@ fn skills_save_with_approval_and_hint_on_their_site() {
     core.stop();
 }
 
+/// Spec 13 §13 check 6: a routine for 09:00 with Mado closed until 10:00
+/// runs once at 10:00; closed across a whole day, only the launch day's
+/// missed run runs.
+#[test]
+fn a_routine_missed_while_closed_runs_once_the_same_day() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let tz = jiff::tz::TimeZone::system();
+    let at = |d: i8, h: i8| {
+        jiff::civil::date(2027, 3, d)
+            .at(h, 0, 0, 0)
+            .to_zoned(tz.clone())
+            .expect("a time")
+            .timestamp()
+            .as_millisecond()
+    };
+    crate::testing::NOW.store(at(10, 8), SeqCst);
+    // Test cores start with default settings: AI and routines on each time.
+    let on = |core: &TestCore| {
+        for key in ["features.ai", "features.agents", "features.routines"] {
+            ask(
+                core,
+                Origin::Settings,
+                Command::SettingsSet {
+                    key: key.into(),
+                    value: json!(true),
+                    token: None,
+                },
+            )
+            .expect("on");
+        }
+        startup(core);
+    };
+    let core = TestCore::start();
+    on(&core);
+    let made = ask(
+        &core,
+        Origin::Settings,
+        Command::AiRoutineCreate {
+            prompt: "Check the news".into(),
+            schedule: "daily 09:00".into(),
+            mode: None,
+        },
+    )
+    .expect("created");
+    assert_eq!(made["nextRunAt"], at(10, 9));
+    let bad = ask(
+        &core,
+        Origin::Settings,
+        Command::AiRoutineCreate {
+            prompt: "x".into(),
+            schedule: "sometimes".into(),
+            mode: None,
+        },
+    )
+    .expect_err("bad schedule");
+    assert_eq!(bad.message_key, "error.ai.schedule");
+    let routine = |core: &TestCore| {
+        ask(core, Origin::Settings, Command::AiRoutineList).expect("list")[0].clone()
+    };
+    let tasks = |core: &TestCore| {
+        ask(core, Origin::Settings, Command::AiTaskList)
+            .expect("tasks")
+            .as_array()
+            .map_or(0, Vec::len)
+    };
+    // Closed at 08:00, opened at 10:00 the same day: one run, now.
+    let dir = core.stop();
+    crate::testing::NOW.store(at(10, 10), SeqCst);
+    let core = TestCore::start_in(dir, true);
+    on(&core);
+    eventually("the missed run", || {
+        routine(&core)["lastRunAt"] == at(10, 10)
+    });
+    assert_eq!(routine(&core)["nextRunAt"], at(11, 9));
+    eventually("its task", || tasks(&core) == 1);
+    // Without a model the run fails, and says so in a notification.
+    eventually("a notification", || {
+        core.sent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .shown
+            .iter()
+            .any(|(id, title, _)| id.starts_with("routine-") && title == "Check the news")
+    });
+    // Opened again later that day: nothing more.
+    let dir = core.stop();
+    crate::testing::NOW.store(at(10, 11), SeqCst);
+    let core = TestCore::start_in(dir, true);
+    on(&core);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(routine(&core)["lastRunAt"], at(10, 10));
+    assert_eq!(tasks(&core), 1);
+    // Closed from the 11th's 09:00 run until the 13th at 10:00: only the
+    // 13th's missed 09:00 runs, once.
+    let dir = core.stop();
+    crate::testing::NOW.store(at(13, 10), SeqCst);
+    let core = TestCore::start_in(dir, true);
+    on(&core);
+    eventually("the day's missed run", || {
+        routine(&core)["lastRunAt"] == at(13, 10)
+    });
+    assert_eq!(routine(&core)["nextRunAt"], at(14, 9));
+    eventually("one more task", || tasks(&core) == 2);
+    // Paused, it has no next run.
+    let id = routine(&core)["id"].as_str().unwrap_or_default().to_owned();
+    let paused = ask(
+        &core,
+        Origin::Settings,
+        Command::AiRoutineUpdate {
+            routine_id: id.clone(),
+            prompt: None,
+            schedule: None,
+            mode: None,
+            enabled: Some(false),
+        },
+    )
+    .expect("paused");
+    assert_eq!(paused["nextRunAt"], Value::Null);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiRoutineDelete { routine_id: id },
+    )
+    .expect("deleted");
+    assert_eq!(
+        ask(&core, Origin::Settings, Command::AiRoutineList).expect("list"),
+        json!([])
+    );
+    core.stop();
+}
+
 /// Turns `features.ai` on, as from the settings window.
 fn ai_on(core: &TestCore) {
     ask(
