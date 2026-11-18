@@ -47,6 +47,13 @@ jobs:
         # outputs empty and skip every check.
         shell: bash
     outputs:
+      # The Mac the macOS jobs run on: the owner's own (a self-hosted runner
+      # labelled mado-mac) when the repository variable USE_MY_MAC is "true"
+      # and the owner both started this run and, for a pull request, opened
+      # it from a branch of this repository; GitHub's otherwise. Anyone
+      # else's push, a fork, Dependabot or a bot runs on GitHub's Macs. Fork
+      # pull requests also wait for the owner's approval before any job runs.
+      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098' && (github.event_name != 'pull_request' || (github.event.pull_request.user.login == 'yogeshprasad098' && github.event.pull_request.head.repo.full_name == github.repository))) && '["self-hosted","mado-mac"]' || '"macos-latest"' }}
       base: ${{ steps.base.outputs.sha }}
       full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -89,15 +96,11 @@ jobs:
         run: bun scripts/ci-scope.ts areas "$BASE" | tee -a "$GITHUB_OUTPUT"
 
   rust:
-    name: Rust (${{ matrix.os }})
+    name: Rust
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    # Mado ships on macOS: lint, build and test on a Mac.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-    runs-on: ${{ matrix.os }}
+    # Mado ships on macOS: lint and test on a Mac.
+    runs-on: ${{ fromJSON(needs.changes.outputs.mac) }}
     timeout-minutes: 30
     defaults:
       run:
@@ -120,7 +123,14 @@ jobs:
           bun-version-file: .bun-version
       - name: Install the pinned Rust toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # The owner's Mac keeps one build folder between runs, outside the
+      # checkout (which is cleaned each run), so builds stay warm and
+      # incremental; GitHub's Macs restore the shared cache instead.
+      - name: Keep the build on this Mac
+        if: runner.environment == 'self-hosted'
+        run: echo "CARGO_TARGET_DIR=$HOME/.cache/mado-ci/target" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: runner.environment == 'github-hosted'
         with:
           # Only main writes the cache; pull requests restore it. Keeps PR
           # caches from evicting the one every PR starts from.
@@ -201,7 +211,7 @@ jobs:
     name: Screenshots
     needs: changes
     if: needs.changes.outputs.ts == 'true'
-    runs-on: macos-latest
+    runs-on: ${{ fromJSON(needs.changes.outputs.mac) }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
