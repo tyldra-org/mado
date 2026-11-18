@@ -135,7 +135,16 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.full != 'true' && needs.changes.outputs.base || '' }}
         run: bun scripts/ci-scope.ts cargo "$BASE" | tee -a "$GITHUB_ENV"
       - name: Check
-        run: ./scripts/check.sh --all --scope rust format lint build test
+        # No separate build stage: clippy type-checks every target and the
+        # tests compile and link them, so `cargo build` only repeated work
+        # (about a minute). The release workflow builds the app itself.
+        # Doc tests compile every crate once more (about 45 s) and there are
+        # none yet, so pull requests skip them; main still runs them.
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then export CHECK_CARGO_DOC_PACKAGES=""; fi
+          ./scripts/check.sh --all --scope rust format lint test
 
   ts:
     name: TypeScript (${{ matrix.os }})
