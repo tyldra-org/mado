@@ -6175,6 +6175,60 @@ fn control_clients_pair_revoke_and_use_full_control() {
     );
 }
 
+/// Spec 13 §13 check 5: a spending limit of 0.01 USD pauses a task after
+/// its first model call; the cost is priced from `models.json`, written to
+/// the audit and the day's spend, and raising the limit resumes it.
+#[test]
+fn a_spending_limit_pauses_a_task_after_its_first_model_call() {
+    let core = TestCore::start();
+    startup(&core);
+    ai_on(&core);
+    ask(
+        &core,
+        Origin::Settings,
+        Command::SettingsSet {
+            key: "ai.spendLimits.perTask".into(),
+            value: json!(10_000),
+            token: None,
+        },
+    )
+    .expect("limit");
+    let task = mado_types::TaskId::new();
+    core.handle.send(Input::Internal(Internal::TaskBegins {
+        task,
+        prompt: "compare prices on example.com".into(),
+        runtime: "mado".into(),
+        mode: None,
+    }));
+    let usage = |tokens: u64| {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        core.handle.send(Input::Internal(Internal::ModelUsage {
+            task,
+            connection: "c1".into(),
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-5".into(),
+            usage: (tokens, 100, 0),
+            reply,
+        }));
+        rx.blocking_recv().expect("an answer")
+    };
+    // 4,000 input tokens at $3 and 100 output at $15 per million: 13,500
+    // micro-dollars, over the 10,000 limit after one call.
+    assert!(usage(4_000), "the first call reaches the limit");
+    eventually("audited", || {
+        core.profile_rows("SELECT COUNT(*) FROM ai_audit WHERE kind = 'model_call'") == 1
+            && core.profile_rows("SELECT cost_micros FROM ai_tasks") == 13_500
+            && core.profile_rows("SELECT SUM(cost_micros) FROM ai_spend") == 13_500
+    });
+    ask(
+        &core,
+        Origin::Settings,
+        Command::AiTaskRaiseLimit { task_id: task },
+    )
+    .expect("raised");
+    assert!(!usage(10), "a raised limit lets the task go on");
+}
+
 /// Safari without Full Disk Access gets an error the sheet explains.
 #[test]
 fn an_import_without_full_disk_access_says_so() {

@@ -34,9 +34,31 @@ run("agent tools", () => {
     await mado.control.call("settings.set", { key: "proxy.mode", value: "manual" });
     await mado.control.call("settings.set", { key: "proxy.http", value: proxy });
     await mado.control.call("window.new", { private: false, urls: [] });
+    // Uploads and changes to Mado ask first (spec 13 §9); the person here
+    // allows each card once, and the safety tests cover the asking.
+    void approve();
   });
 
+  let stopped = false;
+  const approve = async () => {
+    while (!stopped) {
+      try {
+        const s = (
+          await mado.control.call<{
+            state: { prompts: Record<string, { id: string; type: string }> };
+          }>("state.get")
+        ).state;
+        for (const c of Object.values(s.prompts).filter((p) => p.type === "aiApproval"))
+          await mado.control.call("test.asUser", {
+            command: { type: "ai.approval.respond", promptId: c.id, answer: "once" },
+          });
+      } catch {}
+      await Bun.sleep(50);
+    }
+  };
+
   afterAll(async () => {
+    stopped = true;
     await mado?.quit();
     await mado?.remove();
     fixtures?.kill();

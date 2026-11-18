@@ -763,6 +763,39 @@ fn test_access(
                 if method == "test.click" {
                     return test_click(&app, &params).await;
                 }
+                if method == "test.agentTool" {
+                    // A tool call as a task's agent (spec 13 §9), before the
+                    // runtime exists to make one.
+                    let task: Option<mado_types::TaskId> =
+                        serde_json::from_value(params["taskId"].clone()).ok();
+                    let Some(task) = task else {
+                        return Err(mado_types::MadoError::new(
+                            mado_types::ErrorCode::InvalidInput,
+                            "error.control.badCommand",
+                        ));
+                    };
+                    core.send(Input::Internal(Internal::TaskBegins {
+                        task,
+                        prompt: params["prompt"].as_str().unwrap_or_default().to_owned(),
+                        runtime: "mado".into(),
+                        mode: params["mode"]
+                            .as_str()
+                            .map(mado_agent::safety::Mode::from_key),
+                    }));
+                    let (reply, rx) = tokio::sync::oneshot::channel();
+                    core.send(Input::Internal(Internal::ToolCall {
+                        origin: Origin::Agent { task },
+                        name: params["name"].as_str().unwrap_or_default().to_owned(),
+                        args: params["args"].clone(),
+                        reply,
+                    }));
+                    return rx.await.unwrap_or_else(|_| {
+                        Err(mado_types::MadoError::new(
+                            mado_types::ErrorCode::Internal,
+                            "error.coreStopped",
+                        ))
+                    });
+                }
                 if method == "test.agentHost" {
                     // The agent host window's properties (spec 13 §7.3).
                     let (tx, rx) = tokio::sync::oneshot::channel();

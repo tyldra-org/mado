@@ -4,6 +4,7 @@
 
 pub mod chat;
 pub mod commands;
+pub mod safety;
 pub mod untrusted;
 
 /// The command list and the tool table live in mado-types, so the CLI can

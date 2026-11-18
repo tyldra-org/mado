@@ -1218,6 +1218,17 @@ pub enum Command {
         #[serde(default)]
         model: Option<String>,
     },
+    /// Answers an approval card (spec 13 §9.3): `once`, `task` (not for
+    /// payments and deletes) or `deny`.
+    #[serde(rename = "ai.approval.respond", rename_all = "camelCase")]
+    AiApprovalRespond {
+        prompt_id: crate::PromptId,
+        answer: String,
+    },
+    /// Raises a paused task's spending limit (spec 13 §9.6): its spend so
+    /// far plus `ai.spendLimits.perTask` again.
+    #[serde(rename = "ai.task.raiseLimit", rename_all = "camelCase")]
+    AiTaskRaiseLimit { task_id: TaskId },
     /// Hands an agent tab back to its task after the person took it over
     /// (spec 13 §7.3), the task view's Continue.
     #[serde(rename = "ai.tab.handBack", rename_all = "camelCase")]
@@ -1522,7 +1533,9 @@ impl Command {
             | Self::AiCommandList
             | Self::AiCommandRun { .. }
             | Self::AiCommandRespond { .. }
-            | Self::AiTabHandBack { .. } => CommandFamily::Ai,
+            | Self::AiTabHandBack { .. }
+            | Self::AiApprovalRespond { .. }
+            | Self::AiTaskRaiseLimit { .. } => CommandFamily::Ai,
             Self::ControlClients | Self::ControlRevoke { .. } | Self::ControlPairRespond { .. } => {
                 CommandFamily::Control
             }
@@ -1737,6 +1750,8 @@ impl Command {
             Self::AiCommandRun { .. } => "ai.command.run",
             Self::AiCommandRespond { .. } => "ai.command.respond",
             Self::AiTabHandBack { .. } => "ai.tab.handBack",
+            Self::AiApprovalRespond { .. } => "ai.approval.respond",
+            Self::AiTaskRaiseLimit { .. } => "ai.task.raiseLimit",
             Self::ControlClients => "control.clients",
             Self::ControlRevoke { .. } => "control.revoke",
             Self::ControlPairRespond { .. } => "control.pairRespond",

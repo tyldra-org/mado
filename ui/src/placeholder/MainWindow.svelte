@@ -24,6 +24,7 @@
   import SideChat from "./SideChat.svelte";
   import AiResultCard from "./AiResultCard.svelte";
   import PairingCard from "./PairingCard.svelte";
+  import ApprovalCard from "./ApprovalCard.svelte";
   import PasskeySheet from "./PasskeySheet.svelte";
   import SiteInfo from "./SiteInfo.svelte";
   import TabStrip from "./TabStrip.svelte";
@@ -104,6 +105,7 @@
     <SideChat {store} {windowId} />
     <AiResultCard {store} {windowId} />
     <PairingCard {store} />
+    <ApprovalCard {store} {windowId} />
   </header>
   <main bind:this={page} aria-label={t("window.pageArea")}>
     {#if locked}

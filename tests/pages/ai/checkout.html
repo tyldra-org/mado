@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checkout</title>
+  </head>
+  <body>
+    <h1>Your basket</h1>
+    <p>1 × Fixture lamp</p>
+    <p id="total">Order total: $123.45</p>
+    <form action="/ai/thanks.html">
+      <button id="buy" type="submit">Place order</button>
+    </form>
+    <p id="state">not ordered</p>
+    <script>
+      document.querySelector("form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        document.getElementById("state").textContent = "ordered";
+      });
+    </script>
+  </body>
+</html>

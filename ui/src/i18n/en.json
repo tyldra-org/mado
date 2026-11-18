@@ -1277,5 +1277,13 @@
   "error.ai.userTabsNever": "Agents may not use your own tabs (Settings › AI).",
   "error.ai.userTabsReadOnly": "Agents may only read your own tabs (Settings › AI).",
   "error.ai.notYourActiveTab": "Agents never change the address of the tab you're looking at.",
-  "error.ai.needsApproval": "This needs your approval."
+  "error.ai.needsApproval": "This needs your approval.",
+  "error.ai.deniedByUser": "You denied this action.",
+  "ai.approval.title": "Allow this?",
+  "ai.approval.once": "Allow once",
+  "ai.approval.task": "Allow for this task",
+  "ai.approval.deny": "Deny",
+  "ai.approval.amount": "Total: {amount}",
+  "ai.task.paused.spendLimit": "Paused: the spending limit was reached.",
+  "ai.task.raiseLimit": "Raise limit for this task"
 }

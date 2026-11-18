@@ -1,0 +1,77 @@
+{
+  "_comment": "Words that make a click or Enter consequential (spec 13 §9.2), by class and language. Lower case; matched as whole words in an element's name, value or nearby text.",
+  "classes": {
+    "pay": {
+      "en": [
+        "pay",
+        "buy",
+        "order",
+        "purchase",
+        "checkout",
+        "check out",
+        "place order",
+        "pay now",
+        "buy now",
+        "complete purchase",
+        "subscribe"
+      ],
+      "es": ["pagar", "comprar", "pedido", "finalizar compra", "realizar pedido", "suscribirse"],
+      "fr": [
+        "payer",
+        "acheter",
+        "commander",
+        "passer la commande",
+        "valider la commande",
+        "s'abonner"
+      ],
+      "de": [
+        "bezahlen",
+        "kaufen",
+        "bestellen",
+        "zur kasse",
+        "jetzt kaufen",
+        "kostenpflichtig bestellen",
+        "abonnieren"
+      ],
+      "pt": ["pagar", "comprar", "encomendar", "finalizar compra", "fazer pedido", "assinar"],
+      "ja": ["支払う", "購入", "注文", "購入する", "注文を確定"],
+      "zh": ["支付", "付款", "购买", "下单", "结账", "提交订单"]
+    },
+    "delete": {
+      "en": ["delete", "remove", "erase", "unsubscribe", "close account", "cancel subscription"],
+      "es": ["eliminar", "borrar", "quitar", "darse de baja"],
+      "fr": ["supprimer", "effacer", "retirer", "se désabonner"],
+      "de": ["löschen", "entfernen", "abmelden", "konto schließen"],
+      "pt": ["excluir", "apagar", "remover", "cancelar inscrição"],
+      "ja": ["削除", "消去", "登録解除"],
+      "zh": ["删除", "移除", "取消订阅"]
+    },
+    "send": {
+      "en": ["send", "post", "publish", "reply", "comment", "share", "tweet", "submit"],
+      "es": ["enviar", "publicar", "responder", "compartir"],
+      "fr": ["envoyer", "publier", "répondre", "partager", "soumettre"],
+      "de": ["senden", "absenden", "veröffentlichen", "antworten", "teilen"],
+      "pt": ["enviar", "publicar", "responder", "compartilhar"],
+      "ja": ["送信", "投稿", "公開", "返信"],
+      "zh": ["发送", "发布", "提交", "回复", "分享"]
+    },
+    "transfer": {
+      "en": ["transfer", "wire", "send money", "withdraw"],
+      "es": ["transferir", "retirar"],
+      "fr": ["virement", "transférer", "retirer"],
+      "de": ["überweisen", "überweisung", "abheben"],
+      "pt": ["transferir", "sacar"],
+      "ja": ["振込", "送金"],
+      "zh": ["转账", "汇款", "提现"]
+    },
+    "confirm": {
+      "en": ["confirm", "agree", "accept", "i agree"],
+      "es": ["confirmar", "aceptar"],
+      "fr": ["confirmer", "accepter"],
+      "de": ["bestätigen", "zustimmen", "akzeptieren"],
+      "pt": ["confirmar", "aceitar"],
+      "ja": ["確認", "同意"],
+      "zh": ["确认", "同意"]
+    }
+  }
+}

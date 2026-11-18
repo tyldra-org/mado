@@ -383,8 +383,15 @@ impl Core {
         reply_to: &mut Option<Reply>,
         rec: &mut PatchRecorder,
     ) -> Result<Value, MadoError> {
-        // 13: with `features.ai` off none of this runs.
-        if self.setting("features.ai") != true {
+        // 13: with `features.ai` off none of this runs, except answering what
+        // control clients' tools raise: they work with AI off (14 §1), so
+        // their approval cards and agent tabs must still be answerable.
+        if self.setting("features.ai") != true
+            && !matches!(
+                cmd,
+                Command::AiApprovalRespond { .. } | Command::AiTabHandBack { .. }
+            )
+        {
             return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off"));
         }
         if matches!(
@@ -396,6 +403,20 @@ impl Core {
                 | Command::AiChatCancel { .. }
         ) {
             return self.chat_command(origin, cmd, reply_to);
+        }
+        if let Command::AiTaskRaiseLimit { task_id } = cmd {
+            if !origin.is_user() {
+                return Err(not_allowed());
+            }
+            self.raise_limit(task_id);
+            if let Some(mut t) = self.state.tx(rec).ai().tasks().get(&task_id) {
+                t.set_status(mado_types::state::TaskStatus::Running);
+                t.set_step(String::new());
+            }
+            return Ok(Value::Null);
+        }
+        if matches!(cmd, Command::AiApprovalRespond { .. }) {
+            return self.approval_respond(origin, cmd, rec);
         }
         if let Command::AiTabHandBack { tab_id } = cmd {
             if !origin.is_user() {

@@ -22,6 +22,7 @@ workspace = true
 
 [dependencies]
 getrandom = "0.4.3"
+mado-agent = { version = "0.0.0", path = "../crates/mado-agent" }
 mado-control = { version = "0.0.0", path = "../crates/mado-control" }
 mado-core = { version = "0.0.0", path = "../crates/mado-core" }
 mado-engine = { version = "0.0.0", path = "../crates/mado-engine" }
