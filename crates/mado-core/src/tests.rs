@@ -5517,6 +5517,66 @@ fn a_routine_missed_while_closed_runs_once_the_same_day() {
     core.stop();
 }
 
+/// Spec 01 §5, M6-T03: the window's UI opens the overlay over a rectangle
+/// and closes it; focus follows; other windows' webviews may not.
+#[test]
+fn the_overlay_opens_over_a_rectangle_and_closes() {
+    let core = TestCore::start();
+    startup(&core);
+    let w = *state_of(&core).windows.keys().next().expect("window");
+    let rect = mado_types::state::Rect {
+        x: 300.0,
+        y: 60.0,
+        width: 640.0,
+        height: 440.0,
+    };
+    let open = |origin: Origin| {
+        ask(
+            &core,
+            origin,
+            Command::WindowOverlayOpen {
+                window_id: w,
+                kind: mado_types::state::OverlayKind::CommandBar,
+                id: "location".into(),
+                rect,
+            },
+        )
+    };
+    let other = Origin::Ui {
+        window: mado_types::WindowId::new(),
+    };
+    assert_eq!(
+        open(other).expect_err("not its window").message_key,
+        "error.window.notYours"
+    );
+    open(Origin::Ui { window: w }).expect("opened");
+    let s = state_of(&core);
+    let win = &s.windows[&w];
+    assert_eq!(
+        win.overlay.as_ref().map(|o| (o.kind, o.rect)),
+        Some((mado_types::state::OverlayKind::CommandBar, rect))
+    );
+    assert_eq!(win.focus, mado_types::state::Focus::Overlay);
+    assert!(
+        core.engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .windows
+            .values()
+            .any(|x| x.overlay)
+    );
+    ask(
+        &core,
+        Origin::Overlay { window: w },
+        Command::WindowOverlayClose { window_id: w },
+    )
+    .expect("closed");
+    let s = state_of(&core);
+    assert!(s.windows[&w].overlay.is_none());
+    assert_eq!(s.windows[&w].focus, mado_types::state::Focus::Ui);
+    core.stop();
+}
+
 /// Turns `features.ai` on, as from the settings window.
 fn ai_on(core: &TestCore) {
     ask(

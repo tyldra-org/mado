@@ -105,7 +105,7 @@
       <NavButtons {store} {windowId} />
       <div class="location">
         <SiteInfo {store} {windowId} />
-        <AddressBar {store} {windowId} />
+        <AddressBar {store} {windowId} mode="launcher" />
       </div>
       <div class="tools">
         <BookmarksBar {store} {windowId} />

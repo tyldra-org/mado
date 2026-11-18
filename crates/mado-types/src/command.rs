@@ -1487,6 +1487,18 @@ pub enum Command {
         rect: crate::state::Rect,
         scale: f64,
     },
+    /// Shows the overlay webview over `rect` (the UI's CSS pixels) with
+    /// `kind` and `id` for it to render (spec 01 §5); focus moves to it.
+    #[serde(rename = "window.overlayOpen", rename_all = "camelCase")]
+    WindowOverlayOpen {
+        window_id: WindowId,
+        kind: crate::state::OverlayKind,
+        id: String,
+        rect: crate::state::Rect,
+    },
+    /// Hides the overlay; focus goes back to the UI.
+    #[serde(rename = "window.overlayClose", rename_all = "camelCase")]
+    WindowOverlayClose { window_id: WindowId },
 }
 
 impl Command {
@@ -1502,6 +1514,8 @@ impl Command {
             | Self::SettingsExport { .. }
             | Self::SettingsImport { .. } => CommandFamily::Settings,
             Self::WindowReportContentRect { .. }
+            | Self::WindowOverlayOpen { .. }
+            | Self::WindowOverlayClose { .. }
             | Self::WindowNew { .. }
             | Self::WindowUnlock { .. }
             | Self::WindowClose { .. }
@@ -1740,6 +1754,8 @@ impl Command {
             Self::SettingsExport { .. } => "settings.export",
             Self::SettingsImport { .. } => "settings.import",
             Self::WindowReportContentRect { .. } => "window.reportContentRect",
+            Self::WindowOverlayOpen { .. } => "window.overlayOpen",
+            Self::WindowOverlayClose { .. } => "window.overlayClose",
             Self::WindowNew { .. } => "window.new",
             Self::WindowUnlock { .. } => "window.unlock",
             Self::WindowClose { .. } => "window.close",

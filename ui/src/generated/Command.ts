@@ -20,6 +20,7 @@ import type { NavDisposition } from "./NavDisposition";
 import type { NavSource } from "./NavSource";
 import type { OpenDisposition } from "./OpenDisposition";
 import type { OverlapChoice } from "./OverlapChoice";
+import type { OverlayKind } from "./OverlayKind";
 import type { PasskeyAction } from "./PasskeyAction";
 import type { ProfileId } from "./ProfileId";
 import type { PromptDecision } from "./PromptDecision";
@@ -45,4 +46,4 @@ ctrlEnter: boolean, } | { "type": "nav.suggest", windowId: WindowId, input: stri
 /**
  * From the previous page's answer.
  */
-cursor: string | null, utcOffsetMinutes: number, } | { "type": "history.delete", visitIds: Array<number>, urlIds: Array<number>, host: string | null, range: TimeRange | null, } | { "type": "history.exclude", host: string, } | { "type": "history.export", path: string, } | { "type": "session.reopenClosed" } | { "type": "session.recentlyClosed" } | { "type": "session.confirmClose", promptId: PromptId, proceed: boolean, } | { "type": "window.reportContentRect", windowId: WindowId, rect: Rect, scale: number, };
+cursor: string | null, utcOffsetMinutes: number, } | { "type": "history.delete", visitIds: Array<number>, urlIds: Array<number>, host: string | null, range: TimeRange | null, } | { "type": "history.exclude", host: string, } | { "type": "history.export", path: string, } | { "type": "session.reopenClosed" } | { "type": "session.recentlyClosed" } | { "type": "session.confirmClose", promptId: PromptId, proceed: boolean, } | { "type": "window.reportContentRect", windowId: WindowId, rect: Rect, scale: number, } | { "type": "window.overlayOpen", windowId: WindowId, kind: OverlayKind, id: string, rect: Rect, } | { "type": "window.overlayClose", windowId: WindowId, };
