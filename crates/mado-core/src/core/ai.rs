@@ -285,6 +285,11 @@ impl Core {
             crate::Timer::AiRetention,
             std::time::Duration::from_secs(5 * 60),
         );
+        // The first filing an hour after start, then daily (13 §10).
+        self.timers.schedule(
+            crate::Timer::MemoryFiling,
+            std::time::Duration::from_secs(3600),
+        );
         self.state.ai.roles = self.resolved_roles();
     }
 
@@ -418,6 +423,9 @@ impl Core {
             )
         {
             return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off"));
+        }
+        if cmd.name().starts_with("ai.memory.") || cmd.name().starts_with("ai.skill.") {
+            return self.memory_command(origin, cmd, reply_to, rec);
         }
         if matches!(
             cmd,

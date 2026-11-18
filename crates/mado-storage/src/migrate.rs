@@ -36,6 +36,7 @@ impl Kind {
                 include_str!("../migrations/profile/0004_extension_overlaps.sql"),
                 include_str!("../migrations/profile/0005_blocker_tracker_stats.sql"),
                 include_str!("../migrations/profile/0006_control_audit.sql"),
+                include_str!("../migrations/profile/0007_ai_memory.sql"),
             ],
             Self::Vault => &[include_str!("../migrations/vault/0001_initial.sql")],
         }

@@ -1164,6 +1164,37 @@ pub enum Command {
     /// own terminal (spec 13 §2.3). Protected: Mado's windows only.
     #[serde(rename = "ai.cli.run", rename_all = "camelCase")]
     AiCliRun { provider: String, what: String },
+    /// The memory files (spec 13 §10): `[{ path, bytes, modifiedAt }]`.
+    #[serde(rename = "ai.memory.list")]
+    AiMemoryList,
+    /// One memory file: `{ path, text }`.
+    #[serde(rename = "ai.memory.read", rename_all = "camelCase")]
+    AiMemoryRead { path: String },
+    /// Paragraphs matching the words: `[{ path, line, heading, text }]`.
+    #[serde(rename = "ai.memory.search", rename_all = "camelCase")]
+    AiMemorySearch { query: String },
+    /// The person edits a memory file. Protected.
+    #[serde(rename = "ai.memory.write", rename_all = "camelCase")]
+    AiMemoryWrite { path: String, text: String },
+    /// The person deletes a memory file. Protected.
+    #[serde(rename = "ai.memory.delete", rename_all = "camelCase")]
+    AiMemoryDelete { path: String },
+    /// Files the inbox now instead of at the day's filing; answers `{ day,
+    /// files }`. Protected.
+    #[serde(rename = "ai.memory.file")]
+    AiMemoryFile,
+    /// Undoes a day's filing (`YYYY-MM-DD`). Protected.
+    #[serde(rename = "ai.memory.undo", rename_all = "camelCase")]
+    AiMemoryUndo { day: String },
+    /// The skills (spec 13 §11): `[{ name, description, sites, builtin }]`.
+    #[serde(rename = "ai.skill.list")]
+    AiSkillList,
+    /// One skill's `SKILL.md`: `{ name, document, builtin }`.
+    #[serde(rename = "ai.skill.read", rename_all = "camelCase")]
+    AiSkillRead { name: String },
+    /// Deletes one of the person's skills. Protected.
+    #[serde(rename = "ai.skill.delete", rename_all = "camelCase")]
+    AiSkillDelete { name: String },
     /// Every model of every connection for pickers (spec 13 §4): starred
     /// first, then shown ones by connection; `[{ connectionId, modelId,
     /// name, show, starred, info }]`, `info` null for unknown models.
@@ -1584,6 +1615,16 @@ impl Command {
             | Self::AiConnectionDetectLocal
             | Self::AiCliList
             | Self::AiCliRun { .. }
+            | Self::AiMemoryList
+            | Self::AiMemoryRead { .. }
+            | Self::AiMemorySearch { .. }
+            | Self::AiMemoryWrite { .. }
+            | Self::AiMemoryDelete { .. }
+            | Self::AiMemoryFile
+            | Self::AiMemoryUndo { .. }
+            | Self::AiSkillList
+            | Self::AiSkillRead { .. }
+            | Self::AiSkillDelete { .. }
             | Self::AiModelList
             | Self::AiModelSet { .. }
             | Self::AiRoleSet { .. }
@@ -1812,6 +1853,16 @@ impl Command {
             Self::AiConnectionDetectLocal => "ai.connection.detectLocal",
             Self::AiCliList => "ai.cli.list",
             Self::AiCliRun { .. } => "ai.cli.run",
+            Self::AiMemoryList => "ai.memory.list",
+            Self::AiMemoryRead { .. } => "ai.memory.read",
+            Self::AiMemorySearch { .. } => "ai.memory.search",
+            Self::AiMemoryWrite { .. } => "ai.memory.write",
+            Self::AiMemoryDelete { .. } => "ai.memory.delete",
+            Self::AiMemoryFile => "ai.memory.file",
+            Self::AiMemoryUndo { .. } => "ai.memory.undo",
+            Self::AiSkillList => "ai.skill.list",
+            Self::AiSkillRead { .. } => "ai.skill.read",
+            Self::AiSkillDelete { .. } => "ai.skill.delete",
             Self::AiModelList => "ai.model.list",
             Self::AiModelSet { .. } => "ai.model.set",
             Self::AiRoleSet { .. } => "ai.role.set",
@@ -1914,6 +1965,11 @@ impl Command {
                 | Self::AiChatGet { .. }
                 | Self::AiModelList
                 | Self::AiCliList
+                | Self::AiMemoryList
+                | Self::AiMemoryRead { .. }
+                | Self::AiMemorySearch { .. }
+                | Self::AiSkillList
+                | Self::AiSkillRead { .. }
         )
     }
 }

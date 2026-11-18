@@ -25,6 +25,7 @@ mod internal;
 mod lists;
 mod lock;
 mod marks;
+mod memory;
 mod menus;
 mod nav;
 mod page_ai;
@@ -111,6 +112,19 @@ pub enum Internal {
         origin: Origin,
         url: String,
         reply: oneshot::Sender<Result<mado_types::TabId, MadoError>>,
+    },
+    /// A memory or skill tool (13 §10, §11).
+    MemoryTool {
+        origin: Origin,
+        name: String,
+        args: Value,
+        reply: Reply,
+    },
+    /// The skill hint for a page an agent tab landed on (13 §11).
+    SkillHint {
+        origin: Origin,
+        url: String,
+        reply: oneshot::Sender<Option<String>>,
     },
     /// A tool's action that may need the person (13 §9).
     ToolGuard {
@@ -702,6 +716,8 @@ pub struct Core {
     /// CLI tasks' one-time MCP tokens (hashed) and the sessions they
     /// opened (13 §7.2).
     task_tokens: BTreeMap<Vec<u8>, mado_types::TaskId>,
+    /// Skill hints each task has had (13 §11).
+    skill_hints: memory::SkillHints,
     task_clients: BTreeMap<mado_types::ClientId, mado_types::TaskId>,
     handed_back: std::collections::BTreeSet<mado_types::TabId>,
     /// Files the next file chooser of a tab gets (the `upload` tool).
@@ -1036,6 +1052,7 @@ impl Core {
             pending_uploads: BTreeMap::new(),
             control_tasks: BTreeMap::new(),
             task_tokens: BTreeMap::new(),
+            skill_hints: BTreeMap::new(),
             task_clients: BTreeMap::new(),
             guards: BTreeMap::new(),
             task_ctl: BTreeMap::new(),
@@ -1763,6 +1780,15 @@ impl Core {
                 let _ = reply.send(self.tool_may_use(task, tab, read_only, navigates));
             }
             Internal::ToolGuard { ask, reply } => self.ask_approval(ask, reply, rec),
+            Internal::MemoryTool {
+                origin,
+                name,
+                args,
+                reply,
+            } => self.memory_tool(origin, &name, args, reply, rec),
+            Internal::SkillHint { origin, url, reply } => {
+                let _ = reply.send(self.skill_hint(&origin, &url, rec));
+            }
             Internal::ToolRead { origin, from, text } => self.note_read(&origin, &from, &text, rec),
             Internal::ToolCrosses {
                 origin,
@@ -2167,6 +2193,11 @@ impl Core {
             Timer::BlockerUpdate => self.update_blocker(false, &mut rec),
             Timer::ExtensionUpdate => self.check_extension_updates(),
             Timer::AiRetention => self.chat_retention(),
+            Timer::MemoryFiling => {
+                self.timers
+                    .schedule(Timer::MemoryFiling, memory::FILING_EVERY);
+                self.file_memory(None);
+            }
             Timer::AgentTabsClose(task) => self.close_agent_tabs(task),
             Timer::PairingTimeout(id) => self.pairing_timed_out(id, &mut rec),
             Timer::VaultLock => self.vault_lock_check(&mut rec),

@@ -122,15 +122,22 @@ pub fn request(
 
 /// Mado's task instructions (13 §7.4), `prompts/task.md` with the request
 /// and its scope.
-pub fn task_system(prompt: &str, scope: &[String]) -> String {
+/// `skills` is the skills' index (13 §11), empty for none.
+pub fn task_system(prompt: &str, scope: &[String], skills: &str) -> String {
     let scope = if scope.is_empty() {
         "any site the request needs".to_owned()
     } else {
         scope.join(", ")
     };
+    let skills = if skills.is_empty() {
+        String::new()
+    } else {
+        format!("\nSkills you can read with the skill tool when they fit the request:\n{skills}")
+    };
     include_str!("../prompts/task.md")
         .replace("{prompt}", prompt)
         .replace("{scope}", &scope)
+        .replace("{skills}", &skills)
 }
 
 /// URLs listed under "Sources" in an answer, or any URLs in it.

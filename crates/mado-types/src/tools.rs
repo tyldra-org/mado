@@ -257,10 +257,10 @@ pub fn all() -> Vec<Tool> {
         ),
         t(
             "skill_save",
-            "Save how to do something as a skill (needs approval).",
+            "Save how to do something as a skill: a SKILL.md document with front matter (name, description, optional sites) and Markdown steps. The person approves it first.",
             obj(
-                json!({ "name": { "type": "string" }, "text": { "type": "string" }, "sites": { "type": "array", "items": { "type": "string" } } }),
-                &["name", "text"],
+                json!({ "name": { "type": "string" }, "document": { "type": "string" }, "replacing": { "type": "boolean" } }),
+                &["name", "document"],
             ),
             false,
         ),

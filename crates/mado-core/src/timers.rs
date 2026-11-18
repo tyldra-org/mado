@@ -26,6 +26,8 @@ pub enum Timer {
     ExtensionUpdate,
     /// Deletes expired chats (spec 13 §5).
     AiRetention,
+    /// Files the memory inbox (spec 13 §10).
+    MemoryFiling,
     /// A finished task's agent tabs close (spec 13 §7.3).
     AgentTabsClose(mado_types::TaskId),
     /// A control pairing card had its two minutes (spec 14 §2).
