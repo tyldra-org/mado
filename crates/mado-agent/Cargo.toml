@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+jiff = "0.2.44"
 mado-ai = { version = "0.0.0", path = "../mado-ai" }
 mado-lists = { version = "0.0.0", path = "../mado-lists" }
 mado-types = { version = "0.0.0", path = "../mado-types" }

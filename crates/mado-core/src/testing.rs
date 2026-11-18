@@ -37,11 +37,21 @@ pub struct Sent {
     pub relaunches: Vec<bool>,
     /// `mado://ai` events (spec 13 §5).
     pub ai: Vec<serde_json::Value>,
+    /// System notifications Mado posted: id, title and body.
+    pub shown: Vec<(String, String, String)>,
 }
 
 struct Collect(Arc<Mutex<Sent>>);
 
 impl UiSink for Collect {
+    fn show_notification(&mut self, id: &str, title: &str, body: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .shown
+            .push((id.into(), title.into(), body.into()));
+    }
+
     fn ai(&mut self, payload: &serde_json::Value) {
         self.0
             .lock()
@@ -191,6 +201,10 @@ thread_local! {
     pub static LISTS: std::cell::RefCell<Option<crate::ListsConfig>> = const { std::cell::RefCell::new(None) };
 }
 
+/// The test cores' clock, Unix milliseconds; tests that relaunch at
+/// another time set it before starting a core.
+pub static NOW: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1_800_000_000_000);
+
 pub struct TestCore {
     pub handle: CoreHandle,
     pub sent: Arc<Mutex<Sent>>,
@@ -330,7 +344,7 @@ impl TestCore {
                     engine_outdated: false,
                 },
                 restore_session: RESTORE.get(),
-                clock: || 1_800_000_000_000,
+                clock: || NOW.load(std::sync::atomic::Ordering::SeqCst),
             })
             .expect("core starts");
         // The main thread's role: hand engine events back to the core.

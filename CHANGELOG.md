@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tasks: ask Mado's agent to do something, from the tasks panel or with mado "…". It works step by step in its own tabs, asks you when it needs to, takes steering and follow-ups, can hand parts to helpers, and ends with an answer and its sources. Up to three run at once.
 - Subscription CLIs: Claude Code, Codex, Gemini CLI, Copilot CLI and Cursor CLI can run Mado's tasks on the plan you already pay for. Settings › AI finds them and runs their install and login in Terminal, and they reach the browser only through Mado, with the same approvals.
 - Memory and skills: with Memory on, the agent remembers facts you'd want it to keep in Markdown files you can read and edit, files them once a day (undo per day), and never stores card numbers, keys, passwords or ID numbers. Skills are written how-tos; the agent can save one after you approve it, and it's offered on its sites.
+- Routines: give Mado's agent a task on a schedule ("every weekday at 08:00", "first Monday", "on open") with mado every. Read-only routines never act for you; you get a notification with the result, and nothing when there's nothing new. A run missed while Mado was closed runs once when you open it that day.
 
 ### Fixed
 

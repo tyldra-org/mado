@@ -706,6 +706,13 @@ fn start_owner(
             locks.send(Input::Internal(Internal::ScreenLocked));
         });
     });
+    // Routines' next runs after sleep and clock changes (13 §12).
+    let clock = handle.clone();
+    let _ = app.run_on_main_thread(move || {
+        mado_platform::power::watch_wake_and_clock(move || {
+            clock.send(Input::Internal(Internal::ClockChanged));
+        });
+    });
     let pressure = handle.clone();
     mado_platform::power::watch_memory_pressure(move |level| {
         pressure.send(Input::Internal(Internal::MemoryPressure {

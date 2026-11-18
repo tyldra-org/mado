@@ -2808,6 +2808,7 @@ dependencies = [
 name = "mado-agent"
 version = "0.0.0"
 dependencies = [
+ "jiff",
  "mado-ai",
  "mado-lists",
  "mado-types",

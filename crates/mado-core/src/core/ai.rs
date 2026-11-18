@@ -424,6 +424,9 @@ impl Core {
         {
             return Err(MadoError::new(ErrorCode::Unsupported, "error.ai.off"));
         }
+        if cmd.name().starts_with("ai.routine.") {
+            return self.routine_command(cmd, rec);
+        }
         if cmd.name().starts_with("ai.memory.") || cmd.name().starts_with("ai.skill.") {
             return self.memory_command(origin, cmd, reply_to, rec);
         }

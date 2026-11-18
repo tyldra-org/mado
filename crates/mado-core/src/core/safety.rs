@@ -29,6 +29,9 @@ pub(super) struct TaskGuard {
     pub cost_micros: u64,
     /// A raised limit for this task (13 §9.6).
     pub limit_micros: Option<u64>,
+    /// A `readOnly` routine's task: consequential actions are refused
+    /// without a card (13 §12).
+    pub read_only: bool,
 }
 
 /// An action waiting for the person.
@@ -80,6 +83,13 @@ impl Core {
         let mode = g.mode.unwrap_or(mode_setting);
         if g.denied.contains(&(ask.class, site.clone())) {
             let _ = reply.send(Err(denied()));
+            return;
+        }
+        if g.read_only && ask.class != Class::LeaveScope {
+            let _ = reply.send(Err(MadoError::new(
+                ErrorCode::PermissionDenied,
+                "error.ai.readOnlyRoutine",
+            )));
             return;
         }
         if ask.class == Class::LeaveScope

@@ -204,6 +204,43 @@ pub fn watch_screen_lock(report: impl Fn() + Send + Sync + 'static) {
     }
 }
 
+/// Calls `report` when the Mac wakes from sleep, the clock is set or the
+/// time zone changes (spec 13 §12: routines' next runs are recomputed).
+/// Call once, on the main thread; `report` runs on the main queue.
+pub fn watch_wake_and_clock(report: impl Fn() + Send + Sync + 'static) {
+    use objc2::msg_send;
+    let report = std::sync::Arc::new(report);
+    // SAFETY: as in `watch_screen_lock`.
+    unsafe {
+        let Ok(queue_class) = crate::objc::class(c"NSOperationQueue") else {
+            return;
+        };
+        let main: Retained<AnyObject> = msg_send![queue_class, mainQueue];
+        let observe = |center: &AnyObject, name: &str| {
+            let r = std::sync::Arc::clone(&report);
+            let block = RcBlock::new(move |_n: *mut AnyObject| r());
+            let token: Retained<AnyObject> = msg_send![
+                center,
+                addObserverForName: &*NSString::from_str(name),
+                object: std::ptr::null::<AnyObject>(),
+                queue: &*main,
+                usingBlock: &*block
+            ];
+            std::mem::forget(token);
+        };
+        let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+        observe(
+            &workspace.notificationCenter(),
+            "NSWorkspaceDidWakeNotification",
+        );
+        if let Ok(nc) = crate::objc::class(c"NSNotificationCenter") {
+            let center: Retained<AnyObject> = msg_send![nc, defaultCenter];
+            observe(&center, "NSSystemClockDidChangeNotification");
+            observe(&center, "NSSystemTimeZoneDidChangeNotification");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
