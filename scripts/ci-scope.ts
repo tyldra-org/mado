@@ -47,8 +47,9 @@ const RUST_GLOBAL = [
   /^\.?(rustfmt|clippy)\.toml$/,
   /^\.cargo\//,
   /^\.config\/nextest\.toml$/,
-  // Fixtures and the end-to-end harness, which any crate's tests may read.
-  /^tests\//,
+  // Fixtures any crate's tests may read. The end-to-end and screenshot
+  // tests are bun's: no cargo test reads them.
+  /^tests\/(?!e2e\/|visual\/)/,
   // The signed lists, bundled by mado-lists, which most crates read.
   /^lists\/(?!README\.md$)/,
 ];

@@ -108,6 +108,12 @@ describe("classify", () => {
     });
   });
 
+  test("end-to-end and screenshot tests run TypeScript only", () => {
+    for (const f of ["tests/e2e/engine.test.ts", "tests/visual/gallery.visual.ts"]) {
+      expect(classify([f])).toMatchObject({ rust: false, ts: true });
+    }
+  });
+
   test("the dependency rule script runs both sides", () => {
     expect(classify(["scripts/check-deps.ts"])).toMatchObject({ rust: true, ts: true });
   });
