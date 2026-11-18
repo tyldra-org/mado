@@ -332,18 +332,21 @@ async fn run(o: Opts) -> i32 {
         }
         ["session", "stop", id] => call(&o, "ai.task.stop", json!({ "taskId": id })).await,
         ["every", "list"] => call(&o, "ai.routine.list", Value::Null).await,
-        ["every", verb @ ("run" | "pause" | "resume" | "remove"), id] => {
+        ["every", "run", id] => call(&o, "ai.routine.runNow", json!({ "routineId": id })).await,
+        ["every", verb @ ("pause" | "resume"), id] => {
+            let enabled = *verb == "resume";
             call(
                 &o,
-                &format!("ai.routine.{verb}"),
-                json!({ "routineId": id }),
+                "ai.routine.update",
+                json!({ "routineId": id, "enabled": enabled }),
             )
             .await
         }
+        ["every", "remove", id] => call(&o, "ai.routine.delete", json!({ "routineId": id })).await,
         ["every", schedule, text] => {
             call(
                 &o,
-                "ai.routine.add",
+                "ai.routine.create",
                 json!({ "schedule": schedule, "prompt": text, "mode": o.mode }),
             )
             .await

@@ -8,6 +8,7 @@ pub mod cli;
 pub mod commands;
 pub mod memory;
 pub mod safety;
+pub mod schedule;
 pub mod skills;
 pub mod untrusted;
 

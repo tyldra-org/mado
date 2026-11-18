@@ -791,6 +791,7 @@ impl Core {
         self.task_ctl.remove(&task);
         self.end_task_access(task);
         self.forget_skill_hints(task);
+        self.routine_task_done(task, &answer, rec);
         if let Some(mut t) = self.state.tx(rec).ai().tasks().get(&task) {
             t.set_status(status);
             t.set_step(String::new());
