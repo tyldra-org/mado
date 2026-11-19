@@ -53,7 +53,7 @@ jobs:
       # it from a branch of this repository; GitHub's otherwise. Anyone
       # else's push, a fork, Dependabot or a bot runs on GitHub's Macs. Fork
       # pull requests also wait for the owner's approval before any job runs.
-      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098' && (github.event_name != 'pull_request' || (github.event.pull_request.user.login == 'yogeshprasad098' && github.event.pull_request.head.repo.full_name == github.repository))) && 'my Mac' || 'macos-latest' }}
+      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098' && (github.event_name != 'pull_request' || (github.event.pull_request.user.login == 'yogeshprasad098' && github.event.pull_request.head.repo.full_name == github.repository))) && 'macos-self-hosted' || 'macos-latest' }}
       base: ${{ steps.base.outputs.sha }}
       full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -104,7 +104,7 @@ jobs:
     strategy:
       matrix:
         mac: ["${{ needs.changes.outputs.mac }}"]
-    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
+    runs-on: ${{ matrix.mac == 'macos-self-hosted' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 30
     defaults:
       run:
