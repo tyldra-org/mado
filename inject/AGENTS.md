@@ -16,6 +16,6 @@ These scripts run next to hostile code. Treat every page as an attacker.
 
 ## Commands
 
-- `bun run build:inject` from the repository root builds every script into `app/resources/inject/`.
+- `bun run build:inject` from the repository root builds every script into `inject/dist/` to look at. Cargo builds the copy the app embeds (`crates/mado-engine/build.rs`).
 - `bun run --cwd inject typecheck` type-checks.
 - Test behaviour with fixture pages in `tests/pages/` (created with the first engine task) on both engines.

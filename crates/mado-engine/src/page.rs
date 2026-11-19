@@ -11,8 +11,8 @@ use serde_json::Value;
 
 /// The `bridge` bundle, with `__MADO_NONCE__` where the nonce goes.
 const BRIDGE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/bridge.js"
+    env!("OUT_DIR"),
+    "/inject/bridge.js"
 ));
 const NONCE_PLACEHOLDER: &str = "__MADO_NONCE__";
 
@@ -598,32 +598,32 @@ fn within_limits(m: &PageMessage) -> bool {
 }
 
 const STATUS: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/status.js"
+    env!("OUT_DIR"),
+    "/inject/status.js"
 ));
 const CONTEXT: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/context.js"
+    env!("OUT_DIR"),
+    "/inject/context.js"
 ));
 const FIND: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/find.js"
+    env!("OUT_DIR"),
+    "/inject/find.js"
 ));
 const MEDIA: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/media.js"
+    env!("OUT_DIR"),
+    "/inject/media.js"
 ));
 const FORMS: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/forms.js"
+    env!("OUT_DIR"),
+    "/inject/forms.js"
 ));
 const RELAY: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/relay.js"
+    env!("OUT_DIR"),
+    "/inject/relay.js"
 ));
 const WEBAUTHN: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/webauthn.js"
+    env!("OUT_DIR"),
+    "/inject/webauthn.js"
 ));
 
 /// `webauthn` (spec 11 §8.1), added while Mado Passwords handles passkeys.
@@ -638,33 +638,33 @@ pub fn webauthn() -> crate::PageScript {
 }
 
 const NOTIFICATIONS: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/notifications.js"
+    env!("OUT_DIR"),
+    "/inject/notifications.js"
 ));
 const GEOLOCATION: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/geolocation.js"
+    env!("OUT_DIR"),
+    "/inject/geolocation.js"
 ));
 const COSMETIC: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/cosmetic.js"
+    env!("OUT_DIR"),
+    "/inject/cosmetic.js"
 ));
 const STORE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/store.js"
+    env!("OUT_DIR"),
+    "/inject/store.js"
 ));
 const APPLE_PAY: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/apple-pay.js"
+    env!("OUT_DIR"),
+    "/inject/apple-pay.js"
 ));
 const PROTOCOL_HANDLERS: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/protocol-handlers.js"
+    env!("OUT_DIR"),
+    "/inject/protocol-handlers.js"
 ));
 
 const AI_READER: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/ai-reader.js"
+    env!("OUT_DIR"),
+    "/inject/ai-reader.js"
 ));
 
 /// The body for `EvaluateInWorld` that answers the page's readable text
@@ -690,12 +690,12 @@ pub fn ai_call(call: &str, args: &serde_json::Value) -> String {
 }
 
 const READER_PROBE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/reader-probe.js"
+    env!("OUT_DIR"),
+    "/inject/reader-probe.js"
 ));
 const READER: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/reader.js"
+    env!("OUT_DIR"),
+    "/inject/reader.js"
 ));
 
 /// Where the `reader` scripts leave their answer in the Mado world.
@@ -713,12 +713,12 @@ pub fn reader_extract() -> String {
 }
 
 const INTERNAL: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/internal.js"
+    env!("OUT_DIR"),
+    "/inject/internal.js"
 ));
 const GPC: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../app/resources/inject/gpc.js"
+    env!("OUT_DIR"),
+    "/inject/gpc.js"
 ));
 
 /// `gpc`, added to the bundled set while `privacy.gpc` is on (spec 08 §8).
