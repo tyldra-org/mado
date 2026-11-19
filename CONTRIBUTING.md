@@ -54,6 +54,8 @@ bun install --frozen-lockfile
 
    CI runs only what your change needs (`scripts/ci-scope.ts` decides). A docs-only pull request skips every check but the required `ci` result. A Rust change checks the changed crates and every crate that depends on them, on macOS. A TypeScript change runs format, lint, typecheck and the tests it reaches. Dependency, toolchain or CI changes check everything, and so does every push to `main`. So does a file in none of the lists in `scripts/ci-scope.ts`: when you add a new kind of file, add it to the list for what reads it, with a case in `scripts/ci-scope.test.ts`.
 
+   The Rust job runs on GitHub's Macs. Only the maintainer's own pull requests and pushes run it on the maintainer's Mac, a self-hosted runner labelled `mado-mac`, while the repository variable `USE_MY_MAC` is `true`. The same goes for the release workflow's end-to-end and build jobs when the maintainer starts the release; set it to `false` when that Mac is offline. Pull requests from forks wait for the maintainer's approval before any job runs.
+
 ## Optional local tools
 
 None of these are required; each makes a local loop faster or shows something the checks do not. Install the Cargo tools with `cargo install --locked <name>` (or `cargo binstall <name>`).

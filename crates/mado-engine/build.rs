@@ -1,6 +1,9 @@
 //! Bundles the page scripts in `inject/src/` (spec 02 §5) into
-//! `app/resources/inject/`, which `page_scripts` embeds. Bun runs
-//! `inject/build.ts`; it needs no installed packages.
+//! `$OUT_DIR/inject/`, which `page_scripts` embeds. Bun runs
+//! `inject/build.ts`; it needs no installed packages. The bundles live in
+//! the build folder, not the checkout, so they last exactly as long as
+//! cargo's record that this script ran: a kept build folder with a fresh
+//! checkout (CI on the owner's Mac) still finds them.
 
 use std::path::Path;
 use std::process::Command;
@@ -25,8 +28,10 @@ fn main() {
         "cargo:rerun-if-changed={}",
         root.join("inject/build.ts").display()
     );
+    let out = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("inject");
     let status = Command::new("bun")
         .arg(root.join("inject/build.ts"))
+        .arg(&out)
         .status();
     match status {
         Ok(s) if s.success() => {}

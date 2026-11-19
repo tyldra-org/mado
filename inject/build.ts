@@ -1,10 +1,12 @@
-// Bundles each page script in src/ into one self-contained IIFE file in
-// app/resources/inject/, which the app embeds (mado-docs/spec/02-engine.md section 5).
+// Bundles each page script in src/ into one self-contained IIFE file in the
+// folder given as the first argument, or dist/. crates/mado-engine/build.rs
+// runs it into cargo's build folder, which the app embeds
+// (mado-docs/spec/02-engine.md section 5).
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 const srcDir = join(import.meta.dir, "src");
-const outDir = join(import.meta.dir, "..", "app", "resources", "inject");
+const outDir = process.argv[2] ?? join(import.meta.dir, "dist");
 
 const entries = (await readdir(srcDir))
   .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))

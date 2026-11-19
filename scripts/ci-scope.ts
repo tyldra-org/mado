@@ -47,9 +47,9 @@ const RUST_GLOBAL = [
   /^\.?(rustfmt|clippy)\.toml$/,
   /^\.cargo\//,
   /^\.config\/nextest\.toml$/,
-  // Fixtures any crate's tests may read. The end-to-end and screenshot
-  // tests are bun's: no cargo test reads them.
-  /^tests\/(?!e2e\/|visual\/)/,
+  // Fixtures any crate's tests may read. The end-to-end tests are bun's:
+  // no cargo test reads them.
+  /^tests\/(?!e2e\/)/,
   // The signed lists, bundled by mado-lists, which most crates read.
   /^lists\/(?!README\.md$)/,
 ];
@@ -67,8 +67,6 @@ const TS = [
   /^(ui|inject|tests)\//,
   /^scripts\/.+\.ts$/,
   /^(package\.json|bun\.lock|bunfig\.toml|\.bun-version|\.editorconfig)$/,
-  // The screenshot tests' configuration (tests/visual/ is under tests/).
-  /^playwright\.config\.ts$/,
   /^biome\.jsonc?$/,
   /^\.prettierrc(\..+)?$/,
   /(^|\/)tsconfig(\..+)?\.json$/,

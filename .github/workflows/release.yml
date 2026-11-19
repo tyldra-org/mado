@@ -30,6 +30,11 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       channel: ${{ steps.plan.outputs.channel }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
+      # The Mac the end-to-end and build jobs run on: the owner's own (a
+      # self-hosted runner labelled mado-mac) when the repository variable
+      # USE_MY_MAC is "true" and the owner pushed the tag or started the run;
+      # GitHub's otherwise. Only people with write access can start a release.
+      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098') && 'my Mac' || 'macos-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,9 +48,13 @@ jobs:
         run: bun scripts/release/plan.ts
 
   test:
-    name: End to end
+    name: End to end (${{ matrix.mac }})
     needs: version
-    runs-on: macos-latest
+    # A one-entry matrix, so the job's name says which Mac ran it.
+    strategy:
+      matrix:
+        mac: ["${{ needs.version.outputs.mac }}"]
+    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 30
     defaults:
       run:
@@ -63,6 +72,12 @@ jobs:
           no-cache: true
       - name: Install the pinned Rust toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # The owner's Mac keeps this job's test build between releases, outside
+      # the checkout and apart from CI's, so it stays warm. Only the owner's
+      # own runs use that Mac.
+      - name: Keep the build on this Mac
+        if: runner.environment == 'self-hosted'
+        run: echo "CARGO_TARGET_DIR=$HOME/.cache/mado-ci/release-e2e" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build the UI and page scripts
@@ -74,16 +89,23 @@ jobs:
       # test or on any host outside tests/network-allowlist.json (spec 08 §11).
       - name: End-to-end tests and network audit
         env:
-          MADO_E2E_BIN: target/debug/mado-app
-          MADO_FIXTURE_BIN: target/debug/mado-fixture-server
           MADO_TEST_HEADLESS: "1"
-        run: bun scripts/network-audit.ts
+        run: |
+          bin="${CARGO_TARGET_DIR:-target}/debug"
+          MADO_E2E_BIN="$bin/mado-app" MADO_FIXTURE_BIN="$bin/mado-fixture-server" MADO_CLI_BIN="$bin/mado" \
+            bun scripts/network-audit.ts
 
   build:
-    name: Build and sign
+    name: Build and sign (${{ matrix.mac }})
     needs: [version, test]
-    # Apple silicon runners; Mado ships for Apple silicon only.
-    runs-on: macos-latest
+    # Apple silicon only, as Mado ships. On the owner's Mac too this builds
+    # from nothing: the checkout's target/ is cleaned each run, so a release
+    # never reuses an earlier build. macos.sh signs from a throwaway keychain
+    # and puts the keychain search list back when it ends.
+    strategy:
+      matrix:
+        mac: ["${{ needs.version.outputs.mac }}"]
+    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 60
     defaults:
       run:
