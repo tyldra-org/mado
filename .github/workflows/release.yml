@@ -34,7 +34,7 @@ jobs:
       # self-hosted runner labelled mado-mac) when the repository variable
       # USE_MY_MAC is "true" and the owner pushed the tag or started the run;
       # GitHub's otherwise. Only people with write access can start a release.
-      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098') && 'my Mac' || 'macos-latest' }}
+      mac: ${{ (vars.USE_MY_MAC == 'true' && github.actor == 'yogeshprasad098') && 'macos-self-hosted' || 'macos-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,7 +54,7 @@ jobs:
     strategy:
       matrix:
         mac: ["${{ needs.version.outputs.mac }}"]
-    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
+    runs-on: ${{ matrix.mac == 'macos-self-hosted' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 30
     defaults:
       run:
@@ -111,7 +111,7 @@ jobs:
     strategy:
       matrix:
         mac: ["${{ needs.version.outputs.mac }}"]
-    runs-on: ${{ matrix.mac == 'my Mac' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
+    runs-on: ${{ matrix.mac == 'macos-self-hosted' && fromJSON('["self-hosted","mado-mac"]') || 'macos-latest' }}
     timeout-minutes: 60
     defaults:
       run:
